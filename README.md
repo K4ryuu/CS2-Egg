@@ -24,6 +24,17 @@
   </p>
 </div>
 
+## Features
+
+- CounterStrikeSharp Auto-Updater
+- MetaMod Auto-Updater
+- Junk Cleaner (Round backups, logs, css logs, accelerator logs, demo files)
+- Colored logs from the main scripts
+- Save version and update only if necessary
+- Premade variables to support custom parameters safely by user
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 ## How to install
 
 - Download egg(s) by clicking on the Download button above.
