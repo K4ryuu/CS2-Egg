@@ -16,7 +16,7 @@
 
   <p align="center">
     <br />
-    <a href="https://github.com/K4ryuu/CS2-Egg/releases">Download</a>
+    <a href="https://github.com/K4ryuu/CS2-Egg/blob/dev/pterodactyl/kitsunelab-cs2-egg.json">Download</a>
     ·
     <a href="https://github.com/K4ryuu/CS2-Egg/issues/new?assignees=KitsuneLab-Development&labels=bug&projects=&template=bug_report.md&title=%5BBUG%5D">Report Bug</a>
     ·
@@ -24,7 +24,22 @@
   </p>
 </div>
 
-<!-- ROADMAP -->
+## How to install
+
+- Download egg(s) by clicking on the Download button above.
+- Import into your Pterodactyl nest of choice. You can do this by navigating to the Admin section of your Pterodactyl panel, "Nests" under "Service Management", and clicking "Import Egg".
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## How to migrate to this egg
+
+- Open the server's admin section which you want to migrate.
+- Navigate to "Startup" tab.
+- Go to "Service Configuration" secton and check the "Skip Egg Install Script" to prevent it from reinstalling the server.
+- Change the egg to use "KitsuneLab CS2 Egg @ K4ryuu"
+- Save modifications.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Credits
 
