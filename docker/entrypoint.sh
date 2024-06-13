@@ -314,9 +314,6 @@ cleanup_and_update() {
             # Extract the file name from the asset URL
             file_name=$(basename $asset_url)
 
-            # Log the URL being accessed
-            log_message "Downloading from URL: $asset_url" "running"
-
             # Download the asset
             log_message "Downloading $file_name..." "running"
             curl -fsSL -m 300 -o "$TEMP_DIR/$temp_subdir/$file_name" "$asset_url"
