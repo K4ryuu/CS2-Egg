@@ -28,7 +28,7 @@
 
 - CounterStrikeSharp Auto-Updater
 - MetaMod Auto-Updater
-- Junk Cleaner (Round backups, logs, css logs, accelerator logs, demo files)
+- Junk Cleaner (Round backups 24hour, logs 3days, css logs 3days, accelerator logs 7days, demo files 7days)
 - Colored logs from the main scripts
 - Save version and update only if necessary
 - Premade variables to support custom parameters safely by user
@@ -48,6 +48,8 @@
 - Navigate to "Startup" tab.
 - Go to "Service Configuration" secton and check the "Skip Egg Install Script" to prevent it from reinstalling the server.
 - Change the egg to use "KitsuneLab CS2 Egg @ K4ryuu"
+- In "Docker Image Configuration" it should be sples1/k4ryuu-cs2 selected and below that "sples1/k4ryuu-cs2"
+- If you want to use the parameters and you changed manually the startup command, you should copy paste the one from my egg and modify it again.
 - Save modifications.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
