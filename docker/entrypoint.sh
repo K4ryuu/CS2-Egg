@@ -153,9 +153,9 @@ cleanup_and_update() {
     ACCELERATOR_DUMP_PURGE_INTERVAL=168
 
     # Variables to control whether to run the cleanup and update
-    CLEANUP_ENABLED=1
-    RUN_CSS_UPDATE=1
-    RUN_METAMOD_UPDATE=1
+    CSS_AUTOUPDATE=${CSS_AUTOUPDATE:-1}
+    CLEANUP_ENABLED=${CLEANUP_ENABLED:-1}
+    METAMOD_AUTOUPDATE=${METAMOD_AUTOUPDATE:-1}
 
     mkdir -p "$TEMP_DIR"
 
