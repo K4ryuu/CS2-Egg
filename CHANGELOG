@@ -1,6 +1,7 @@
 -- update - 2024.06.15
 
 - fix: Variable name miss-matches
+- fix: MetaMod files are not overwritten correctly
 
 -- update - 2024.06.14
 
