@@ -152,11 +152,6 @@ cleanup_and_update() {
     ACCELERATOR_DUMPS_DIR="$OUTPUT_DIR/AcceleratorCS2/dumps"
     ACCELERATOR_DUMP_PURGE_INTERVAL=168
 
-    # Variables to control whether to run the cleanup and update
-    CSS_AUTOUPDATE=${CSS_AUTOUPDATE:-1}
-    CLEANUP_ENABLED=${CLEANUP_ENABLED:-1}
-    METAMOD_AUTOUPDATE=${METAMOD_AUTOUPDATE:-1}
-
     mkdir -p "$TEMP_DIR"
 
     log_message() {
@@ -351,7 +346,7 @@ cleanup_and_update() {
         fi
     }
 
-    if [ "$RUN_METAMOD_UPDATE" = "1" ] || ([ ! -d "$OUTPUT_DIR/metamod" ] && [ "$RUN_CSS_UPDATE" = "1" ]); then
+    if [ "$METAMOD_AUTOUPDATE" = "1" ] || ([ ! -d "$OUTPUT_DIR/metamod" ] && [ "$CSS_AUTOUPDATE" = "1" ]); then
     if [ ! -d "$OUTPUT_DIR/metamod" ]; then
         log_message "Metamod not installed. Installing Metamod..." "running"
     else
@@ -414,7 +409,7 @@ cleanup_and_update() {
     fi
     fi
 
-    if [ "$RUN_CSS_UPDATE" = "1" ]; then
+    if [ "$CSS_AUTOUPDATE" = "1" ]; then
         log_message "Updating CounterStrikeSharp..." "running"
         update_addon "roflmuffin/CounterStrikeSharp" "$OUTPUT_DIR" "css" "CSS"
     fi
