@@ -347,66 +347,66 @@ cleanup_and_update() {
     }
 
     if [ "$METAMOD_AUTOUPDATE" = "1" ] || ([ ! -d "$OUTPUT_DIR/metamod" ] && [ "$CSS_AUTOUPDATE" = "1" ]); then
-    if [ ! -d "$OUTPUT_DIR/metamod" ]; then
-        log_message "Metamod not installed. Installing Metamod..." "running"
-    else
-        log_message "Updating Metamod..." "running"
-    fi
+        if [ ! -d "$OUTPUT_DIR/metamod" ]; then
+            log_message "Metamod not installed. Installing Metamod..." "running"
+        else
+            log_message "Updating Metamod..." "running"
+        fi
 
-    # Get the latest Metamod release URL
-    metamod_url=$(curl -s https://mms.alliedmods.net/mmsdrop/2.0/ | grep -oP 'mmsource-2\.0\.\d+-git\d+-linux\.tar\.gz' | sort -r | head -n 1)
-    full_url="https://mms.alliedmods.net/mmsdrop/2.0/$metamod_url"
-    new_version=$(echo $metamod_url | grep -oP 'git\K\d+')
+        # Get the latest Metamod release URL
+        metamod_url=$(curl -s https://mms.alliedmods.net/mmsdrop/2.0/ | grep -oP 'mmsource-2\.0\.\d+-git\d+-linux\.tar\.gz' | sort -r | head -n 1)
+        full_url="https://mms.alliedmods.net/mmsdrop/2.0/$metamod_url"
+        new_version=$(echo $metamod_url | grep -oP 'git\K\d+')
 
-    # Get the current version from the version file
-    current_version=$(get_current_version "Metamod")
+        # Get the current version from the version file
+        current_version=$(get_current_version "Metamod")
 
-    # Check if a newer version is available
-    if [ "$current_version" != "$new_version" ]; then
-        log_message "New version of Metamod available: $new_version (current: $current_version)" "running"
+        # Check if a newer version is available
+        if [ "$current_version" != "$new_version" ]; then
+            log_message "New version of Metamod available: $new_version (current: $current_version)" "running"
 
-        # Log the URL being accessed
-        log_message "Downloading Metamod from URL: $full_url" "running"
+            # Log the URL being accessed
+            log_message "Downloading Metamod from URL: $full_url" "running"
 
-        # Download the latest Metamod release for Linux
-        curl -s -L -w "%{http_code}" -o "$TEMP_DIR/metamod.tar.gz" "$full_url" | {
-        read http_code
-        if [ "$http_code" -ne 200 ]; then
-            log_message "Failed to download Metamod from $full_url. HTTP status code: $http_code" "error"
+            # Download the latest Metamod release for Linux
+            curl -s -L -w "%{http_code}" -o "$TEMP_DIR/metamod.tar.gz" "$full_url" | {
+            read http_code
+            if [ "$http_code" -ne 200 ]; then
+                log_message "Failed to download Metamod from $full_url. HTTP status code: $http_code" "error"
+                exit 1
+            fi
+            }
+
+            # Verify that the file has been downloaded correctly
+            if [ ! -s "$TEMP_DIR/metamod.tar.gz" ]; then
+            log_message "Downloaded Metamod file is empty or not found." "error"
             exit 1
+            fi
+
+            # Create the extraction directory
+            mkdir -p "$TEMP_DIR/metamod"
+
+            # Extract the downloaded Metamod archive to the temporary directory
+            log_message "Extracting Metamod archive..." "running"
+            tar -xzf "$TEMP_DIR/metamod.tar.gz" -C "$TEMP_DIR/metamod"
+
+            # Check if the extraction was successful
+            if [ $? -ne 0 ]; then
+            log_message "Failed to extract Metamod archive. Skipping update." "error"
+            exit 1
+            fi
+
+            # Copy the contents of the extracted 'addons' directory to the output directory, overriding existing files
+            log_message "Copying files to $OUTPUT_DIR..." "running"
+            cp -rf "$TEMP_DIR/metamod/addons/." "$OUTPUT_DIR/"
+
+            # Update the version file
+            update_version_file "Metamod" "$new_version"
+
+            log_message "Metamod update completed successfully." "success"
+        else
+            log_message "No new version of Metamod available. Skipping update." "success"
         fi
-        }
-
-        # Verify that the file has been downloaded correctly
-        if [ ! -s "$TEMP_DIR/metamod.tar.gz" ]; then
-        log_message "Downloaded Metamod file is empty or not found." "error"
-        exit 1
-        fi
-
-        # Create the extraction directory
-        mkdir -p "$TEMP_DIR/metamod"
-
-        # Extract the downloaded Metamod archive to the temporary directory
-        log_message "Extracting Metamod archive..." "running"
-        tar -xzf "$TEMP_DIR/metamod.tar.gz" -C "$TEMP_DIR/metamod"
-
-        # Check if the extraction was successful
-        if [ $? -ne 0 ]; then
-        log_message "Failed to extract Metamod archive. Skipping update." "error"
-        exit 1
-        fi
-
-        # Copy the contents of the extracted 'addons' directory to the output directory, overriding existing files
-        log_message "Copying files to $OUTPUT_DIR..." "running"
-        cp -ru "$TEMP_DIR/metamod/addons/." "$OUTPUT_DIR/"
-
-        # Update the version file
-        update_version_file "Metamod" "$new_version"
-
-        log_message "Metamod update completed successfully." "success"
-    else
-        log_message "No new version of Metamod available. Skipping update." "success"
-    fi
     fi
 
     if [ "$CSS_AUTOUPDATE" = "1" ]; then
