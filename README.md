@@ -1,10 +1,8 @@
 <a name="readme-top"></a>
 
-![GitHub tag (with filter)](https://img.shields.io/github/v/tag/K4ryuu/CS2-Egg?style=for-the-badge&label=Version)
 ![GitHub Repo stars](https://img.shields.io/github/stars/K4ryuu/CS2-Egg?style=for-the-badge)
 ![GitHub issues](https://img.shields.io/github/issues/K4ryuu/CS2-Egg?style=for-the-badge)
 ![GitHub](https://img.shields.io/github/license/K4ryuu/CS2-Egg?style=for-the-badge)
-![GitHub all releases](https://img.shields.io/github/downloads/K4ryuu/CS2-Egg/total?style=for-the-badge)
 ![GitHub last commit (branch)](https://img.shields.io/github/last-commit/K4ryuu/CS2-Egg/dev?style=for-the-badge)
 
 <!-- PROJECT LOGO -->
