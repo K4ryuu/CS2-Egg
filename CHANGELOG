@@ -1,3 +1,19 @@
+-- update - 2024.07.01
+
+- feat: Added Dev branch support with tag `dev` (import the egg again to have it)
+- feat: Added proper names for the images (import the egg again to have it)
+- fix: Removed redundant codes at logging and coloring sections
+- fix: Removed debug message leftovers at metamod updater
+- fix: Removed error upon server shutdown and added a good message instead
+- fix: Re-phrased some messages for better understanding
+- fix: Removed cleanup messages with 0 files for less spam
+
+-- update - 2024.06.20
+
+- upgrade: Metamod version finder logic
+- fix: Metamod updater not working correctly
+- fix: Changed updaters to start the server even if the download fails
+
 -- update - 2024.06.15
 
 - fix: Variable name miss-matches

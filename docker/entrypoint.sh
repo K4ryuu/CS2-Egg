@@ -1,4 +1,4 @@
-#!/bin/bash
+#!entrypoint.sh
 cd /home/container
 sleep 1
 
@@ -33,6 +33,30 @@ log_message() {
   esac
 }
 
+# Function to handle errors based on exit codes and messages
+handle_error() {
+  local exit_code="$?"
+  local last_command="$BASH_COMMAND"
+
+  if [[ $exit_code -eq 139 ]]; then
+    if [[ -z "$SEGFAULT_LOGGED" ]]; then
+      log_message "The server is shutting down" "running"
+      export SEGFAULT_LOGGED=true
+    fi
+  elif [[ $exit_code -eq 127 ]]; then
+    log_message "Command not found: $last_command" "error"
+    log_message "Exit code: 127" "error"
+  else
+    log_message "Error occurred while executing: $last_command" "error"
+    log_message "Exit code: $exit_code" "error"
+  fi
+
+  return $exit_code
+}
+
+# Set error handling trap
+trap 'handle_error' ERR
+
 # Make internal Docker IP address available to processes.
 export INTERNAL_IP=`ip route get 1 | awk '{print $NF;exit}'`
 
@@ -55,7 +79,7 @@ if [ ! -z ${SRCDS_APPID} ]; then
                     if [ ! -z ${SRCDS_LOGIN} ]; then
                         STEAMCMD="./steamcmd/steamcmd.sh +login ${SRCDS_LOGIN} ${SRCDS_LOGIN_PASS} +force_install_dir /home/container +app_update ${SRCDS_APPID} -beta ${SRCDS_BETAID} -betapassword ${SRCDS_BETAPASS} +quit"
                     else
-                        STEAMCMD="./steamcmd/steamcmd.sh +login anonymous +force_install_dir /home/container +app_update ${SRCDS_APPID} -beta ${SRCDS_BETAID} -betapassword ${SRCDS_BETAPASS} +quit"
+                        STEAMCMD="./steamcmd/steamcmd.sh +login anonymous +force_install_dir /home/container +app_update ${SRCDS_APPID} -beta ${SRCDS_BETAID} +quit"
                     fi
                 fi
             else
@@ -132,16 +156,6 @@ cleanup_and_update() {
     LOG_FILE="./game/startup_log.txt"  # Log file path
     VERSION_FILE="./game/versions.txt"  # Version file path
 
-    # Colors for log messages using tput
-    RED='\033[0;31m'
-    GREEN='\033[0;32m'
-    YELLOW='\033[0;33m'
-    WHITE='\033[0;37m'
-    NC='\033[0m' # No Color
-
-    # Prefix for logs
-    PREFIX="${RED}[KitsuneLab]${WHITE} > "
-
     # Delete previous log file if exists
     rm -f "$LOG_FILE"
 
@@ -154,117 +168,88 @@ cleanup_and_update() {
 
     mkdir -p "$TEMP_DIR"
 
-    log_message() {
-        local message="$1"
-        local type="$2"  # Type: running, error, success
-
-        case $type in
-            running)
-                echo -e "${PREFIX}${YELLOW}${message}${NC}" | tee -a "$LOG_FILE"
-                ;;
-            error)
-                echo -e "${PREFIX}${RED}${message}${NC}" | tee -a "$LOG_FILE"
-                ;;
-            success)
-                echo -e "${PREFIX}${GREEN}${message}${NC}" | tee -a "$LOG_FILE"
-                ;;
-            *)
-                echo -e "${PREFIX}${WHITE}${message}${NC}" | tee -a "$LOG_FILE"
-                ;;
-        esac
+    # Function to check if a file is older than a specified number of hours
+    is_file_older_than() {
+        local file="$1"
+        local hours="$2"
+        local current_time=$(date +%s)
+        local file_time=$(date -r "$file" +%s)
+        local age=$(( (current_time - file_time) / 3600 ))
+        [ "$age" -gt "$hours" ]
     }
 
-    # Error handling function
-    handle_error() {
-      local exit_code="$?"
-      local command="$1"
-      log_message "Error occurred while executing: $command" "error"
-      log_message "Exit code: $exit_code" "error"
-      exit "$exit_code"
+    # Function to safely delete a file
+    safe_delete() {
+        local file="$1"
+        local category="$2"
+        rm "$file"
+        log_message "Deleted $category file: $file" "success"
     }
 
-    # Set error handling trap
-    trap 'handle_error "$BASH_COMMAND"' ERR
+    # Function to purge files
+    purge_files() {
+        local directory="$1"
+        local pattern="$2"
+        local interval="$3"
+        local category="$4"
+        local count=0
+
+        if [ -d "$directory" ]; then
+            local files=("$directory"/"$pattern")
+            for file in "${files[@]}"; do
+                if [ -f "$file" ] && is_file_older_than "$file" "$interval"; then
+                    safe_delete "$file" "$category"
+                    ((count++))
+                fi
+            done
+        fi
+
+        if [ "$count" -gt 0 ]; then
+            log_message "Deleted $count files in category: $category" "success"
+        fi
+    }
 
     if [ "$CLEANUP_ENABLED" = "1" ]; then
-      log_message "Starting cleanup..." "running"
+        log_message "Starting cleanup..." "running"
 
-      # Function to check if a file is older than a specified number of hours
-      is_file_older_than() {
-          local file="$1"
-          local hours="$2"
-          local current_time=$(date +%s)
-          local file_time=$(date -r "$file" +%s)
-          local age=$(( (current_time - file_time) / 3600 ))
-          [ "$age" -gt "$hours" ]
-      }
+        # Run all purge functions
+        purge_files "$GAME_DIRECTORY" "*.txt" $BACKUP_ROUND_PURGE_INTERVAL "Logs"
+        purge_files "$GAME_DIRECTORY" "*.dem" $DEMO_PURGE_INTERVAL "Demos"
+        purge_files "$GAME_DIRECTORY/addons/counterstrikesharp/logs" "*.txt" $CSS_JUNK_PURGE_INTERVAL "CSS Logs"
 
-      # Function to safely delete a file
-      safe_delete() {
-          local file="$1"
-          local category="$2"
-          rm "$file"
-          log_message "Deleted $category file: $file" "success"
-      }
+        # Purge AcceleratorCS2 dump files if the directory exists
+        if [ -d "$ACCELERATOR_DUMPS_DIR" ]; then
+            purge_files "$ACCELERATOR_DUMPS_DIR" "*.dmp.txt" $ACCELERATOR_DUMP_PURGE_INTERVAL "Accelerator Logs"
+            purge_files "$ACCELERATOR_DUMPS_DIR" "*.dmp" $ACCELERATOR_DUMP_PURGE_INTERVAL "Accelerator Dumps"
+        fi
 
-      # Function to purge files
-      purge_files() {
-          local directory="$1"
-          local pattern="$2"
-          local interval="$3"
-          local category="$4"
-          local count=0
-
-          if [ -d "$directory" ]; then
-              local files=("$directory"/"$pattern")
-              for file in "${files[@]}"; do
-                  if [ -f "$file" ] && is_file_older_than "$file" "$interval"; then
-                      safe_delete "$file" "$category"
-                      ((count++))
-                  fi
-              done
-          fi
-          log_message "Deleted $count files in category: $category" "success"
-      }
-
-      # Run all purge functions
-      purge_files "$GAME_DIRECTORY" "*.txt" $BACKUP_ROUND_PURGE_INTERVAL "Logs"
-      purge_files "$GAME_DIRECTORY" "*.dem" $DEMO_PURGE_INTERVAL "Demos"
-      purge_files "$GAME_DIRECTORY/addons/counterstrikesharp/logs" "*.txt" $CSS_JUNK_PURGE_INTERVAL "CSS Logs"
-
-      # Purge AcceleratorCS2 dump files if the directory exists
-      if [ -d "$ACCELERATOR_DUMPS_DIR" ]; then
-          purge_files "$ACCELERATOR_DUMPS_DIR" "*.dmp.txt" $ACCELERATOR_DUMP_PURGE_INTERVAL "Accelerator Logs"
-          purge_files "$ACCELERATOR_DUMPS_DIR" "*.dmp" $ACCELERATOR_DUMP_PURGE_INTERVAL "Accelerator Dumps"
-      fi
-
-      log_message "Cleanup completed." "success"
+        log_message "Cleanup completed." "success"
     fi
 
     # Function to get the current version from the version file
     get_current_version() {
-      local addon="$1"
-      if [ -f "$VERSION_FILE" ]; then
-        grep "^$addon=" "$VERSION_FILE" | cut -d'=' -f2
-      else
-        echo ""
-      fi
+        local addon="$1"
+        if [ -f "$VERSION_FILE" ]; then
+            grep "^$addon=" "$VERSION_FILE" | cut -d'=' -f2
+        else
+            echo ""
+        fi
     }
 
     # Function to update the version file
     update_version_file() {
-      local addon="$1"
-      local new_version="$2"
-      if grep -q "^$addon=" "$VERSION_FILE"; then
-        sed -i "s/^$addon=.*/$addon=$new_version/" "$VERSION_FILE"
-      else
-        echo "$addon=$new_version" >> "$VERSION_FILE"
-      fi
+        local addon="$1"
+        local new_version="$2"
+        if grep -q "^$addon=" "$VERSION_FILE"; then
+            sed -i "s/^$addon=.*/$addon=$new_version/" "$VERSION_FILE"
+        else
+            echo "$addon=$new_version" >> "$VERSION_FILE"
+        fi
     }
 
     # Ensure versions.txt exists
     if [ ! -f "$VERSION_FILE" ]; then
-    touch "$VERSION_FILE"
+        touch "$VERSION_FILE"
     fi
 
     # Update the update_addon function to correctly parse the asset URL
@@ -353,10 +338,17 @@ cleanup_and_update() {
             log_message "Updating Metamod..." "running"
         fi
 
-        # Get the latest Metamod release URL
-        metamod_url=$(curl -s https://mms.alliedmods.net/mmsdrop/2.0/ | grep -oP 'mmsource-2\.0\.\d+-git\d+-linux\.tar\.gz' | sort -r | head -n 1)
-        full_url="https://mms.alliedmods.net/mmsdrop/2.0/$metamod_url"
-        new_version=$(echo $metamod_url | grep -oP 'git\K\d+')
+        metamod_version=$(curl -sL https://mms.alliedmods.net/mmsdrop/2.0/ | grep -oP 'href="\K(mmsource-[^"]*-linux\.tar\.gz)' | tail -1)
+
+        # Check if the version was successfully fetched
+        if [ -z "$metamod_version" ]; then
+            log_message "Failed to fetch the Metamod version." "error"
+            exit 1
+        fi
+
+        # Construct the full URL to the Metamod tar.gz file
+        full_url="https://mms.alliedmods.net/mmsdrop/2.0/$metamod_version"
+        new_version=$(echo $metamod_version | grep -oP 'git\d+')
 
         # Get the current version from the version file
         current_version=$(get_current_version "Metamod")
@@ -369,18 +361,16 @@ cleanup_and_update() {
             log_message "Downloading Metamod from URL: $full_url" "running"
 
             # Download the latest Metamod release for Linux
-            curl -s -L -w "%{http_code}" -o "$TEMP_DIR/metamod.tar.gz" "$full_url" | {
-            read http_code
+            http_code=$(curl -s -L -w "%{http_code}" -o "$TEMP_DIR/metamod.tar.gz" "$full_url")
             if [ "$http_code" -ne 200 ]; then
                 log_message "Failed to download Metamod from $full_url. HTTP status code: $http_code" "error"
-                exit 1
+                return 1
             fi
-            }
 
             # Verify that the file has been downloaded correctly
             if [ ! -s "$TEMP_DIR/metamod.tar.gz" ]; then
-            log_message "Downloaded Metamod file is empty or not found." "error"
-            exit 1
+                log_message "Downloaded Metamod file is empty or not found." "error"
+                return 1
             fi
 
             # Create the extraction directory
@@ -388,13 +378,10 @@ cleanup_and_update() {
 
             # Extract the downloaded Metamod archive to the temporary directory
             log_message "Extracting Metamod archive..." "running"
-            tar -xzf "$TEMP_DIR/metamod.tar.gz" -C "$TEMP_DIR/metamod"
-
-            # Check if the extraction was successful
-            if [ $? -ne 0 ]; then
-            log_message "Failed to extract Metamod archive. Skipping update." "error"
-            exit 1
-            fi
+            tar -xzf "$TEMP_DIR/metamod.tar.gz" -C "$TEMP_DIR/metamod" || {
+                log_message "Failed to extract Metamod archive. Skipping update." "error"
+                return 1
+            }
 
             # Copy the contents of the extracted 'addons' directory to the output directory, overriding existing files
             log_message "Copying files to $OUTPUT_DIR..." "running"
@@ -421,11 +408,11 @@ cleanup_and_update() {
 }
 
 # Run cleanup and update
-cleanup_and_update
+cleanup_and_update || log_message "Cleanup and update encountered errors but proceeding to start the server." "error"
 
 # Replace Startup Variables
-MODIFIED_STARTUP=`eval echo $(echo ${STARTUP} | sed -e 's/{{/${/g' -e 's/}}/}/g')`
-log_message ":/home/container$ ${MODIFIED_STARTUP}" "running"
+MODIFIED_STARTUP=$(eval echo $(echo ${STARTUP} | sed -e 's/{{/${/g' -e 's/}}/}/g'))
+log_message "Starting server: ${MODIFIED_STARTUP}" "running"
 
 # Run the Server
-eval ${MODIFIED_STARTUP}
+eval "${MODIFIED_STARTUP}"
