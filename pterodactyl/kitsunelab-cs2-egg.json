@@ -10,7 +10,8 @@
   "description": "SteamRT3 Platform image for Pterodactyl CS2 servers by 1zc, which is modified and tweaked with custom scripts by K4ryuu.",
   "features": null,
   "docker_images": {
-    "docker.io/sples1/k4ryuu-cs2:latest": "docker.io/sples1/k4ryuu-cs2:latest"
+    "KitsuneLab CS2": "docker.io/sples1/k4ryuu-cs2:latest",
+    "KitsuneLab CS2 Dev": "docker.io/sples1/k4ryuu-cs2:dev"
   },
   "file_denylist": [],
   "startup": "./game/cs2.sh {{CUSTOM_PARAMS}} -dedicated +ip 0.0.0.0 -port {{SERVER_PORT}} +map {{SRCDS_MAP}} -maxplayers {{SRCDS_MAXPLAYERS}} -maxplayers_override {{SRCDS_MAXPLAYERS}} +sv_setsteamaccount {{STEAM_ACC}} +game_type {{GAME_TYPE}} +game_mode {{GAME_MODE}}",
