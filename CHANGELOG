@@ -1,3 +1,7 @@
+-- update - 2024.07.24
+
+- fix: Junk cleaner was not working at all
+
 -- update - 2024.07.01
 
 - feat: Added Dev branch support with tag `dev` (import the egg again to have it)
