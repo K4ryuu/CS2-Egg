@@ -182,7 +182,7 @@ cleanup_and_update() {
     safe_delete() {
         local file="$1"
         local category="$2"
-        rm "$file"
+        rm -f "$file" # Az -f kapcsoló biztosítja, hogy az rm parancs ne írjon ki semmit
         log_message "Deleted $category file: $file" "success"
     }
 
@@ -195,8 +195,9 @@ cleanup_and_update() {
         local count=0
 
         if [ -d "$directory" ]; then
-            local files=("$directory"/"$pattern")
-            for file in "${files[@]}"; do
+            # Correct way to get files matching the pattern
+            local files=$(find "$directory" -type f -name "$pattern")
+            for file in $files; do
                 if [ -f "$file" ] && is_file_older_than "$file" "$interval"; then
                     safe_delete "$file" "$category"
                     ((count++))
