@@ -1,4 +1,4 @@
-#!entrypoint.sh
+#!/bin/bash
 cd /home/container
 sleep 1
 
@@ -17,18 +17,21 @@ log_message() {
   local message="$1"
   local type="$2"  # Type: running, error, success
 
+  # Strip any trailing newlines from the message
+  message=$(echo -n "$message")
+
   case $type in
     running)
-      echo -e "${PREFIX}${YELLOW}${message}${NC}"
+      printf "${PREFIX}${YELLOW}%s${NC}\n" "$message"
       ;;
     error)
-      echo -e "${PREFIX}${RED}${message}${NC}"
+      printf "${PREFIX}${RED}%s${NC}\n" "$message"
       ;;
     success)
-      echo -e "${PREFIX}${GREEN}${message}${NC}"
+      printf "${PREFIX}${GREEN}%s${NC}\n" "$message"
       ;;
     *)
-      echo -e "${PREFIX}${WHITE}${message}${NC}"
+      printf "${PREFIX}${WHITE}%s${NC}\n" "$message"
       ;;
   esac
 }
@@ -38,7 +41,7 @@ handle_error() {
   local exit_code="$?"
   local last_command="$BASH_COMMAND"
 
-  if [[ $exit_code -eq 139 ]]; then
+  if [[ $exit_code -eq 172 ]]; then
     if [[ -z "$SEGFAULT_LOGGED" ]]; then
       log_message "The server is shutting down" "running"
       export SEGFAULT_LOGGED=true
@@ -91,9 +94,9 @@ if [ ! -z ${SRCDS_APPID} ]; then
                     fi
                 else
                     if [ ! -z ${SRCDS_LOGIN} ]; then
-                        STEAMCMD="./steamcmd/steamcmd.sh +login ${SRCDS_LOGIN} ${SRCDS_LOGIN_PASS} +force_install_dir /home/container +app_update ${SRCDS_APPID} -beta ${SRCDS_BETAID} +quit"
+                        STEAMCMD="./steamcmd/steamcmd.sh +login ${SRCDS_LOGIN} ${SRCDS_LOGIN_PASS} +force_install_dir /home/container +app_update ${SRCDS_APPID} +quit"
                     else
-                        STEAMCMD="./steamcmd/steamcmd.sh +login anonymous +force_install_dir /home/container +app_update ${SRCDS_APPID} -beta ${SRCDS_BETAID} +quit"
+                        STEAMCMD="./steamcmd/steamcmd.sh +login anonymous +force_install_dir /home/container +app_update ${SRCDS_APPID} +quit"
                     fi
                 fi
             fi
@@ -230,7 +233,7 @@ cleanup_and_update() {
     # Function to get the current version from the version file
     get_current_version() {
         local addon="$1"
-        if [ -f "$VERSION_FILE" ]; then
+        if [ -f "$VERSION_FILE" ];then
             grep "^$addon=" "$VERSION_FILE" | cut -d'=' -f2
         else
             echo ""
@@ -411,9 +414,87 @@ cleanup_and_update() {
 # Run cleanup and update
 cleanup_and_update || log_message "Cleanup and update encountered errors but proceeding to start the server." "error"
 
+# Create and read the mute_messages.cfg file only if the filter is enabled
+if [ "$ENABLE_FILTER" = "1" ]; then
+    # Create the mute_messages.cfg file with example patterns if it doesn't exist
+    if [ ! -f "./game/mute_messages.cfg" ]; then
+        cat <<EOL > ./game/mute_messages.cfg
+# Mute Messages Configuration File
+# Add patterns of messages to be blocked.
+# One line is one check. If the line is like "asd", then the message should be blocked if it equals "asd".
+# If the line is like ".*asd.*", then block the message if the line contains "asd" with anything before or after.
+# Example pattern to block messages containing "Certificate expires":
+# .*Certificate expires.*
+
+.*Certificate expires.*
+EOL
+        log_message "Created ./game/mute_messages.cfg with example patterns. You can modify this file to specify additional messages to mute." "running"
+    else
+        log_message "./game/mute_messages.cfg already exists. You can modify this file to specify additional messages to mute." "success"
+    fi
+
+    # No default basic patterns for now
+    BASIC_PATTERNS=()
+
+    # Load user-defined mute patterns from configuration file
+    USER_PATTERNS=()
+    while IFS= read -r pattern || [[ -n "$pattern" ]]; do
+        # Ignore comment lines and empty lines
+        [[ $pattern =~ ^#.*$ ]] && continue
+        [[ -z "$pattern" ]] && continue
+        USER_PATTERNS+=("$pattern")
+    done < ./game/mute_messages.cfg
+
+    # Log the number of user patterns loaded
+    log_message "Loaded ${#USER_PATTERNS[@]} user-defined patterns from ./game/mute_messages.cfg" "running"
+
+    # Combine basic patterns and user-defined patterns if they are not empty
+    MUTE_PATTERNS=()
+    if [ ${#BASIC_PATTERNS[@]} -gt 0 ]; then
+        MUTE_PATTERNS=("${BASIC_PATTERNS[@]}")
+    fi
+    if [ ${#USER_PATTERNS[@]} -gt 0 ]; then
+        MUTE_PATTERNS+=("${USER_PATTERNS[@]}")
+    fi
+
+    # Remove any empty patterns
+    MUTE_PATTERNS=("${MUTE_PATTERNS[@]}")
+else
+    log_message "Filter is disabled. No messages will be blocked." "running"
+fi
+
 # Replace Startup Variables
 MODIFIED_STARTUP=$(eval echo $(echo ${STARTUP} | sed -e 's/{{/${/g' -e 's/}}/}/g'))
-log_message "Starting server: ${MODIFIED_STARTUP}" "running"
+MODIFIED_STARTUP="unbuffer -p ${MODIFIED_STARTUP}"
+log_message "Starting server with command: ${MODIFIED_STARTUP}" "running"
 
-# Run the Server
-eval "${MODIFIED_STARTUP}"
+# Run the Server with or without block checks
+if [ "$ENABLE_FILTER" = "1" ]; then
+   while IFS= read -r line; do
+    # Trim trailing whitespace and newlines
+    line=$(echo -n "$line" | sed -e 's/[[:space:]]*$//')
+
+    BLOCKED=false
+    for pattern in "${MUTE_PATTERNS[@]}"; do
+      if [[ $line =~ $pattern ]]; then
+        if [ "$FILTER_PREVIEW_MODE" = "1" ]; then
+          log_message "Message Block Preview: $line" "error"
+        fi
+        BLOCKED=true
+        break
+      fi
+    done
+    if [ "$BLOCKED" = false ] && [ -n "$line" ]; then
+      printf '%s\n' "$line"
+    fi
+  done < <($MODIFIED_STARTUP 2>&1)
+else
+  $MODIFIED_STARTUP 2>&1 | while IFS= read -r line; do
+    # Trim trailing whitespace and newlines
+    line=$(echo -n "$line" | sed -e 's/[[:space:]]*$//')
+
+    if [ -n "$line" ]; then
+      printf '%s\n' "$line"
+    fi
+  done
+fi

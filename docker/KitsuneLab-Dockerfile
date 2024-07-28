@@ -8,7 +8,7 @@ LABEL       author="K4ryuu & Liam C" \
 # Prep OS
 RUN         mkdir -p /etc/sudoers.d && echo "%sudo ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/flatdeb && chmod 0440 /etc/sudoers.d/flatdeb
 ENV         DEBIAN_FRONTEND=noninteractive
-RUN         apt update && apt install -y iproute2 unzip && apt-get clean
+RUN         apt update && apt install -y iproute2 unzip expect && apt-get clean
 USER        container
 ENV         USER=container HOME=/home/container
 WORKDIR     /home/container
