@@ -24,7 +24,7 @@
 
 ## Features
 
-- Console Filter (block unwanted messages from appearing in console)
+- Console Filter (block unwanted messages from appearing in console) idea from [Poggu](https://github.com/Poggicek), who made that in [Metamod](https://github.com/Source2ZE/CleanerCS2)
 - CounterStrikeSharp Auto-Updater
 - MetaMod Auto-Updater
 - Junk Cleaner (Round backups 24hour, logs 3days, css logs 3days, accelerator logs 7days, demo files 7days)
