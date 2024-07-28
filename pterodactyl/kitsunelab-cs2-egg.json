@@ -110,17 +110,7 @@
       "field_type": "text"
     },
     {
-      "name": "CSS Auto Update",
-      "description": "Enable or disable the automatic update of CSS on every server startup.",
-      "env_variable": "CSS_AUTOUPDATE",
-      "default_value": "0",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|in:0,1",
-      "field_type": "text"
-    },
-    {
-      "name": "Auto Cleanup",
+      "name": "Junk Cleaner",
       "description": "Cleans up automatically logs after 72 hour, demo files after 7 days and round backup files after 24 hour.",
       "env_variable": "CLEANUP_ENABLED",
       "default_value": "1",
@@ -130,9 +120,39 @@
       "field_type": "text"
     },
     {
-      "name": "MetaMod Auto Update",
-      "description": "Enable or disable the automatic update of MetaMod on every server startup.",
+      "name": "CounterStrikeSharp Updater",
+      "description": "Enable or disable the automatic update of CounterStrikeSharp on every server startup.",
+      "env_variable": "CSS_AUTOUPDATE",
+      "default_value": "0",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|in:0,1",
+      "field_type": "text"
+    },
+    {
+      "name": "Metamod Updater",
+      "description": "Enable or disable the automatic update of Metamod on every server startup.",
       "env_variable": "METAMOD_AUTOUPDATE",
+      "default_value": "0",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|in:0,1",
+      "field_type": "text"
+    },
+    {
+      "name": "Console Cleaner",
+      "description": "Enable or disable the console filter to hide specific messages. Configure it using the file at '/game/mute_messages.cfg' when enabled.",
+      "env_variable": "ENABLE_FILTER",
+      "default_value": "0",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|in:0,1",
+      "field_type": "text"
+    },
+    {
+      "name": "Console Cleaner - Preview Mode",
+      "description": "Enable or disable preview mode for the console filter. In preview mode, blocked messages are shown in red, allowing you to verify your filter configuration.",
+      "env_variable": "FILTER_PREVIEW_MODE",
       "default_value": "0",
       "user_viewable": true,
       "user_editable": true,

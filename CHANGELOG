@@ -1,3 +1,9 @@
+-- update - 2024.07.28
+
+- feat: Added console filter to block unwanted messages (import the egg again to have it)
+- feat: Added preview mode for console filter to show what messages you block exactly (import the egg again to have it)
+- chore: Fix some spelling and grammar mistakes
+
 -- update - 2024.07.24
 
 - fix: Junk cleaner was not working at all
