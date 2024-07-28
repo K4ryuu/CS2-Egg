@@ -24,6 +24,7 @@
 
 ## Features
 
+- Console Filter (block unwanted messages from appearing in console)
 - CounterStrikeSharp Auto-Updater
 - MetaMod Auto-Updater
 - Junk Cleaner (Round backups 24hour, logs 3days, css logs 3days, accelerator logs 7days, demo files 7days)
