@@ -15,7 +15,7 @@ PREFIX="${RED}[KitsuneLab]${WHITE} > "
 # Function to log messages with colors
 log_message() {
   local message="$1"
-  local type="$2"  # Type: running, error, success
+  local type="$2"  # Type: running, error, success, debug
 
   # Strip any trailing newlines from the message
   message=$(echo -n "$message")
@@ -30,6 +30,9 @@ log_message() {
     success)
       printf "${PREFIX}${GREEN}%s${NC}\n" "$message"
       ;;
+    debug)
+      printf "${PREFIX}${WHITE}[DEBUG] %s${NC}\n" "$message"
+      ;;
     *)
       printf "${PREFIX}${WHITE}%s${NC}\n" "$message"
       ;;
@@ -41,15 +44,13 @@ handle_error() {
   local exit_code="$?"
   local last_command="$BASH_COMMAND"
 
-  if [[ $exit_code -eq 172 ]]; then
-    if [[ -z "$SEGFAULT_LOGGED" ]]; then
-      log_message "The server is shutting down" "running"
-      export SEGFAULT_LOGGED=true
-    fi
-  elif [[ $exit_code -eq 127 ]]; then
+  if [[ $exit_code -eq 127 ]]; then
     log_message "Command not found: $last_command" "error"
     log_message "Exit code: 127" "error"
-  else
+  elif [[ $last_command == *"${GAMEROOT}/${GAMEEXE}"* ]]; then
+    # This is the server shutdown, not an error
+    log_message "Server has been shut down" "success"
+  elif [[ $last_command != *"eval ${STEAMCMD}"* ]]; then
     log_message "Error occurred while executing: $last_command" "error"
     log_message "Exit code: $exit_code" "error"
   fi
@@ -185,7 +186,7 @@ cleanup_and_update() {
     safe_delete() {
         local file="$1"
         local category="$2"
-        rm -f "$file" # Az -f kapcsoló biztosítja, hogy az rm parancs ne írjon ki semmit
+        rm -f "$file"
         log_message "Deleted $category file: $file" "success"
     }
 
@@ -466,14 +467,21 @@ fi
 # Replace Startup Variables
 MODIFIED_STARTUP=$(eval echo $(echo ${STARTUP} | sed -e 's/{{/${/g' -e 's/}}/}/g'))
 MODIFIED_STARTUP="unbuffer -p ${MODIFIED_STARTUP}"
+
 log_message "Starting server with command: ${MODIFIED_STARTUP}" "running"
 
-# Run the Server with or without block checks
-if [ "$ENABLE_FILTER" = "1" ]; then
-   while IFS= read -r line; do
-    # Trim trailing whitespace and newlines
-    line=$(echo -n "$line" | sed -e 's/[[:space:]]*$//')
+# Function to handle server output
+handle_server_output() {
+  local line="$1"
+  local server_stopped=false
 
+  # Check if the line indicates server shutdown
+  if [[ "$line" == *"Server shutting down"* ]]; then
+    server_stopped=true
+  fi
+
+  # Process the line (existing logic)
+  if [ "$ENABLE_FILTER" = "1" ]; then
     BLOCKED=false
     for pattern in "${MUTE_PATTERNS[@]}"; do
       if [[ $line =~ $pattern ]]; then
@@ -487,14 +495,29 @@ if [ "$ENABLE_FILTER" = "1" ]; then
     if [ "$BLOCKED" = false ] && [ -n "$line" ]; then
       printf '%s\n' "$line"
     fi
-  done < <($MODIFIED_STARTUP 2>&1)
-else
-  $MODIFIED_STARTUP 2>&1 | while IFS= read -r line; do
-    # Trim trailing whitespace and newlines
-    line=$(echo -n "$line" | sed -e 's/[[:space:]]*$//')
-
+  else
     if [ -n "$line" ]; then
       printf '%s\n' "$line"
     fi
-  done
-fi
+  fi
+
+  # If server has stopped, log the success message
+  if [ "$server_stopped" = true ]; then
+    log_message "The server is shutting down..." "success"
+  fi
+}
+
+# Run the Server
+$MODIFIED_STARTUP 2>&1 | while IFS= read -r line; do
+  # Trim trailing whitespace and newlines
+  line=$(echo -n "$line" | sed -e 's/[[:space:]]*$//')
+
+  # Skip Segmentation fault messages related to server shutdown
+  if [[ "$line" == *"Segmentation fault"* && "$line" == *"${GAMEEXE}"* ]]; then
+    continue
+  fi
+
+  handle_server_output "$line"
+done
+
+log_message "Server has stopped successfully." "success"
