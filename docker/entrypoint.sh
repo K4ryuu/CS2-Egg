@@ -200,7 +200,7 @@ cleanup_and_update() {
 
         if [ -d "$directory" ]; then
             # Correct way to get files matching the pattern
-            local files=$(find "$directory" -type f -name "$pattern")
+           local files=$(find "$directory" -maxdepth 1 -type f -name "$pattern")
             for file in $files; do
                 if [ -f "$file" ] && is_file_older_than "$file" "$interval"; then
                     safe_delete "$file" "$category"
