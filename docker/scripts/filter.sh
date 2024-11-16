@@ -71,8 +71,8 @@ handle_server_output() {
         SERVER_RUNNING=0
     fi
 
-    # Mask all potential Steam tokens (16-17 characters, alphanumeric)
-    if [[ "$line" =~ ([A-Z0-9]{16,17}) ]]; then
+    # Mask the specific Steam token if it matches the given variable
+    if [[ "$line" =~ ($STEAM_ACC) ]]; then
         line=${line//${BASH_REMATCH[1]}/${BASH_REMATCH[1]//?/*}}
     fi
 
