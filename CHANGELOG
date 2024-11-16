@@ -1,3 +1,16 @@
+-- update - 2024.11.15
+
+- feat: Added Auto-Restart feature to automatically restart the server if it has a newer version
+- feat: The console now censures the Steam Token of the user for security reasons (sending logs, screenshots, etc.)
+- upgrade: Changed MetaMod auto-updater to use GitHub aswell due to some users had issues calling alliedmods.net
+- refactor: The full script has been refactored for easier maintanaibility
+- chore: Changed some of the variable rules to use boolean
+- chore: Changed some of the variables naming and descriptions for better understanding
+
+-- update - 2024.10.02
+
+- fix: Round backup cleaner removed some other files
+
 -- update - 2024.08.20
 
 - fix: Server shutdown was handled like Segmentation fault

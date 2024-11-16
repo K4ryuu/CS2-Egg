@@ -10,7 +10,7 @@
 <div align="center">
   <h1 align="center">KitsuneLab©</h1>
   <h3 align="center">CS2 Egg</h3>
-  <a align="center">CS2 Pterodactyl Egg with custom scripts such as CSS auto-updater, MetaMod auto-updater, junk cleaner with colored logging.</a>
+  <a align="center">CS2 Pterodactyl Egg with custom scripts such as CSS auto-updater, MetaMod auto-updater, junk cleaner, auto restart on update with colored logging.</a>
 
   <p align="center">
     <br />
@@ -19,6 +19,8 @@
     <a href="https://github.com/K4ryuu/CS2-Egg/issues/new?assignees=KitsuneLab-Development&labels=bug&projects=&template=bug_report.md&title=%5BBUG%5D">Report Bug</a>
     ·
     <a href="https://github.com/K4ryuu/CS2-Egg/issues/new?assignees=KitsuneLab-Development&labels=enhancement&projects=&template=feature_request.md&title=%5BREQ%5D">Request Feature</a>
+    ·
+    <a href="https://docs.kitsune-lab.com/main/cs2-egg">Documentations</a>
   </p>
 </div>
 
@@ -30,26 +32,14 @@
 - Junk Cleaner (Round backups 24hour, logs 3days, css logs 3days, accelerator logs 7days, demo files 7days)
 - Colored logs from the main scripts
 - Save version and update only if necessary
+- Automatically restart the server after when update detected
 - Premade variables to support custom parameters safely by user
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-## How to install
+## Documentation
 
-- Download egg(s) by clicking on the Download button above.
-- Import into your Pterodactyl nest of choice. You can do this by navigating to the Admin section of your Pterodactyl panel, "Nests" under "Service Management", and clicking "Import Egg".
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-## How to migrate to this egg
-
-- Open the server's admin section which you want to migrate.
-- Navigate to "Startup" tab.
-- Go to "Service Configuration" secton and check the "Skip Egg Install Script" to prevent it from reinstalling the server.
-- Change the egg to use "KitsuneLab CS2 Egg @ K4ryuu"
-- In "Docker Image Configuration" it should be sples1/k4ryuu-cs2 selected and below that "sples1/k4ryuu-cs2"
-- If you want to use the parameters and you changed manually the startup command, you should copy paste the one from my egg and modify it again.
-- Save modifications.
+Detailed documentation on installation, updates, feature configurations, and more can be found at the [KitsuneLab Documentation](https://docs.kitsune-lab.com/main/cs2-egg).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
