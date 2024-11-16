@@ -1,3 +1,8 @@
+-- update - 2024.11.16
+
+- fix: The Steam token mask removed other matching patterns aswell from being visible
+- fix: Removed maxplayers_override from startup as its deprecated
+
 -- update - 2024.11.15
 
 - feat: Added Auto-Restart feature to automatically restart the server if it has a newer version
