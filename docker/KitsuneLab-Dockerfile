@@ -1,22 +1,33 @@
 # Dockerfile with SteamRT3
 FROM        registry.gitlab.steamos.cloud/steamrt/sniper/platform:latest-container-runtime-depot
-LABEL       author="K4ryuu & Liam C" \
-            maintainer="k4ryuu@icloud.com" \
-            org.opencontainers.image.description="SteamRT3 Platform image for Pterodactyl CSGO/CS2/Source engine servers by 1zc, which is modified and tweaked with custom scripts by K4ryuu." \
+LABEL       author="K4ryuu @ KitsuneLab" \
+            maintainer="contact@kitsune-lab.com" \
+            org.opencontainers.image.description="The SteamRT3 Platform image for Pterodactyl CS2 servers is packed with numerous features, designed to simplify server management and reduce hassle." \
             org.opencontainers.image.source="https://github.com/K4ryuu/CS2-Egg"
 
 # Prep OS
-RUN         mkdir -p /etc/sudoers.d && echo "%sudo ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/flatdeb && chmod 0440 /etc/sudoers.d/flatdeb
+RUN         mkdir -p /etc/sudoers.d && \
+            echo "%sudo ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/flatdeb && \
+            chmod 0440 /etc/sudoers.d/flatdeb
+
 ENV         DEBIAN_FRONTEND=noninteractive
-RUN         apt update && apt install -y iproute2 unzip expect && apt-get clean
+RUN         apt update && \
+            apt install -y iproute2 jq unzip expect rsync && \
+            apt-get clean
+
+# Create directories and copy files
+RUN         mkdir -p /scripts /utils
+COPY        ./scripts/* /scripts/
+COPY        ./utils/* /utils/
+COPY        ./entrypoint.sh /entrypoint.sh
+
+# Set permissions
+RUN         chmod +x /scripts/*.sh && \
+            chmod +x /utils/*.sh && \
+            chmod +x /entrypoint.sh
+
 USER        container
 ENV         USER=container HOME=/home/container
 WORKDIR     /home/container
 
-# To-Do: If CS2 requires Wine, the following lines will need to be uncommented
-# RUN         apt update
-# RUN         apt install -y wine wine64 libwine && apt clean
-
-# EP
-COPY        ./entrypoint.sh /entrypoint.sh
 CMD         [ "/bin/bash", "/entrypoint.sh" ]

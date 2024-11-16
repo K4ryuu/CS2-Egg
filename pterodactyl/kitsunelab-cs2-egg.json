@@ -6,7 +6,7 @@
   },
   "exported_at": "2024-06-13T21:31:46+02:00",
   "name": "KitsuneLab CS2 Egg @ K4ryuu",
-  "author": "k4ryuu@icloud.com",
+  "author": "contact@kitsune-lab.com",
   "description": "SteamRT3 Platform image for Pterodactyl CS2 servers by 1zc, which is modified and tweaked with custom scripts by K4ryuu.",
   "features": null,
   "docker_images": {
@@ -56,7 +56,7 @@
       "default_value": "32",
       "user_viewable": false,
       "user_editable": false,
-      "rules": "required|numeric",
+      "rules": "required|numeric|max:32|min:5",
       "field_type": "text"
     },
     {
@@ -110,53 +110,53 @@
       "field_type": "text"
     },
     {
-      "name": "Junk Cleaner",
+      "name": "Junk Cleaner - Enabled",
       "description": "Cleans up automatically logs after 72 hour, demo files after 7 days and round backup files after 24 hour.",
       "env_variable": "CLEANUP_ENABLED",
-      "default_value": "1",
+      "default_value": "0",
       "user_viewable": true,
       "user_editable": true,
-      "rules": "required|in:0,1",
+      "rules": "required|boolean",
       "field_type": "text"
     },
     {
-      "name": "CounterStrikeSharp Updater",
-      "description": "Enable or disable the automatic update of CounterStrikeSharp on every server startup.",
+      "name": "Auto Update - CounterStrikeSharp",
+      "description": "Enable or disable the automatic update of CSS on every server startup.",
       "env_variable": "CSS_AUTOUPDATE",
       "default_value": "0",
       "user_viewable": true,
       "user_editable": true,
-      "rules": "required|in:0,1",
+      "rules": "required|boolean",
       "field_type": "text"
     },
     {
-      "name": "Metamod Updater",
-      "description": "Enable or disable the automatic update of Metamod on every server startup.",
+      "name": "Auto Update - MetaMod",
+      "description": "Enable or disable the automatic update of MetaMod on every server startup.",
       "env_variable": "METAMOD_AUTOUPDATE",
       "default_value": "0",
       "user_viewable": true,
       "user_editable": true,
-      "rules": "required|in:0,1",
+      "rules": "required|boolean",
       "field_type": "text"
     },
     {
-      "name": "Console Cleaner",
+      "name": "Filter - Enabled",
       "description": "Enable or disable the console filter to hide specific messages. Configure it using the file at '/game/mute_messages.cfg' when enabled.",
       "env_variable": "ENABLE_FILTER",
       "default_value": "0",
       "user_viewable": true,
       "user_editable": true,
-      "rules": "required|in:0,1",
+      "rules": "required|boolean",
       "field_type": "text"
     },
     {
-      "name": "Console Cleaner - Preview Mode",
+      "name": "Filter - Preview Mode",
       "description": "Enable or disable preview mode for the console filter. In preview mode, blocked messages are shown in red, allowing you to verify your filter configuration.",
       "env_variable": "FILTER_PREVIEW_MODE",
       "default_value": "0",
       "user_viewable": true,
       "user_editable": true,
-      "rules": "required|in:0,1",
+      "rules": "required|boolean",
       "field_type": "text"
     },
     {
@@ -167,6 +167,66 @@
       "user_viewable": true,
       "user_editable": true,
       "rules": "string|nullable",
+      "field_type": "text"
+    },
+    {
+      "name": "Auto Restart - Enabled",
+      "description": "Enable or disable the automatic server restart when a new game version is detected.",
+      "env_variable": "UPDATE_AUTO_RESTART",
+      "default_value": "0",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|boolean",
+      "field_type": "text"
+    },
+    {
+      "name": "Auto Restart - Check Interval",
+      "description": "The update detection interval, in seconds, for automatic restarts.\r\nPlease note that excessive usage may trigger Steam's rate limiting.",
+      "env_variable": "VERSION_CHECK_INTERVAL",
+      "default_value": "300",
+      "user_viewable": false,
+      "user_editable": false,
+      "rules": "required|integer|min:60",
+      "field_type": "text"
+    },
+    {
+      "name": "Auto Restart - API URL",
+      "description": "The panel URL used for API calls.\r\nThis should remain hidden from users. Update the default value to ensure all new servers use this setting.",
+      "env_variable": "PTERODACTYL_URL",
+      "default_value": "https://panel.domain.com",
+      "user_viewable": false,
+      "user_editable": false,
+      "rules": "nullable|required|regex:/^https:\\/\\//",
+      "field_type": "text"
+    },
+    {
+      "name": "Auto Restart - User API key",
+      "description": "Your personal API key to this panel. You can generate a new one at \"API Credentials\".\r\nDo not add a default value here from an admin, if you host other people's server as it can be extracted from the docker environment. Let your users create their own.",
+      "env_variable": "PTERODACTYL_API_TOKEN",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string|size:48|regex:/^ptlc_/",
+      "field_type": "text"
+    },
+    {
+      "name": "Auto Restart - Commands",
+      "description": "JSON structure for configuring update countdown notifications or executing specific commands at defined countdown intervals.",
+      "env_variable": "UPDATE_COMMANDS",
+      "default_value": "{\"300\": \"say Attention: The server will update in 5 minutes. Please prepare to save your progress.\", \"60\": \"say Heads up: The server will update in 1 minute. Save your progress now.\", \"30\": \"say Warning: The server update is happening in 30 seconds. Get ready!\", \"10\": \"say Final notice: The server will update in 10 seconds. Please stand by.\", \"3\": \"say Final countdown: Update in 3 seconds. Hold tight!\", \"2\": \"say Final countdown: Update in 2 seconds. Almost there!\", \"1\": \"say Final countdown: Update in 1 second. Restarting now!\"}",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "string",
+      "field_type": "text"
+    },
+    {
+      "name": "Auto Restart - Countdown Interval",
+      "description": "The time interval for the countdown in seconds before the restart.",
+      "env_variable": "UPDATE_COUNTDOWN_TIME",
+      "default_value": "300",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|integer|min:1",
       "field_type": "text"
     }
   ]
