@@ -1,5 +1,6 @@
 -- update - 2024.11.17
 
+- feat: Add environment default value setter to ensure required variables are maintained
 - chore: Auto-Restart game version checker now uses different file
 - fix: Auto-Restart now initialize game version to file if not present
 - remove: Unused source include in this version of the egg
