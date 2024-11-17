@@ -66,26 +66,45 @@ start_update_countdown() {
     fi
 }
 
+get_game_version() {
+    local steam_inf="./game/csgo/steam.inf"
+    if [ -f "$steam_inf" ]; then
+        local patch_version=$(grep "PatchVersion=" "$steam_inf" | cut -d'=' -f2)
+        if [ ! -z "$patch_version" ]; then
+            # Remove dots and convert to number (e.g., 1.40.5.1 -> 14051)
+            echo "$patch_version" | tr -d '.'
+            return 0
+        fi
+    fi
+    return 1
+}
+
 check_server_version() {
-    VERSION_FILE="./version.txt"
-    local current_version=""
+    local current_version=$(get_game_version)
 
-    if [ -f "$VERSION_FILE" ]; then
-        current_version=$(cat "$VERSION_FILE")
-        response=$(curl -s "https://api.steampowered.com/ISteamApps/UpToDateCheck/v0001/?appid=730&version=$current_version")
-        up_to_date=$(echo "$response" | grep -o '"up_to_date":false\|"up_to_date":true' | cut -d':' -f2)
+    if [ -z "$current_version" ]; then
+        log_message "Failed to get game version from steam.inf" "error"
+        return 1
+    fi
 
-        if [ "$up_to_date" = "false" ]; then
-            required_version=$(echo "$response" | grep -o '"required_version":[0-9]*' | cut -d':' -f2)
+    local api_url="https://api.steampowered.com/ISteamApps/UpToDateCheck/v0001/?appid=730&version=$current_version"
+    local response=$(curl -s "$api_url")
+    local up_to_date=$(echo "$response" | grep -o '"up_to_date":false\|"up_to_date":true' | cut -d':' -f2)
+
+    if [ "$up_to_date" = "false" ]; then
+        required_version=$(echo "$response" | grep -o '"required_version":[0-9]*' | cut -d':' -f2)
+
+        if [ ! -z "$required_version" ]; then
             log_message "New version detected: $required_version (current: $current_version)" "running"
-			log_message "Countdown initiated to restart server: $UPDATE_COUNTDOWN_TIME seconds" "running"
+            log_message "Countdown initiated to restart server: $UPDATE_COUNTDOWN_TIME seconds" "running"
 
             if [ ! -z "$UPDATE_COMMANDS" ]; then
                 start_update_countdown "$required_version"
             fi
+        else
+            log_message "Failed to get required version from API response" "error"
+            return 1
         fi
-    else
-        log_message "Version file not found" "error"
     fi
 }
 
