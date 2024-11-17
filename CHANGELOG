@@ -2,6 +2,7 @@
 
 - feat: Add environment default value setter to ensure required variables are maintained
 - chore: Auto-Restart game version checker now uses different file
+- chore: Changed max slot number to 64
 - fix: Auto-Restart now initialize game version to file if not present
 - remove: Unused source include in this version of the egg
 
