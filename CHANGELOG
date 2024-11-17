@@ -3,6 +3,7 @@
 - feat: Add environment default value setter to ensure required variables are maintained
 - chore: Auto-Restart game version checker now uses different file
 - chore: Changed max slot number to 64
+- chore: Changed Auto-Restart API KEY to match the correct length
 - fix: Auto-Restart now initialize game version to file if not present
 - fix: Prevent Auto-Restart from validating during countdown if an update is in progress
 - remove: Unused source include in this version of the egg
