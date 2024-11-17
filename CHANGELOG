@@ -1,3 +1,9 @@
+-- update - 2024.11.17
+
+- chore: Auto-Restart game version checker now uses different file
+- fix: Auto-Restart now initialize game version to file if not present
+- remove: Unused source include in this version of the egg
+
 -- update - 2024.11.16
 
 - fix: The Steam token mask removed other matching patterns aswell from being visible
