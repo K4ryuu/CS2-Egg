@@ -1,19 +1,25 @@
 #!/bin/bash
 VERSION_FILE="./game/versions.txt"
 SERVER_RUNNING=0
+UPDATE_IN_PROGRESS=0
 
 start_update_countdown() {
     local required_version="$1"
     local start_time=$(date +%s)
 
+    # Set update in progress flag
+    UPDATE_IN_PROGRESS=1
+
     # Validate variables first
     if [ -z "$PTERODACTYL_API_TOKEN" ] || [ -z "$P_SERVER_UUID" ] || [ -z "$PTERODACTYL_URL" ]; then
         log_message "Missing required API variables" "error"
+        UPDATE_IN_PROGRESS=0
         return 1
     fi
 
     if [ -z "$UPDATE_COMMANDS" ] || [ -z "$UPDATE_COUNTDOWN_TIME" ]; then
         log_message "Missing update configuration variables" "error"
+        UPDATE_IN_PROGRESS=0
         return 1
     fi
 
@@ -44,12 +50,13 @@ start_update_countdown() {
             local http_code=${response: -3}
             if [[ $http_code -lt 200 || $http_code -gt 299 ]]; then
                 log_message "Failed to send command by Auto-Restart: HTTP $http_code" "error"
+                UPDATE_IN_PROGRESS=0
                 return 1
             fi
         fi
     done <<< "$commands"
 
-	log_message "Restarting server by Auto-Restart..." "running"
+    log_message "Restarting server by Auto-Restart..." "running"
 
     # Server restart when countdown reaches 0
     local restart_response=$(curl -s -w "%{http_code}" "$PTERODACTYL_URL/api/client/servers/$P_SERVER_UUID/power" \
@@ -62,6 +69,7 @@ start_update_countdown() {
     local restart_code=${restart_response: -3}
     if [[ $restart_code -lt 200 || $restart_code -gt 299 ]]; then
         log_message "Failed to restart server: HTTP $restart_code" "error"
+        UPDATE_IN_PROGRESS=0
         return 1
     fi
 }
@@ -80,6 +88,11 @@ get_game_version() {
 }
 
 check_server_version() {
+    # If update is already in progress, skip check
+    if [ "$UPDATE_IN_PROGRESS" -eq 1 ]; then
+        return 0
+    fi
+
     local current_version=$(get_game_version)
 
     if [ -z "$current_version" ]; then
@@ -109,9 +122,9 @@ check_server_version() {
 }
 
 version_check_loop() {
-	local auto_restart=${UPDATE_AUTO_RESTART:-0}
-	while [ $auto_restart -eq 1 ] && [ $SERVER_RUNNING -eq 1 ]; do
-		sleep "${VERSION_CHECK_INTERVAL:-60}"
-		check_server_version
-	done
+    local auto_restart=${UPDATE_AUTO_RESTART:-0}
+    while [ $auto_restart -eq 1 ] && [ $SERVER_RUNNING -eq 1 ] && [ $UPDATE_IN_PROGRESS -eq 0 ]; do
+        sleep "${VERSION_CHECK_INTERVAL:-60}"
+        check_server_version
+    done
 }
