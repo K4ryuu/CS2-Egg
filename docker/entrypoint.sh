@@ -1,5 +1,6 @@
 #!/bin/bash
 
+source /utils/environment.sh # Ensure environment variables are set properly
 source /scripts/cleanup.sh
 source /scripts/update.sh
 source /scripts/filter.sh
