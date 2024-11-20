@@ -5,60 +5,58 @@ UPDATE_IN_PROGRESS=0
 
 start_update_countdown() {
     local required_version="$1"
-    local start_time=$(date +%s)
 
     # Set update in progress flag
     UPDATE_IN_PROGRESS=1
 
-    # Validate variables first
+    # Validate essential API variables
     if [ -z "$PTERODACTYL_API_TOKEN" ] || [ -z "$P_SERVER_UUID" ] || [ -z "$PTERODACTYL_URL" ]; then
         log_message "Missing required API variables" "error"
         UPDATE_IN_PROGRESS=0
         return 1
     fi
 
-    if [ -z "$UPDATE_COMMANDS" ] || [ -z "$UPDATE_COUNTDOWN_TIME" ]; then
-        log_message "Missing update configuration variables" "error"
-        UPDATE_IN_PROGRESS=0
-        return 1
-    fi
+    # If UPDATE_COMMANDS exists, process countdown and commands
+    if [ ! -z "$UPDATE_COMMANDS" ] && [ ! -z "$UPDATE_COUNTDOWN_TIME" ]; then
+        local start_time=$(date +%s)
+        local commands=$(echo "$UPDATE_COMMANDS" | jq -r 'to_entries | .[] | .key + " " + .value')
 
-    local commands=$(echo "$UPDATE_COMMANDS" | jq -r 'to_entries | .[] | .key + " " + .value')
-
-    while IFS=' ' read -r seconds command || [ -n "$seconds" ]; do
-        if [ "$seconds" -gt "$UPDATE_COUNTDOWN_TIME" ]; then
-            continue
-        fi
-
-        # Calculate wait time from start
-        local current_time=$(date +%s)
-        local elapsed=$((current_time - start_time))
-        local target_wait=$((UPDATE_COUNTDOWN_TIME - seconds))
-        local wait_time=$((target_wait - elapsed))
-
-        if [ "$wait_time" -gt 0 ]; then
-            sleep $wait_time
-        fi
-
-        if [ -n "$command" ]; then
-            local response=$(curl -s -w "%{http_code}" -X POST \
-                -H "Authorization: Bearer $PTERODACTYL_API_TOKEN" \
-                -H "Content-Type: application/json" \
-                --data "{\"command\": \"$command\"}" \
-                "$PTERODACTYL_URL/api/client/servers/$P_SERVER_UUID/command")
-
-            local http_code=${response: -3}
-            if [[ $http_code -lt 200 || $http_code -gt 299 ]]; then
-                log_message "Failed to send command by Auto-Restart: HTTP $http_code" "error"
-                UPDATE_IN_PROGRESS=0
-                return 1
+        while IFS=' ' read -r seconds command || [ -n "$seconds" ]; do
+            if [ "$seconds" -gt "$UPDATE_COUNTDOWN_TIME" ]; then
+                continue
             fi
-        fi
-    done <<< "$commands"
+
+            local current_time=$(date +%s)
+            local elapsed=$((current_time - start_time))
+            local target_wait=$((UPDATE_COUNTDOWN_TIME - seconds))
+            local wait_time=$((target_wait - elapsed))
+
+            if [ "$wait_time" -gt 0 ]; then
+                sleep $wait_time
+            fi
+
+            if [ -n "$command" ]; then
+                local response=$(curl -s -w "%{http_code}" -X POST \
+                    -H "Authorization: Bearer $PTERODACTYL_API_TOKEN" \
+                    -H "Content-Type: application/json" \
+                    --data "{\"command\": \"$command\"}" \
+                    "$PTERODACTYL_URL/api/client/servers/$P_SERVER_UUID/command")
+
+                local http_code=${response: -3}
+                if [[ $http_code -lt 200 || $http_code -gt 299 ]]; then
+                    log_message "Failed to send command by Auto-Restart: HTTP $http_code" "error"
+                    UPDATE_IN_PROGRESS=0
+                    return 1
+                fi
+            fi
+        done <<< "$commands"
+    else
+        sleep $UPDATE_COUNTDOWN_TIME
+    fi
 
     log_message "Restarting server by Auto-Restart..." "running"
 
-    # Server restart when countdown reaches 0
+    # Server restart
     local restart_response=$(curl -s -w "%{http_code}" "$PTERODACTYL_URL/api/client/servers/$P_SERVER_UUID/power" \
         -H 'Accept: application/json' \
         -H 'Content-Type: application/json' \
@@ -118,6 +116,8 @@ check_server_version() {
             log_message "Failed to get required version from API response" "error"
             return 1
         fi
+    else
+        log_message "Server is up to date. Current version: $current_version" "debug"
     fi
 }
 

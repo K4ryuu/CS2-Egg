@@ -216,7 +216,7 @@
       "default_value": "{\"300\": \"say Attention: The server will update in 5 minutes. Please prepare to save your progress.\", \"60\": \"say Heads up: The server will update in 1 minute. Save your progress now.\", \"30\": \"say Warning: The server update is happening in 30 seconds. Get ready!\", \"10\": \"say Final notice: The server will update in 10 seconds. Please stand by.\", \"3\": \"say Final countdown: Update in 3 seconds. Hold tight!\", \"2\": \"say Final countdown: Update in 2 seconds. Almost there!\", \"1\": \"say Final countdown: Update in 1 second. Restarting now!\"}",
       "user_viewable": true,
       "user_editable": true,
-      "rules": "string",
+      "rules": "nullable|string",
       "field_type": "text"
     },
     {
@@ -227,6 +227,26 @@
       "user_viewable": true,
       "user_editable": true,
       "rules": "required|integer|min:1",
+      "field_type": "text"
+    },
+    {
+      "name": "Egg - File Logging",
+      "description": "Log Egg messages to /egg.log, which is stored for 48 hours.",
+      "env_variable": "LOG_FILE_ENABLED",
+      "default_value": "0",
+      "user_viewable": false,
+      "user_editable": false,
+      "rules": "required|boolean",
+      "field_type": "text"
+    },
+    {
+      "name": "Egg - Log Level",
+      "description": "The log level for the Egg to show in the console and log file.",
+      "env_variable": "LOG_LEVEL",
+      "default_value": "INFO",
+      "user_viewable": false,
+      "user_editable": false,
+      "rules": "required|string|in:DEBUG,INFO,WARNING,ERROR",
       "field_type": "text"
     }
   ]

@@ -43,21 +43,11 @@ cleanup() {
     if [ "$CLEANUP_ENABLED" = "1" ]; then
         log_message "Starting cleanup..." "running"
 
-        GAME_DIRECTORY="./game/csgo"
-        OUTPUT_DIR="./game/csgo/addons"
-        TEMP_DIR="./temps"
-        LOG_FILE="./game/startup_log.txt"
-        VERSION_FILE="./game/versions.txt"
-
-        rm -f "$LOG_FILE"
-
         BACKUP_ROUND_PURGE_INTERVAL=24
         DEMO_PURGE_INTERVAL=168
         CSS_JUNK_PURGE_INTERVAL=72
         ACCELERATOR_DUMPS_DIR="$OUTPUT_DIR/AcceleratorCS2/dumps"
         ACCELERATOR_DUMP_PURGE_INTERVAL=168
-
-        mkdir -p "$TEMP_DIR"
 
         purge_files "$GAME_DIRECTORY" "backup_round*.txt" $BACKUP_ROUND_PURGE_INTERVAL "Logs"
         purge_files "$GAME_DIRECTORY" "*.dem" $DEMO_PURGE_INTERVAL "Demos"
