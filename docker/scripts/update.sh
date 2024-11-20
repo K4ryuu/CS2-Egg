@@ -7,11 +7,7 @@ cleanup_and_update() {
     GAME_DIRECTORY="./game/csgo"
     OUTPUT_DIR="./game/csgo/addons"
     TEMP_DIR="./temps"
-    LOG_FILE="./game/startup_log.txt"
     VERSION_FILE="./game/versions.txt"
-
-    # Delete previous log file if exists
-    rm -f "$LOG_FILE"
 
     if [ "$CLEANUP_ENABLED" = "1" ]; then
         cleanup
@@ -21,6 +17,8 @@ cleanup_and_update() {
     if [ ! -f "$VERSION_FILE" ]; then
         touch "$VERSION_FILE"
     fi
+
+    mkdir -p "$TEMP_DIR"
 
     if [ "$METAMOD_AUTOUPDATE" = "1" ] || ([ ! -d "$OUTPUT_DIR/metamod" ] && [ "$CSS_AUTOUPDATE" = "1" ]); then
         update_metamod

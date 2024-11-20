@@ -16,3 +16,7 @@ export CSS_AUTOUPDATE=${CSS_AUTOUPDATE:-0}               # Enable CounterStrikeS
 export CLEANUP_ENABLED=${CLEANUP_ENABLED:-0}              # Enable cleanup of old files
 export ENABLE_FILTER=${ENABLE_FILTER:-0}                  # Enable message filtering
 export FILTER_PREVIEW_MODE=${FILTER_PREVIEW_MODE:-0}      # Preview filtered messages
+
+# Logging configuration
+export LOG_LEVEL=${LOG_LEVEL:-"INFO"}                     # Log level
+export LOG_FILE_ENABLED=${LOG_FILE_ENABLED:-0}            # Enable logging to file
