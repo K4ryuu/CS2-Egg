@@ -1,9 +1,9 @@
 -- update - 2024.11.18
 
-- feat: Added option to save egg logs to file with a 48 hour rotation
-- feat: Added option to change log level for console and file log messages
-- upgrade: Allowing the countdown command to be empty
-- remove: Some redundant codes
+- feat: Added option to save egg logs to a file with a 48-hour rotation
+- feat: Added option to change the log level for console and file log messages
+- upgrade: Allowed the countdown command to be empty
+- remove: Removed some redundant code
 
 -- update - 2024.11.17
 
