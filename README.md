@@ -16,6 +16,8 @@
     <br />
     <a href="https://github.com/K4ryuu/CS2-Egg/blob/dev/pterodactyl/kitsunelab-cs2-egg.json">Download</a>
     ·
+    <a href="https://github.com/K4ryuu/CS2-Egg/blob/beta/pterodactyl/kitsunelab-cs2-egg.json">Download Beta</a>
+    ·
     <a href="https://github.com/K4ryuu/CS2-Egg/issues/new?assignees=KitsuneLab-Development&labels=bug&projects=&template=bug_report.md&title=%5BBUG%5D">Report Bug</a>
     ·
     <a href="https://github.com/K4ryuu/CS2-Egg/issues/new?assignees=KitsuneLab-Development&labels=enhancement&projects=&template=feature_request.md&title=%5BREQ%5D">Request Feature</a>
