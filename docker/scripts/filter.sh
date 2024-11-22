@@ -52,11 +52,24 @@ EOL
 handle_server_output() {
     local line="$1"
 
-    # Early return for empty lines or if filter disabled
-    [[ -z "$line" || "${ENABLE_FILTER:-0}" != "1" ]] && {
+    # Early return for empty lines
+    [[ -z "$line" ]] && {
         printf '%s\n' "$line"
         return
     }
+
+    # Check for Steam connection success and start version check if needed
+    if [[ "$line" == "SV:  Connection to Steam servers successful." && "${UPDATE_AUTO_RESTART:-0}" -eq 1 && "$VERSION_CHECK_STARTED" -eq 0 ]]; then
+        VERSION_CHECK_STARTED=1
+        log_message "Auto-Restart enabled. The server will be restarted on game update detection." "running"
+        version_check_loop &
+    fi
+
+    # Skip filtering if disabled
+    if [ "${ENABLE_FILTER:-0}" != "1" ]; then
+        printf '%s\n' "$line"
+        return
+    fi
 
     # Check for matches
     local blocked=false

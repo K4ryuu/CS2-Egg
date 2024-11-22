@@ -93,6 +93,6 @@ $MODIFIED_STARTUP 2>&1 | while IFS= read -r line; do
 done
 
 # Kill all background processes
-jobs -p | xargs -r kill
+pkill -P $$ 2>/dev/null || true
 
 log_message "Server has stopped successfully." "success"
