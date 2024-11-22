@@ -106,8 +106,6 @@ cleanup_and_update() {
         update_metamod
     fi
 
-    configure_metamod
-
     if [ "${CSS_AUTOUPDATE:-0}" = "1" ]; then
         update_addon "roflmuffin/CounterStrikeSharp" "$OUTPUT_DIR" "css" "CSS"
     fi
@@ -186,22 +184,21 @@ update_metamod() {
 
 configure_metamod() {
     local GAMEINFO_FILE="/home/container/game/csgo/gameinfo.gi"
-    local METAMOD_ENTRY=$'\t\t\tGame\tcsgo/addons/metamod'
+    local GAMEINFO_ENTRY="			Game	csgo/addons/metamod"
 
-    if [ ! -f "${GAMEINFO_FILE}" ]; then
-        log_message "gameinfo.gi not found!" "error"
-        return 1
-    fi
-
-    # Check if metamod is already configured
-    if ! grep -q "Game[[:blank:]]*csgo\/addons\/metamod" "$GAMEINFO_FILE"; then
-        # Find the line after which to insert
-        if ! sed -i "/Game_LowViolence/a\\${METAMOD_ENTRY}" "$GAMEINFO_FILE" 2>/dev/null; then
-            log_message "Failed to configure MetaMod in gameinfo.gi" "error"
-            return 1
+    if [ -f "${GAMEINFO_FILE}" ]; then
+        if ! grep -q "Game[[:blank:]]*csgo\/addons\/metamod" "$GAMEINFO_FILE"; then # match any whitespace
+            awk -v new_entry="$GAMEINFO_ENTRY" '
+                BEGIN { found=0; }
+                // {
+                    if (found) {
+                        print new_entry;
+                        found=0;
+                    }
+                    print;
+                }
+                /Game_LowViolence/ { found=1; }
+            ' "$GAMEINFO_FILE" > "$GAMEINFO_FILE.tmp" && mv "$GAMEINFO_FILE.tmp" "$GAMEINFO_FILE"
         fi
-        log_message "MetaMod configuration added to gameinfo.gi" "success"
-    else
-        log_message "MetaMod already configured in gameinfo.gi" "debug"
     fi
 }
