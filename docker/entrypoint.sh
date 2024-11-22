@@ -65,6 +65,8 @@ if [ ! -z ${SRCDS_APPID} ] && [ ${SRCDS_STOP_UPDATE:-0} -eq 0 ]; then
     # Update steamclient.so files
     cp -f ./steamcmd/linux32/steamclient.so ./.steam/sdk32/steamclient.so
     cp -f ./steamcmd/linux64/steamclient.so ./.steam/sdk64/steamclient.so
+
+    configure_metamod
 fi
 
 # Run cleanup and setup message filter
