@@ -1,3 +1,27 @@
+-- update - 2024.11.21 - Optimisation Update
+
+- feat: Junk cleaner now shows the freed space, duration and overall counter
+- feat: Message filter now supports @prefix for exact pattern matching
+- feat: Message filter now displays detailed pattern load statistics on startup
+- feat: Patterns can now have replacement values for masking sensitive data
+- optimise: Update system now has centralized download and extract handling
+- optimise: Changed to startup only log cleanup for better performance
+- optimise: Junk cleaner now uses a better way to find and eliminate the files
+- optimise: Removed some redundant validations
+- optimise: Message filter now processes patterns only once during initialization
+- optimise: Pattern matching now uses hash maps for faster lookups
+- optimise: Message filter now has early return for empty messages
+- optimise: Added retry mechanism for downloads with proper error handling
+- optimise: Version checking is now centralized and more efficient
+- optimise: Improved file operations with less I/O usage
+- optimise: Replaced awk with sed for better performance
+- optimise: Muted unnecessary file operation outputs
+- fix: Metamod gameinfo update issues
+- fix: All values have now a default value to prevent issues by missing variables
+- fix: Added proper error handling and signal management
+- chore: Junk cleaner wont show the exact deleted files except in debug mode for less I/O operations
+- chore: Steam token masking is now integrated into the pattern system
+
 -- update - 2024.11.18
 
 - feat: Added option to save egg logs to a file with a 48-hour rotation
