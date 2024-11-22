@@ -71,6 +71,11 @@ fi
 cleanup_and_update
 setup_message_filter
 
+if [ "${UPDATE_AUTO_RESTART:-0}" -eq 1 ]; then
+    log_message "Auto-restart is enabled. Server will restart automatically if a new version is detected." "running"
+    version_check_loop &
+fi
+
 # Prepare startup command
 MODIFIED_STARTUP=$(eval echo $(echo ${STARTUP} | sed -e 's/{{/${/g' -e 's/}}/}/g'))
 MODIFIED_STARTUP="unbuffer -p ${MODIFIED_STARTUP}"
