@@ -7,7 +7,7 @@
   "exported_at": "2024-06-13T21:31:46+02:00",
   "name": "KitsuneLab CS2 Egg @ K4ryuu",
   "author": "contact@kitsune-lab.com",
-  "description": "SteamRT3 Platform image for Pterodactyl CS2 servers by 1zc, which is modified and tweaked with custom scripts by K4ryuu.",
+  "description": "The SteamRT3 Platform image for Pterodactyl CS2 servers is packed with numerous features, designed to simplify server management and reduce hassle.",
   "features": null,
   "docker_images": {
     "KitsuneLab CS2": "docker.io/sples1/k4ryuu-cs2:latest",
