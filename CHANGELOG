@@ -16,11 +16,11 @@
 - optimise: Improved file operations with less I/O usage
 - optimise: Replaced awk with sed for better performance
 - optimise: Muted unnecessary file operation outputs
+- optimise: Junk cleaner wont show the exact deleted files except in debug mode for less I/O operations
+- optimise: Steam token masking is now integrated into the pattern system
 - fix: Metamod gameinfo update issues
 - fix: All values have now a default value to prevent issues by missing variables
 - fix: Added proper error handling and signal management
-- chore: Junk cleaner wont show the exact deleted files except in debug mode for less I/O operations
-- chore: Steam token masking is now integrated into the pattern system
 
 -- update - 2024.11.18
 
