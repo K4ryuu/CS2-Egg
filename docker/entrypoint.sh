@@ -1,7 +1,5 @@
 #!/bin/bash
 
-source /scripts/install.sh
-source /scripts/sync.sh
 source /scripts/cleanup.sh
 source /scripts/update.sh
 source /scripts/filter.sh
@@ -45,9 +43,6 @@ build_steamcmd_command() {
 }
 
 # Initial setup and sync
-install_steamcmd
-sync_files
-sync_cfg_files
 clean_old_logs
 
 # Server update process
