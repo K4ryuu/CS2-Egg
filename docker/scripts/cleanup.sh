@@ -1,63 +1,90 @@
 #!/bin/bash
 source /utils/logging.sh
 
-is_file_older_than() {
-    local file="$1"
-    local hours="$2"
-    local current_time=$(date +%s)
-    local file_time=$(date -r "$file" +%s)
-    local age=$(( (current_time - file_time) / 3600 ))
-    [ "$age" -gt "$hours" ]
-}
-
-safe_delete() {
-    local file="$1"
-    local category="$2"
-    rm -f "$file"
-    log_message "Deleted $category file: $file" "success"
-}
-
-purge_files() {
-    local directory="$1"
-    local pattern="$2"
-    local interval="$3"
-    local category="$4"
-    local count=0
-
-    if [ -d "$directory" ]; then
-        local files=$(find "$directory" -maxdepth 1 -type f -name "$pattern")
-        for file in $files; do
-            if [ -f "$file" ] && is_file_older_than "$file" "$interval"; then
-                safe_delete "$file" "$category"
-                ((count++))
-            fi
-        done
-    fi
-
-    if [ "$count" -gt 0 ]; then
-        log_message "Deleted $count files in category: $category" "success"
+format_size() {
+    local size=$1
+    if [ $size -ge 1073741824 ]; then
+        printf "%.2f GB" $(echo "scale=2; $size/1073741824" | bc)
+    elif [ $size -ge 1048576 ]; then
+        printf "%.2f MB" $(echo "scale=2; $size/1048576" | bc)
+    elif [ $size -ge 1024 ]; then
+        printf "%.2f KB" $(echo "scale=2; $size/1024" | bc)
+    else
+        printf "%d B" $size
     fi
 }
 
 cleanup() {
-    if [ "$CLEANUP_ENABLED" = "1" ]; then
-        log_message "Starting cleanup..." "running"
+    log_message "Starting cleanup..." "running"
 
-        BACKUP_ROUND_PURGE_INTERVAL=24
-        DEMO_PURGE_INTERVAL=168
-        CSS_JUNK_PURGE_INTERVAL=72
-        ACCELERATOR_DUMPS_DIR="$OUTPUT_DIR/AcceleratorCS2/dumps"
-        ACCELERATOR_DUMP_PURGE_INTERVAL=168
+    # Configuration
+    local BACKUP_ROUND_PURGE_INTERVAL=24
+    local DEMO_PURGE_INTERVAL=168
+    local CSS_JUNK_PURGE_INTERVAL=72
+    local ACCELERATOR_DUMP_PURGE_INTERVAL=168
+    local ACCELERATOR_DUMPS_DIR="$OUTPUT_DIR/AcceleratorCS2/dumps"
 
-        purge_files "$GAME_DIRECTORY" "backup_round*.txt" $BACKUP_ROUND_PURGE_INTERVAL "Logs"
-        purge_files "$GAME_DIRECTORY" "*.dem" $DEMO_PURGE_INTERVAL "Demos"
-        purge_files "$GAME_DIRECTORY/addons/counterstrikesharp/logs" "*.txt" $CSS_JUNK_PURGE_INTERVAL "CSS Logs"
+    # Statistics for debug
+    declare -A stats=(
+        ["backup_rounds"]=0
+        ["demos"]=0
+        ["css_logs"]=0
+        ["accelerator_logs"]=0
+        ["accelerator_dumps"]=0
+    )
 
-        if [ -d "$ACCELERATOR_DUMPS_DIR" ]; then
-            purge_files "$ACCELERATOR_DUMPS_DIR" "*.dmp.txt" $ACCELERATOR_DUMP_PURGE_INTERVAL "Accelerator Logs"
-            purge_files "$ACCELERATOR_DUMPS_DIR" "*.dmp" $ACCELERATOR_DUMP_PURGE_INTERVAL "Accelerator Dumps"
+    local start_time=$(date +%s)
+    local total_size=0
+    local deleted_count=0
+
+    # Function to log file deletion with size
+    log_deletion() {
+        local file="$1"
+        local category="$2"
+        local size=$(stat -f %z "$file" 2>/dev/null || stat -c %s "$file" 2>/dev/null)
+        total_size=$((total_size + size))
+        ((stats[$category]++))
+        ((deleted_count++))
+        log_message "Deleted ${category}: ${file##*/} ($(format_size $size))" "debug"
+    }
+
+    # Find and delete old files
+    while IFS= read -r -d '' file; do
+        if [[ $file == *"backup_round"* ]]; then
+            log_deletion "$file" "backup_rounds"
+        elif [[ $file == *.dem ]]; then
+            log_deletion "$file" "demos"
+        elif [[ $file == */addons/counterstrikesharp/logs/* ]]; then
+            log_deletion "$file" "css_logs"
         fi
+        rm -f "$file"
+    done < <(find "$GAME_DIRECTORY" \( \
+        -name "backup_round*.txt" -mmin +$((BACKUP_ROUND_PURGE_INTERVAL*60)) -o \
+        -name "*.dem" -mmin +$((DEMO_PURGE_INTERVAL*60)) -o \
+        \( -path "*/addons/counterstrikesharp/logs/*.txt" -mmin +$((CSS_JUNK_PURGE_INTERVAL*60)) \) \
+        \) -print0)
 
-        log_message "Cleanup completed." "success"
+    # Handle Accelerator logs separately only if directory exists
+    if [ -d "$ACCELERATOR_DUMPS_DIR" ]; then
+        while IFS= read -r -d '' file; do
+            if [[ $file == *.dmp.txt ]]; then
+                log_deletion "$file" "accelerator_logs"
+            else
+                log_deletion "$file" "accelerator_dumps"
+            fi
+            rm -f "$file"
+        done < <(find "$ACCELERATOR_DUMPS_DIR" \( \
+            -name "*.dmp.txt" -o \
+            -name "*.dmp" \
+            \) -mmin +$((ACCELERATOR_DUMP_PURGE_INTERVAL*60)) -print0)
+    fi
+
+    local end_time=$(date +%s)
+    local duration=$((end_time - start_time))
+
+    if ((deleted_count > 0)); then
+        log_message "Cleanup completed successfully! Freed $(format_size $total_size) across $deleted_count files in $duration seconds." "success"
+    else
+        log_message "Cleanup completed. No files were deleted." "success"
     fi
 }

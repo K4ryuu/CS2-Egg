@@ -2,157 +2,12 @@
 source /utils/logging.sh
 source /utils/version.sh
 
-cleanup_and_update() {
-    # Directories
-    GAME_DIRECTORY="./game/csgo"
-    OUTPUT_DIR="./game/csgo/addons"
-    TEMP_DIR="./temps"
-    VERSION_FILE="./game/versions.txt"
-
-    if [ "$CLEANUP_ENABLED" = "1" ]; then
-        cleanup
-    fi
-
-    # Ensure versions.txt exists
-    if [ ! -f "$VERSION_FILE" ]; then
-        touch "$VERSION_FILE"
-    fi
-
-    mkdir -p "$TEMP_DIR"
-
-    if [ "$METAMOD_AUTOUPDATE" = "1" ] || ([ ! -d "$OUTPUT_DIR/metamod" ] && [ "$CSS_AUTOUPDATE" = "1" ]); then
-        update_metamod
-    fi
-
-    if [ "$CSS_AUTOUPDATE" = "1" ]; then
-        log_message "Updating CounterStrikeSharp..." "running"
-        update_addon "roflmuffin/CounterStrikeSharp" "$OUTPUT_DIR" "css" "CSS"
-    fi
-
-    # Clean up
-    log_message "Cleaning up temporary files..." "running"
-    rm -rf "$TEMP_DIR"
-    log_message "Cleanup completed." "success"
-}
-
-update_addon() {
-    local repo="$1"
-    local output_path="$2"
-    local temp_subdir="$3"
-    local addon_name="$4"
-    local current_version
-    local new_version
-
-    mkdir -p "$output_path"
-    mkdir -p "$TEMP_DIR/$temp_subdir"
-    rm -rf "$TEMP_DIR/$temp_subdir"/*
-
-    API_URL="https://api.github.com/repos/$repo/releases/latest"
-    response=$(curl -s $API_URL)
-
-    asset_url=$(echo $response | grep -oP '"browser_download_url": "\K[^"]+' | grep 'counterstrikesharp-with-runtime-build-.*-linux-.*\.zip')
-    new_version=$(echo $response | grep -oP '"tag_name": "\K[^"]+')
-    current_version=$(get_current_version "$addon_name")
-
-    if [ "$current_version" != "$new_version" ]; then
-        log_message "New version of $addon_name available: $new_version (current: $current_version)" "running"
-
-        if [ -z "$asset_url" ]; then
-            log_message "Failed to find the asset URL for $repo. Skipping update." "error"
-            return 1
-        fi
-
-        file_name=$(basename $asset_url)
-        log_message "Downloading $file_name..." "running"
-
-        curl -fsSL -m 300 -o "$TEMP_DIR/$temp_subdir/$file_name" "$asset_url"
-        if [ $? -ne 0 ]; then
-            log_message "Failed to download $file_name from $asset_url" "error"
-            return 1
-        fi
-
-        if [ ! -s "$TEMP_DIR/$temp_subdir/$file_name" ]; then
-            log_message "Downloaded file $file_name is empty or not found." "error"
-            return 1
-        fi
-
-        log_message "Extracting $file_name..." "running"
-        unzip -qq -o "$TEMP_DIR/$temp_subdir/$file_name" -d "$TEMP_DIR/$temp_subdir"
-
-        if [ $? -ne 0 ]; then
-            log_message "Failed to extract $file_name. Skipping update." "error"
-            return 1
-        fi
-
-        log_message "Copying files to $output_path..." "running"
-        cp -r "$TEMP_DIR/$temp_subdir/addons/." "$output_path"
-
-        update_version_file "$addon_name" "$new_version"
-        log_message "Update of $repo completed successfully." "success"
-    else
-        log_message "No new version of $addon_name available. Skipping update." "success"
-    fi
-}
-
-update_metamod() {
-    if [ "$METAMOD_AUTOUPDATE" = "1" ] || ([ ! -d "$OUTPUT_DIR/metamod" ] && [ "$CSS_AUTOUPDATE" = "1" ]); then
-        if [ ! -d "$OUTPUT_DIR/metamod" ]; then
-            log_message "Metamod not installed. Installing Metamod..." "running"
-        else
-            log_message "Updating Metamod..." "running"
-        fi
-
-        metamod_version=$(curl -sL https://mms.alliedmods.net/mmsdrop/2.0/ | grep -oP 'href="\K(mmsource-[^"]*-linux\.tar\.gz)' | tail -1)
-
-        if [ -z "$metamod_version" ]; then
-            log_message "Failed to fetch the Metamod version." "error"
-            exit 1
-        fi
-
-        full_url="https://mms.alliedmods.net/mmsdrop/2.0/$metamod_version"
-        new_version=$(echo $metamod_version | grep -oP 'git\d+')
-        current_version=$(get_current_version "Metamod")
-
-        if [ "$current_version" != "$new_version" ]; then
-            log_message "New version of Metamod available: $new_version (current: $current_version)" "running"
-            log_message "Downloading Metamod from URL: $full_url" "running"
-
-            http_code=$(curl -s -L -w "%{http_code}" -o "$TEMP_DIR/metamod.tar.gz" "$full_url")
-            if [ "$http_code" -ne 200 ]; then
-                log_message "Failed to download Metamod from $full_url. HTTP status code: $http_code" "error"
-                return 1
-            fi
-
-            if [ ! -s "$TEMP_DIR/metamod.tar.gz" ]; then
-                log_message "Downloaded Metamod file is empty or not found." "error"
-                return 1
-            fi
-
-            mkdir -p "$TEMP_DIR/metamod"
-            log_message "Extracting Metamod archive..." "running"
-
-            tar -xzf "$TEMP_DIR/metamod.tar.gz" -C "$TEMP_DIR/metamod" || {
-                log_message "Failed to extract Metamod archive. Skipping update." "error"
-                return 1
-            }
-
-            log_message "Copying files to $OUTPUT_DIR..." "running"
-            cp -rf "$TEMP_DIR/metamod/addons/." "$OUTPUT_DIR/"
-
-            update_version_file "Metamod" "$new_version"
-            log_message "Metamod update completed successfully." "success"
-        else
-            log_message "No new version of Metamod available. Skipping update." "success"
-        fi
-    fi
-}
-
-update_counterstrikesharp() {
-    if [ "$CSS_AUTOUPDATE" = "1" ]; then
-        log_message "Updating CounterStrikeSharp..." "running"
-        update_addon "roflmuffin/CounterStrikeSharp" "$OUTPUT_DIR" "css" "CSS"
-    fi
-}
+# Directories
+GAME_DIRECTORY="./game/csgo"
+OUTPUT_DIR="./game/csgo/addons"
+TEMP_DIR="./temps"
+ACCELERATOR_DUMPS_DIR="$OUTPUT_DIR/AcceleratorCS2/dumps"
+VERSION_FILE="./game/versions.txt"
 
 get_current_version() {
     local addon="$1"
@@ -170,5 +25,183 @@ update_version_file() {
         sed -i "s/^$addon=.*/$addon=$new_version/" "$VERSION_FILE"
     else
         echo "$addon=$new_version" >> "$VERSION_FILE"
+    fi
+}
+
+# Centralized download and extract function
+handle_download_and_extract() {
+    local url="$1"
+    local output_file="$2"
+    local extract_dir="$3"
+    local file_type="$4"  # "zip" or "tar.gz"
+
+    log_message "Downloading from: $url" "debug"
+
+    # Download with timeout and retry
+    local max_retries=3
+    local retry=0
+    while [ $retry -lt $max_retries ]; do
+        if curl -fsSL -m 300 -o "$output_file" "$url"; then
+            break
+        fi
+        ((retry++))
+        log_message "Download attempt $retry failed, retrying..." "error"
+        sleep 5
+    done
+
+    if [ $retry -eq $max_retries ]; then
+        log_message "Failed to download after $max_retries attempts" "error"
+        return 1
+    fi
+
+    if [ ! -s "$output_file" ]; then
+        log_message "Downloaded file is empty" "error"
+        return 1
+    fi
+
+    log_message "Extracting to $extract_dir" "debug"
+    mkdir -p "$extract_dir"
+
+    case $file_type in
+        "zip")
+            unzip -qq -o "$output_file" -d "$extract_dir" || {
+                log_message "Failed to extract zip file" "error"
+                return 1
+            }
+            ;;
+        "tar.gz")
+            tar -xzf "$output_file" -C "$extract_dir" || {
+                log_message "Failed to extract tar.gz file" "error"
+                return 1
+            }
+            ;;
+    esac
+
+    return 0
+}
+
+# Centralized version checking
+check_version() {
+    local addon="$1"
+    local current="${2:-none}"
+    local new="$3"
+
+    if [ "$current" != "$new" ]; then
+        log_message "New version of $addon available: $new (current: $current)" "running"
+        return 0
+    fi
+
+    log_message "No new version of $addon available. Current: $current" "debug"
+    return 1
+}
+
+cleanup_and_update() {
+    if [ "${CLEANUP_ENABLED:-0}" = "1" ]; then
+        cleanup
+    fi
+
+    mkdir -p "$TEMP_DIR"
+
+    if [ "${METAMOD_AUTOUPDATE:-0}" = "1" ] || ([ ! -d "$OUTPUT_DIR/metamod" ] && [ "${CSS_AUTOUPDATE:-0}" = "1" ]); then
+        update_metamod
+    fi
+
+    configure_metamod
+
+    if [ "${CSS_AUTOUPDATE:-0}" = "1" ]; then
+        update_addon "roflmuffin/CounterStrikeSharp" "$OUTPUT_DIR" "css" "CSS"
+    fi
+
+    # Clean up
+    rm -rf "$TEMP_DIR"
+}
+
+update_addon() {
+    local repo="$1"
+    local output_path="$2"
+    local temp_subdir="$3"
+    local addon_name="$4"
+    local temp_dir="$TEMP_DIR/$temp_subdir"
+
+    mkdir -p "$output_path" "$temp_dir"
+    rm -rf "$temp_dir"/*
+
+    local api_response=$(curl -s "https://api.github.com/repos/$repo/releases/latest")
+    if [ -z "$api_response" ]; then
+        log_message "Failed to get release info for $repo" "error"
+        return 1
+    fi
+
+    local asset_url=$(echo "$api_response" | grep -oP '"browser_download_url": "\K[^"]+' | grep 'counterstrikesharp-with-runtime-build-.*-linux-.*\.zip')
+    local new_version=$(echo "$api_response" | grep -oP '"tag_name": "\K[^"]+')
+    local current_version=$(get_current_version "$addon_name")
+
+    if ! check_version "$addon_name" "$current_version" "$new_version"; then
+        return 0
+    fi
+
+    if [ -z "$asset_url" ]; then
+        log_message "No suitable asset found for $repo" "error"
+        return 1
+    fi
+
+    if handle_download_and_extract "$asset_url" "$temp_dir/download.zip" "$temp_dir" "zip"; then
+        cp -r "$temp_dir/addons/." "$output_path" && \
+        update_version_file "$addon_name" "$new_version" && \
+        log_message "Update of $repo completed successfully" "success"
+        return 0
+    fi
+
+    return 1
+}
+
+update_metamod() {
+    if [ ! -d "$OUTPUT_DIR/metamod" ]; then
+        log_message "Metamod not installed. Installing Metamod..." "running"
+    fi
+
+    local metamod_version=$(curl -sL https://mms.alliedmods.net/mmsdrop/2.0/ | grep -oP 'href="\K(mmsource-[^"]*-linux\.tar\.gz)' | tail -1)
+    if [ -z "$metamod_version" ]; then
+        log_message "Failed to fetch the Metamod version" "error"
+        return 1
+    fi
+
+    local full_url="https://mms.alliedmods.net/mmsdrop/2.0/$metamod_version"
+    local new_version=$(echo "$metamod_version" | grep -oP 'git\d+')
+    local current_version=$(get_current_version "Metamod")
+
+    if ! check_version "Metamod" "$current_version" "$new_version"; then
+        return 0
+    fi
+
+    if handle_download_and_extract "$full_url" "$TEMP_DIR/metamod.tar.gz" "$TEMP_DIR/metamod" "tar.gz"; then
+        cp -rf "$TEMP_DIR/metamod/addons/." "$OUTPUT_DIR/" && \
+        update_version_file "Metamod" "$new_version" && \
+        log_message "Metamod update completed successfully" "success"
+        return 0
+    fi
+
+    return 1
+}
+
+configure_metamod() {
+    local GAMEINFO_FILE="/home/container/game/csgo/gameinfo.gi"
+    local METAMOD_ENTRY=$'\t\t\tGame\tcsgo/addons/metamod'
+
+    if [ ! -f "${GAMEINFO_FILE}" ]; then
+        log_message "gameinfo.gi not found!" "error"
+        return 1
+    fi
+
+    # Check if metamod is already configured
+    if ! grep -q "Game[[:blank:]]*csgo\/addons\/metamod" "$GAMEINFO_FILE"; then
+        # Find the line after which to insert
+        if ! sed -i "/Game_LowViolence/a\\${METAMOD_ENTRY}" "$GAMEINFO_FILE" 2>/dev/null; then
+            log_message "Failed to configure MetaMod in gameinfo.gi" "error"
+            return 1
+        fi
+        log_message "MetaMod configuration added to gameinfo.gi" "success"
+    else
+        log_message "MetaMod already configured in gameinfo.gi" "debug"
     fi
 }
