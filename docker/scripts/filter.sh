@@ -2,97 +2,108 @@
 source /utils/logging.sh
 
 setup_message_filter() {
-    if [ "$ENABLE_FILTER" = "1" ]; then
-        if [ ! -f "./game/mute_messages.cfg" ]; then
-            cat <<EOL > ./game/mute_messages.cfg
-# Mute Messages Configuration File
-# Add patterns of messages to be blocked.
-# One line is one check. If the line is like "asd", then the message should be blocked if it equals "asd".
-# If the line is like ".*asd.*", then block the message if the line contains "asd" with anything before or after.
-# Example pattern to block messages containing "Certificate expires":
-# .*Certificate expires.*
-
-.*Certificate expires.*
-EOL
-            log_message "Created ./game/mute_messages.cfg with example patterns. You can modify this file to specify additional messages to mute." "running"
-        else
-            log_message "./game/mute_messages.cfg already exists. You can modify this file to specify additional messages to mute." "success"
-        fi
-
-        BASIC_PATTERNS=()
-        USER_PATTERNS=()
-
-        while IFS= read -r pattern || [[ -n "$pattern" ]]; do
-            [[ $pattern =~ ^#.*$ ]] && continue
-            [[ -z "$pattern" ]] && continue
-            USER_PATTERNS+=("$pattern")
-        done < ./game/mute_messages.cfg
-
-        log_message "Loaded ${#USER_PATTERNS[@]} user-defined patterns from ./game/mute_messages.cfg" "running"
-
-        MUTE_PATTERNS=()
-        if [ ${#BASIC_PATTERNS[@]} -gt 0 ]; then
-            MUTE_PATTERNS=("${BASIC_PATTERNS[@]}")
-        fi
-        if [ ${#USER_PATTERNS[@]} -gt 0 ]; then
-            MUTE_PATTERNS+=("${USER_PATTERNS[@]}")
-        fi
-
-        MUTE_PATTERNS=("${MUTE_PATTERNS[@]}")
-    else
+    if [ "${ENABLE_FILTER:-0}" != "1" ]; then
         log_message "Filter is disabled. No messages will be blocked." "running"
+        return
     fi
+
+    # Create default config if not exists
+    if [ ! -f "/home/container/game/mute_messages.cfg" ]; then
+        cat > "/home/container/game/mute_messages.cfg" <<'EOL'
+# Mute Messages Configuration File
+# Prefix with @ for exact match, otherwise treated as contains
+# Example: @exact match
+# Example: contains this anywhere
+Certificate expires
+EOL
+        log_message "Created default mute_messages.cfg" "running"
+    fi
+
+    # Pre-process patterns for better performance
+    declare -gA EXACT_PATTERNS=()
+    declare -gA CONTAINS_PATTERNS=()
+
+    # Add Steam token to patterns if exists
+    if [ ! -z "${STEAM_ACC}" ]; then
+        CONTAINS_PATTERNS["${STEAM_ACC}"]="********************************"
+    fi
+
+    # Process config file
+    local pattern_count=0
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        # Skip comments and empty lines
+        [[ $line =~ ^[[:space:]]*# ]] && continue
+        [[ -z "${line// }" ]] && continue
+
+        # Process pattern
+        if [[ $line == @* ]]; then
+            # Exact match
+            EXACT_PATTERNS["${line#@}"]="1"
+        else
+            # Contains match
+            CONTAINS_PATTERNS["$line"]="1"
+        fi
+        ((pattern_count++))
+    done < "./game/mute_messages.cfg"
+
+    log_message "Loaded $pattern_count filter patterns (${#EXACT_PATTERNS[@]} exact, ${#CONTAINS_PATTERNS[@]} contains). Modify mute_messages.cfg to add more." "running"
 }
 
 handle_server_output() {
     local line="$1"
-    local server_stopped=false
 
-    # Check for server running status
-    if [[ "$line" == *"Connection to Steam servers successful."* ]]; then
-        SERVER_RUNNING=1
+    # Early return for empty lines
+    [[ -z "$line" ]] && {
+        printf '%s\n' "$line"
+        return
+    }
 
-        if [ "$UPDATE_AUTO_RESTART" -eq 1 ]; then
-            if [ -z "$PTERODACTYL_API_TOKEN" ]; then
-                log_message "Version check feature is enabled but PTERODACTYL_API_TOKEN is not set." "error"
-                log_message "You can create a new token here: ${PTERODACTYL_URL}/account/api" "error"
-                UPDATE_AUTO_RESTART=0
-                return 1
-            fi
+    # Check for Steam connection success and start version check if needed
+    if [[ "$line" == "SV:  Connection to Steam servers successful." && "${UPDATE_AUTO_RESTART:-0}" -eq 1 && "$VERSION_CHECK_STARTED" -eq 0 ]]; then
+        VERSION_CHECK_STARTED=1
+        log_message "Auto-Restart enabled. The server will be restarted on game update detection." "running"
+        version_check_loop &
+    fi
 
-            version_check_loop &
-            log_message "Version check feature is enabled. The server will be restarted automatically if a new version is detected." "success"
+    # Skip filtering if disabled
+    if [ "${ENABLE_FILTER:-0}" != "1" ]; then
+        printf '%s\n' "$line"
+        return
+    fi
+
+    # Check for matches
+    local blocked=false
+    local modified_line="$line"
+
+    # Check exact matches first (faster)
+    for pattern in "${!EXACT_PATTERNS[@]}"; do
+        if [[ "$line" == "$pattern" ]]; then
+            blocked=true
+            break
         fi
-    fi
+    done
 
-    if [ "$server_stopped" = true ]; then
-        log_message "The server is shutting down..." "success"
-        server_stopped=true
-        SERVER_RUNNING=0
-    fi
-
-    # Mask the specific Steam token if it matches the given variable
-    if [[ "$line" =~ ($STEAM_ACC) ]]; then
-        line=${line//${BASH_REMATCH[1]}/${BASH_REMATCH[1]//?/*}}
-    fi
-
-    if [ "$ENABLE_FILTER" = "1" ]; then
-        BLOCKED=false
-        for pattern in "${MUTE_PATTERNS[@]}"; do
-            if [[ $line =~ $pattern ]]; then
-                if [ "$FILTER_PREVIEW_MODE" = "1" ]; then
-                    log_message "Message Block Preview: $line" "error"
+    # If not blocked, check contains patterns and do replacements
+    if [[ "$blocked" == false ]]; then
+        for pattern in "${!CONTAINS_PATTERNS[@]}"; do
+            if [[ $line == *"$pattern"* ]]; then
+                if [ -n "${CONTAINS_PATTERNS[$pattern]}" ] && [ "${CONTAINS_PATTERNS[$pattern]}" != "1" ]; then
+                    # Replace pattern with mask
+                    modified_line=${modified_line//$pattern/${CONTAINS_PATTERNS[$pattern]}}
+                else
+                    blocked=true
+                    break
                 fi
-                BLOCKED=true
-                break
             fi
         done
-        if [ "$BLOCKED" = false ] && [ -n "$line" ]; then
-            printf '%s\n' "$line"
+    fi
+
+    # Output handling
+    if [[ "$blocked" == true ]]; then
+        if [ "${FILTER_PREVIEW_MODE:-0}" = "1" ]; then
+            log_message "Blocked message: $line" "debug"
         fi
     else
-        if [ -n "$line" ]; then
-            printf '%s\n' "$line"
-        fi
+        printf '%s\n' "$modified_line"
     fi
 }

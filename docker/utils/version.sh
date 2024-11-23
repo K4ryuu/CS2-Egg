@@ -1,6 +1,4 @@
 #!/bin/bash
-VERSION_FILE="./game/versions.txt"
-SERVER_RUNNING=0
 UPDATE_IN_PROGRESS=0
 
 start_update_countdown() {
@@ -16,8 +14,7 @@ start_update_countdown() {
         return 1
     fi
 
-    # If UPDATE_COMMANDS exists, process countdown and commands
-    if [ ! -z "$UPDATE_COMMANDS" ] && [ ! -z "$UPDATE_COUNTDOWN_TIME" ]; then
+    if [ ! -z "$UPDATE_COMMANDS" ]; then
         local start_time=$(date +%s)
         local commands=$(echo "$UPDATE_COMMANDS" | jq -r 'to_entries | .[] | .key + " " + .value')
 
@@ -107,6 +104,11 @@ check_server_version() {
 
         if [ ! -z "$required_version" ]; then
             log_message "New version detected: $required_version (current: $current_version)" "running"
+
+            if [ -z "$UPDATE_COUNTDOWN_TIME" ]; then
+                UPDATE_COUNTDOWN_TIME=300
+            fi
+
             log_message "Countdown initiated to restart server: $UPDATE_COUNTDOWN_TIME seconds" "running"
 
             if [ ! -z "$UPDATE_COMMANDS" ]; then
@@ -122,9 +124,8 @@ check_server_version() {
 }
 
 version_check_loop() {
-    local auto_restart=${UPDATE_AUTO_RESTART:-0}
-    while [ $auto_restart -eq 1 ] && [ $SERVER_RUNNING -eq 1 ] && [ $UPDATE_IN_PROGRESS -eq 0 ]; do
-        sleep "${VERSION_CHECK_INTERVAL:-60}"
+    while [ ${UPDATE_AUTO_RESTART:-0} -eq 1 ] && [ $UPDATE_IN_PROGRESS -eq 0 ]; do
+        sleep "${VERSION_CHECK_INTERVAL:-300}"
         check_server_version
     done
 }
