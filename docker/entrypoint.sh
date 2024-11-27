@@ -7,40 +7,11 @@ source /scripts/filter.sh
 # Enhanced error handling
 trap 'handle_error ${LINENO} "$BASH_COMMAND"' ERR
 
+cd /home/container
+sleep 1
+
 # Get internal Docker IP
 INTERNAL_IP=$(ip route get 1 | awk '{print $NF;exit}')
-
-# Function to build SteamCMD command
-build_steamcmd_command() {
-    local login_type="$1"
-    local validate="$2"
-    local beta="$3"
-    local beta_pass="$4"
-
-    local cmd="./steamcmd/steamcmd.sh"
-
-    # Login section
-    if [ ! -z "${SRCDS_LOGIN}" ] && [ "$login_type" = "auth" ]; then
-        cmd+=" +login ${SRCDS_LOGIN} ${SRCDS_LOGIN_PASS}"
-    else
-        cmd+=" +login anonymous"
-    fi
-
-    # Common options
-    cmd+=" +force_install_dir /home/container"
-
-    # Beta handling
-    if [ ! -z "$beta" ]; then
-        cmd+=" -beta $beta"
-        [ ! -z "$beta_pass" ] && cmd+=" -betapassword $beta_pass"
-    fi
-
-    # Validate if requested
-    [ "$validate" = "1" ] && cmd+=" validate"
-
-    cmd+=" +quit"
-    echo "$cmd"
-}
 
 # Initial setup and sync
 clean_old_logs
@@ -49,15 +20,56 @@ clean_old_logs
 if [ ! -z ${SRCDS_APPID} ] && [ ${SRCDS_STOP_UPDATE:-0} -eq 0 ]; then
     log_message "Starting SteamCMD for AppID: ${SRCDS_APPID}" "running"
 
-    if [ ${SRCDS_VALIDATE:-0} -eq 1 ]; then
-        log_message "SteamCMD Validate Flag Enabled! This may overwrite custom configurations!" "error"
+    STEAMCMD=""
+    if [ ! -z ${SRCDS_BETAID} ]; then
+        if [ ! -z ${SRCDS_BETAPASS} ]; then
+            if [ ${SRCDS_VALIDATE} -eq 1 ]; then
+                log_message "SteamCMD Validate Flag Enabled! Triggered install validation for AppID: ${SRCDS_APPID}" "error"
+                log_message "THIS MAY WIPE CUSTOM CONFIGURATIONS! Please stop the server if this was not intended." "error"
+                if [ ! -z ${SRCDS_LOGIN} ]; then
+                    STEAMCMD="./steamcmd/steamcmd.sh +login ${SRCDS_LOGIN} ${SRCDS_LOGIN_PASS} +force_install_dir /home/container +app_update ${SRCDS_APPID} -beta ${SRCDS_BETAID} -betapassword ${SRCDS_BETAPASS} validate +quit"
+                else
+                    STEAMCMD="./steamcmd/steamcmd.sh +login anonymous +force_install_dir /home/container +app_update ${SRCDS_APPID} -beta ${SRCDS_BETAID} -betapassword ${SRCDS_BETAPASS} validate +quit"
+                fi
+            else
+                if [ ! -z ${SRCDS_LOGIN} ]; then
+                    STEAMCMD="./steamcmd/steamcmd.sh +login ${SRCDS_LOGIN} ${SRCDS_LOGIN_PASS} +force_install_dir /home/container +app_update ${SRCDS_APPID} -beta ${SRCDS_BETAID} -betapassword ${SRCDS_BETAPASS} +quit"
+                else
+                    STEAMCMD="./steamcmd/steamcmd.sh +login anonymous +force_install_dir /home/container +app_update ${SRCDS_APPID} -beta ${SRCDS_BETAID} -betapassword ${SRCDS_BETAPASS} +quit"
+                fi
+            fi
+        else
+            if [ ${SRCDS_VALIDATE} -eq 1 ]; then
+                if [ ! -z ${SRCDS_LOGIN} ]; then
+                    STEAMCMD="./steamcmd/steamcmd.sh +login ${SRCDS_LOGIN} ${SRCDS_LOGIN_PASS} +force_install_dir /home/container +app_update ${SRCDS_APPID} -beta ${SRCDS_BETAID} validate +quit"
+                else
+                    STEAMCMD="./steamcmd/steamcmd.sh +login anonymous +force_install_dir /home/container +app_update ${SRCDS_APPID} -beta ${SRCDS_BETAID} validate +quit"
+                fi
+            else
+                if [ ! -z ${SRCDS_LOGIN} ]; then
+                    STEAMCMD="./steamcmd/steamcmd.sh +login ${SRCDS_LOGIN} ${SRCDS_LOGIN_PASS} +force_install_dir /home/container +app_update ${SRCDS_APPID} -beta ${SRCDS_BETAID} +quit"
+                else
+                    STEAMCMD="./steamcmd/steamcmd.sh +login anonymous +force_install_dir /home/container +app_update ${SRCDS_APPID} -beta ${SRCDS_BETAID} +quit"
+                fi
+            fi
+        fi
+    else
+        if [ ${SRCDS_VALIDATE} -eq 1 ]; then
+        log_message "SteamCMD Validate Flag Enabled! Triggered install validation for AppID: ${SRCDS_APPID}" "error"
+        log_message "THIS MAY WIPE CUSTOM CONFIGURATIONS! Please stop the server if this was not intended." "error"
+            if [ ! -z ${SRCDS_LOGIN} ]; then
+                STEAMCMD="./steamcmd/steamcmd.sh +login ${SRCDS_LOGIN} ${SRCDS_LOGIN_PASS} +force_install_dir /home/container +app_update ${SRCDS_APPID} validate +quit"
+            else
+                STEAMCMD="./steamcmd/steamcmd.sh +login anonymous +force_install_dir /home/container +app_update ${SRCDS_APPID} validate +quit"
+            fi
+        else
+            if [ ! -z ${SRCDS_LOGIN} ]; then
+                STEAMCMD="./steamcmd/steamcmd.sh +login ${SRCDS_LOGIN} ${SRCDS_LOGIN_PASS} +force_install_dir /home/container +app_update ${SRCDS_APPID} +quit"
+            else
+                STEAMCMD="./steamcmd/steamcmd.sh +login anonymous +force_install_dir /home/container +app_update ${SRCDS_APPID} +quit"
+            fi
+        fi
     fi
-
-    STEAMCMD=$(build_steamcmd_command \
-        "${SRCDS_LOGIN:+auth}" \
-        "${SRCDS_VALIDATE:-0}" \
-        "${SRCDS_BETAID}" \
-        "${SRCDS_BETAPASS}")
 
     log_message "SteamCMD command: $(echo "$STEAMCMD" | sed -E 's/(\+login [^ ]+ )[^ ]+/\1****/')" "debug"
     eval ${STEAMCMD}
