@@ -1,5 +1,6 @@
 #!/bin/bash
 
+source /scripts/install.sh
 source /scripts/cleanup.sh
 source /scripts/update.sh
 source /scripts/filter.sh
@@ -14,6 +15,7 @@ sleep 1
 INTERNAL_IP=$(ip route get 1 | awk '{print $NF;exit}')
 
 # Initial setup and sync
+install_steamcmd
 clean_old_logs
 
 # Server update process

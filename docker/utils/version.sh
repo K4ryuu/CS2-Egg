@@ -83,7 +83,6 @@ get_game_version() {
 }
 
 check_server_version() {
-    # If update is already in progress, skip check
     if [ "$UPDATE_IN_PROGRESS" -eq 1 ]; then
         return 0
     fi
@@ -95,15 +94,21 @@ check_server_version() {
         return 1
     fi
 
-    local api_url="https://api.steampowered.com/ISteamApps/UpToDateCheck/v0001/?appid=730&version=$current_version"
-    local response=$(curl -s "$api_url")
-    local up_to_date=$(echo "$response" | grep -o '"up_to_date":false\|"up_to_date":true' | cut -d':' -f2)
+    local api_url="https://api.steampowered.com/ISteamApps/UpToDateCheck/v0001/?appid=730&version=$current_version&nocache=$(date +%s)"
+    local response=$(curl -s \
+        -H "Cache-Control: no-cache, no-store" \
+        -H "Pragma: no-cache" \
+        "$api_url")
+
+    local up_to_date=$(echo "$response" | jq -r '.response.up_to_date')
 
     if [ "$up_to_date" = "false" ]; then
-        required_version=$(echo "$response" | grep -o '"required_version":[0-9]*' | cut -d':' -f2)
+        local required_version=$(echo "$response" | jq -r '.response.required_version')
+        local message=$(echo "$response" | jq -r '.response.message')
 
         if [ ! -z "$required_version" ]; then
             log_message "New version detected: $required_version (current: $current_version)" "running"
+            log_message "Steam message: $message" "running"
 
             if [ -z "$UPDATE_COUNTDOWN_TIME" ]; then
                 UPDATE_COUNTDOWN_TIME=300
@@ -116,10 +121,11 @@ check_server_version() {
             fi
         else
             log_message "Failed to get required version from API response" "error"
+            log_message "Full response: $response" "debug"
             return 1
         fi
     else
-        log_message "Server is up to date. Current version: $current_version" "debug"
+        log_message "Server is up to date. Current version: $current_version (checked at: $(date '+%Y-%m-%d %H:%M:%S'))" "debug"
     fi
 }
 
