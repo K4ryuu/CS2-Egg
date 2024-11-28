@@ -1,3 +1,11 @@
+-- update - 2024.11.28
+
+- feat: Added SteamCMD installed, which useful for centralized file systems or to repair user deletions
+- fix: Update validated the game files forcefully
+- fix: Udpdate broke after a SteamCMD function update
+- fix: Egg log file was not used properly by the logger
+- upgrade: Steam version checker to prevent caching
+
 -- update - 2024.11.21 - Optimisation Update
 
 - feat: Junk cleaner now shows the freed space, duration and overall counter
