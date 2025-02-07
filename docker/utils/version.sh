@@ -1,39 +1,44 @@
 #!/bin/bash
+
+LAST_NEWS_DATE=0
 UPDATE_IN_PROGRESS=0
 
 start_update_countdown() {
     local required_version="$1"
 
-    # Set update in progress flag
     UPDATE_IN_PROGRESS=1
 
-    # Validate essential API variables
     if [ -z "$PTERODACTYL_API_TOKEN" ] || [ -z "$P_SERVER_UUID" ] || [ -z "$PTERODACTYL_URL" ]; then
         log_message "Missing required API variables" "error"
         UPDATE_IN_PROGRESS=0
         return 1
     fi
 
-    if [ ! -z "$UPDATE_COMMANDS" ]; then
-        local start_time=$(date +%s)
-        local commands=$(echo "$UPDATE_COMMANDS" | jq -r 'to_entries | .[] | .key + " " + .value')
+    if [ -n "$UPDATE_COMMANDS" ]; then
+        local start_time
+        start_time=$(date +%s)
+        local commands
+
+        commands=$(echo "$UPDATE_COMMANDS" | jq -r 'to_entries | .[] | .key + " " + .value')
 
         while IFS=' ' read -r seconds command || [ -n "$seconds" ]; do
             if [ "$seconds" -gt "$UPDATE_COUNTDOWN_TIME" ]; then
                 continue
             fi
 
-            local current_time=$(date +%s)
-            local elapsed=$((current_time - start_time))
-            local target_wait=$((UPDATE_COUNTDOWN_TIME - seconds))
-            local wait_time=$((target_wait - elapsed))
+            local current_time elapsed target_wait wait_time
+            current_time=$(date +%s)
+            elapsed=$((current_time - start_time))
+            target_wait=$((UPDATE_COUNTDOWN_TIME - seconds))
+            wait_time=$((target_wait - elapsed))
 
             if [ "$wait_time" -gt 0 ]; then
-                sleep $wait_time
+                sleep "$wait_time"
             fi
 
             if [ -n "$command" ]; then
-                local response=$(curl -s -w "%{http_code}" -X POST \
+                local response
+                response=$(curl -s -w "%{http_code}" -X POST \
                     -H "Authorization: Bearer $PTERODACTYL_API_TOKEN" \
                     -H "Content-Type: application/json" \
                     --data "{\"command\": \"$command\"}" \
@@ -45,16 +50,19 @@ start_update_countdown() {
                     UPDATE_IN_PROGRESS=0
                     return 1
                 fi
+
+                log_message "Sent command by Auto-Restart: $command" "running"
             fi
         done <<< "$commands"
+
     else
-        sleep $UPDATE_COUNTDOWN_TIME
+        sleep "$UPDATE_COUNTDOWN_TIME"
     fi
 
     log_message "Restarting server by Auto-Restart..." "running"
 
-    # Server restart
-    local restart_response=$(curl -s -w "%{http_code}" "$PTERODACTYL_URL/api/client/servers/$P_SERVER_UUID/power" \
+    local restart_response
+    restart_response=$(curl -s -w "%{http_code}" "$PTERODACTYL_URL/api/client/servers/$P_SERVER_UUID/power" \
         -H 'Accept: application/json' \
         -H 'Content-Type: application/json' \
         -H "Authorization: Bearer $PTERODACTYL_API_TOKEN" \
@@ -69,69 +77,114 @@ start_update_countdown() {
     fi
 }
 
-get_game_version() {
-    local steam_inf="./game/csgo/steam.inf"
-    if [ -f "$steam_inf" ]; then
-        local patch_version=$(grep "PatchVersion=" "$steam_inf" | cut -d'=' -f2)
-        if [ ! -z "$patch_version" ]; then
-            # Remove dots and convert to number (e.g., 1.40.5.1 -> 14051)
-            echo "$patch_version" | tr -d '.'
-            return 0
-        fi
+send_discord_webhook() {
+    if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+        return 0
     fi
-    return 1
+
+    local patch_date="$1"
+    local countdown_time="$2"
+
+    local formatted_date
+    formatted_date=$(date -d @"$patch_date" "+%Y-%m-%d %H:%M:%S")
+
+    local timestamp
+    timestamp=$(date +%Y-%m-%dT%H:%M:%SZ)
+
+    local payload
+    payload=$(cat <<EOF
+{
+  "username": "Auto Restart",
+  "avatar_url": "https://kitsune-lab.com/storage/images/server.png",
+  "embeds": [
+    {
+      "title": ":warning: Server Update Scheduled :warning:",
+      "description": "New game patch detected. Initiating update countdown...",
+      "color": 16753920,
+      "fields": [
+        {
+          "name": ":calendar: Patch Date",
+          "value": "$formatted_date",
+          "inline": true
+        },
+        {
+          "name": ":hourglass: Countdown",
+          "value": "$countdown_time seconds",
+          "inline": true
+        }
+      ],
+      "footer": {
+        "text": "Auto Restart Service"
+      },
+      "timestamp": "$timestamp"
+    }
+  ]
+}
+EOF
+)
+    local response http_code
+    response=$(curl -s -w "%{http_code}" -H "Content-Type: application/json" -X POST -d "$payload" "$DISCORD_WEBHOOK_URL")
+    http_code="${response: -3}"
+
+    if [ "$http_code" -lt 200 ] || [ "$http_code" -gt 299 ]; then
+        log_message "Failed to send Discord webhook: HTTP $http_code" "error"
+    fi
 }
 
-check_server_version() {
+check_for_new_patchnotes() {
     if [ "$UPDATE_IN_PROGRESS" -eq 1 ]; then
         return 0
     fi
 
-    local current_version=$(get_game_version)
-
-    if [ -z "$current_version" ]; then
-        log_message "Failed to get game version from steam.inf" "error"
+    if [ -z "$STEAM_API_KEY" ]; then
+        log_message "STEAM_API_KEY is not set. Cannot check for game updates." "error"
         return 1
     fi
 
-    local api_url="https://api.steampowered.com/ISteamApps/UpToDateCheck/v0001/?appid=730&version=$current_version&nocache=$(date +%s)"
-    local response=$(curl -s \
-        -H "Cache-Control: no-cache, no-store" \
-        -H "Pragma: no-cache" \
-        "$api_url")
+    local steam_api_url
+    steam_api_url="http://api.steampowered.com/ISteamNews/GetNewsForApp/v0002/?appid=730&count=1&maxlength=300&format=json&tags=patchnotes&key=$STEAM_API_KEY"
+    local response
+    response=$(curl -s "$steam_api_url")
 
-    local up_to_date=$(echo "$response" | jq -r '.response.up_to_date')
+    if [ -z "$response" ]; then
+        log_message "No response from Steam API." "error"
+        return 1
+    fi
 
-    if [ "$up_to_date" = "false" ]; then
-        local required_version=$(echo "$response" | jq -r '.response.required_version')
-        local message=$(echo "$response" | jq -r '.response.message')
+    local news_date
+    news_date=$(echo "$response" | jq -r '.appnews.newsitems[0].date // 0')
+    if [ "$news_date" -eq 0 ]; then
+        log_message "Failed to extract valid date from Steam API response." "error"
+        return 1
+    fi
 
-        if [ ! -z "$required_version" ]; then
-            log_message "New version detected: $required_version (current: $current_version)" "running"
-            log_message "Steam message: $message" "running"
+    if [ "$LAST_NEWS_DATE" -eq 0 ]; then
+        LAST_NEWS_DATE="$news_date"
+        log_message "Initial patch data stored: $news_date" "debug"
+        return 0
+    fi
 
-            if [ -z "$UPDATE_COUNTDOWN_TIME" ]; then
-                UPDATE_COUNTDOWN_TIME=300
-            fi
+    if [ "$news_date" -gt "$LAST_NEWS_DATE" ]; then
+        log_message "New game patch detected: $news_date" "info"
+        log_message "Starting update countdown..." "info"
 
-            log_message "Countdown initiated to restart server: $UPDATE_COUNTDOWN_TIME seconds" "running"
+        send_discord_webhook "$news_date" "$UPDATE_COUNTDOWN_TIME"
 
-            if [ ! -z "$UPDATE_COMMANDS" ]; then
-                start_update_countdown "$required_version"
-            fi
-        else
-            log_message "Failed to get required version from API response" "error"
-            log_message "Full response: $response" "debug"
-            return 1
-        fi
-    else
-        log_message "Server is up to date. Current version: $current_version (checked at: $(date '+%Y-%m-%d %H:%M:%S'))" "debug"
+        local required_version="$news_date"
+        start_update_countdown "$required_version"
+
+        LAST_NEWS_DATE="$news_date"
     fi
 }
 
 version_check_loop() {
-    while [ ${UPDATE_AUTO_RESTART:-0} -eq 1 ] && [ $UPDATE_IN_PROGRESS -eq 0 ]; do
-        sleep "${VERSION_CHECK_INTERVAL:-300}"
-        check_server_version
+    if [ -z "$VERSION_CHECK_INTERVAL" ] || [ "$VERSION_CHECK_INTERVAL" -lt 60 ]; then
+        VERSION_CHECK_INTERVAL=60
+        log_message "VERSION_CHECK_INTERVAL is not set or less than 1 minute. Using default value: 1 minute" "warning"
+    fi
+
+    while [ "${UPDATE_AUTO_RESTART:-0}" -eq 1 ] && [ "$UPDATE_IN_PROGRESS" -eq 0 ]; do
+        sleep "${VERSION_CHECK_INTERVAL}"
+        check_for_new_patchnotes
     done
 }
