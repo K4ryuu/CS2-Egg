@@ -12,13 +12,6 @@ install_steamcmd() {
     local max_retries=3
     local retry=0
 
-    # Set up default Steam credentials if not provided
-    if [ "${STEAM_USER}" == "" ]; then
-        STEAM_USER=anonymous
-        STEAM_PASS=""
-        STEAM_AUTH=""
-    fi
-
     # Create necessary directories
     mkdir -p ./steamcmd
     mkdir -p ./steamapps
@@ -51,7 +44,7 @@ install_steamcmd() {
     fi
 
     # Initialize steamcmd
-    ./steamcmd/steamcmd.sh +force_install_dir /home/container +login ${STEAM_USER} ${STEAM_PASS} ${STEAM_AUTH} +app_update ${SRCDS_APPID} ${EXTRA_FLAGS} +quit
+    ./steamcmd/steamcmd.sh +quit
 
     # Set up 32-bit libraries
     mkdir -p ./.steam/sdk32

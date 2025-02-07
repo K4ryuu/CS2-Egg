@@ -231,6 +231,26 @@
       "field_type": "text"
     },
     {
+      "name": "Auto Restart - Steam API Key",
+      "description": "Your personal Steam API key to check for updates. You can generate a new one at https://steamcommunity.com/dev/apikey.",
+      "env_variable": "STEAM_API_KEY",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string|regex:/^[0-9A-F]{32}$/",
+      "field_type": "text"
+    },
+    {
+      "name": "Auto Restart - Discord Webhook",
+      "description": "Discord webhook URL to send notifications when the server is scheduled to update automatically. This sends a cool embed with details such as the patch date and countdown timer.",
+      "env_variable": "DISCORD_WEBHOOK_URL",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string",
+      "field_type": "text"
+    },
+    {
       "name": "Egg - File Logging",
       "description": "Log Egg messages to /egg.log, which is stored for 48 hours.",
       "env_variable": "LOG_FILE_ENABLED",
