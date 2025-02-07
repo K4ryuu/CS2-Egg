@@ -36,6 +36,7 @@
 - Save version and update only if necessary
 - Automatically restart the server after when update detected
 - Premade variables to support custom parameters safely by user
+- Optional Discord Webhook support for scheduled auto-restart
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
