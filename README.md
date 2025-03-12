@@ -1,65 +1,43 @@
-<a name="readme-top"></a>
+---
+icon: hand-wave
+cover: https://gitbookio.github.io/onboarding-template-images/header.png
+coverY: 0
+layout:
+  cover:
+    visible: true
+    size: full
+  title:
+    visible: true
+  description:
+    visible: true
+  tableOfContents:
+    visible: true
+  outline:
+    visible: true
+  pagination:
+    visible: true
+---
 
-![GitHub Repo stars](https://img.shields.io/github/stars/K4ryuu/CS2-Egg?style=for-the-badge)
-![GitHub issues](https://img.shields.io/github/issues/K4ryuu/CS2-Egg?style=for-the-badge)
-![GitHub](https://img.shields.io/github/license/K4ryuu/CS2-Egg?style=for-the-badge)
-![GitHub last commit (branch)](https://img.shields.io/github/last-commit/K4ryuu/CS2-Egg/dev?style=for-the-badge)
+# Welcome
 
-<!-- PROJECT LOGO -->
-<br />
-<div align="center">
-  <h1 align="center">KitsuneLab©</h1>
-  <h3 align="center">CS2 Egg</h3>
-  <a align="center">CS2 Pterodactyl Egg with custom scripts such as CSS auto-updater, MetaMod auto-updater, junk cleaner, auto restart on update with colored logging.</a>
+Welcome to the official documentation for Kitsune-Lab’s CS2-Egg project.
 
-  <p align="center">
-    <br />
-    <a href="https://github.com/K4ryuu/CS2-Egg/blob/dev/pterodactyl/kitsunelab-cs2-egg.json">Download</a>
-    ·
-    <a href="https://github.com/K4ryuu/CS2-Egg/blob/beta/pterodactyl/kitsunelab-cs2-egg.json">Download Beta</a>
-    ·
-    <a href="https://github.com/K4ryuu/CS2-Egg/issues/new?assignees=KitsuneLab-Development&labels=bug&projects=&template=bug_report.md&title=%5BBUG%5D">Report Bug</a>
-    ·
-    <a href="https://github.com/K4ryuu/CS2-Egg/issues/new?assignees=KitsuneLab-Development&labels=enhancement&projects=&template=feature_request.md&title=%5BREQ%5D">Request Feature</a>
-    ·
-    <a href="https://docs.kitsune-lab.com/main/cs2-egg">Documentations</a>
-  </p>
-</div>
+The system includes various features designed to simplify server management. Automation tools ensure that your server and key add-ons are always up-to-date, clear unnecessary files, filter console outputs, and automatically restart the server when a new game version is detected—eliminating the need to manually track game updates.
+
+The CS2-Egg project was initially created for use with the Pterodactyl platform, which is why it includes an importable egg file. However, the system's versatile design ensures compatibility with any Docker-based environment, provided that the appropriate environment variables are configured within the Docker setup. This flexibility allows users to leverage the system's features across various platforms, enhancing ease of management and functionality beyond its original scope.
 
 ## Features
 
-- Console Filter (block unwanted messages from appearing in console) idea from [Poggu](https://github.com/Poggicek), who made that in [Metamod](https://github.com/Source2ZE/CleanerCS2)
-- CounterStrikeSharp Auto-Updater
-- MetaMod Auto-Updater
-- Junk Cleaner (Round backups 24hour, logs 3days, css logs 3days, accelerator logs 7days, demo files 7days)
-- Colored logs from the main scripts
-- Save version and update only if necessary
-- Automatically restart the server after when update detected
-- Premade variables to support custom parameters safely by user
-- Optional Discord Webhook support for scheduled auto-restart
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-## Documentation
-
-Detailed documentation on installation, updates, feature configurations, and more can be found at the [KitsuneLab Documentation](https://docs.kitsune-lab.com/main/cs2-egg).
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-## Credits
-
-- [CS2 Pterodactyl from 1zc](https://github.com/1zc/CS2-Pterodactyl): The base of the image is maximally based on this image and if you don't want to use the custom scripts, you can use this image instead. Appreciate the work of [1zc](https://github.com/1zc) and give him a star.
-
-## Roadmap
-
-- [ ] No plans for now
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-<!-- LICENSE -->
-
-## License
-
-Distributed under the GPL-3.0 License. See `LICENSE.md` for more information.
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+* **Automated Restart Scheduling:** Automatically schedule a restart when a new game version is detected.
+* **Restart Countdown Notifications:** Display information to players with timed commands during the restart countdown.
+* **Colored Logs:** Enhanced readability for main scripts with colored logs.
+* **Junk Cleaner:**
+  * Round backups: Retain for 24 hours
+  * Logs: Retain for 3 days
+  * CSS logs: Retain for 3 days
+  * Accelerator logs: Retain for 7 days
+  * Demo files: Retain for 7 days
+* **GameInfo Updater:** Automatically updates GameInfo file to maintain MetaMod reference.
+* **Auto-Updater:** Automatically updates CounterStrikeSharp and MetaMod to the latest versions on restart, when necessary.
+* **Console Filter:** Blocks your unwanted messages from appearing in the console.
+* Premade variables to support custom parameters safely by user
