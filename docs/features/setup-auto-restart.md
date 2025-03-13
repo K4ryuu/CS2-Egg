@@ -36,7 +36,7 @@ icon: '1'
 
 ## Steps to Setup Server - Client Side
 
-1. Access the server where you wish to activate the feature.
+1. Access the server where you wish to activate the feature within the dashboard.
 2. Go to the <mark style="color:purple;">**Startup**</mark> page.
 3. Activate the <mark style="color:purple;">**AUTO RESTART - ENABLED**</mark> setting.
 4. To add your API key, navigate to the <mark style="color:purple;">**AUTO RESTART - USER API KEY**</mark> section. You can generate this key by clicking your profile picture in the top right corner, selecting <mark style="color:purple;">**API Credentials**</mark>, or visiting [https://panel.your-domain.com/account/api](https://panel.your-domain.com/account/api). Create a new key and copy it immediately after generation, as it is only visible once. The key is typically 48 characters long.
