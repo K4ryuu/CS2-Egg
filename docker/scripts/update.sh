@@ -130,9 +130,9 @@ update_addon() {
         return 1
     fi
 
-    local asset_url=$(echo "$api_response" | grep -oP '"browser_download_url": "\K[^"]+' | grep 'counterstrikesharp-with-runtime-build-.*-linux-.*\.zip')
     local new_version=$(echo "$api_response" | grep -oP '"tag_name": "\K[^"]+')
     local current_version=$(get_current_version "$addon_name")
+    local asset_url=$(echo "$api_response" | grep -oP '"browser_download_url": "\K[^"]+-with-runtime-linux-[^"]+\.zip')
 
     if ! check_version "$addon_name" "$current_version" "$new_version"; then
         return 0

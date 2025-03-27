@@ -1,3 +1,8 @@
+-- update - 2025.03.27
+
+- feat: Added support for the new CounterStrikeSharp versioning schema
+- feat: Added support for with-runtime and without runtime installs
+
 -- update - 2024.11.28
 
 - feat: Added SteamCMD installed, which useful for centralized file systems or to repair user deletions
