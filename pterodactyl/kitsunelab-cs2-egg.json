@@ -207,7 +207,7 @@
       "default_value": "",
       "user_viewable": true,
       "user_editable": true,
-      "rules": "nullable|string|regex:/^(ptlc_|plcn_).{43}$/",
+      "rules": "nullable|string|regex:/^(ptlc_|pacc_).{43}$/",
       "field_type": "text"
     },
     {
