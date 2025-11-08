@@ -3,11 +3,11 @@ source /utils/logging.sh
 
 install_steamcmd() {
     if [ -f "./steamcmd/steamcmd.sh" ]; then
-        log_message "SteamCMD is already installed" "debug"
+        log_message "SteamCMD already installed" "debug"
         return 0
     fi
 
-    log_message "Installing SteamCMD..." "running"
+    log_message "Installing SteamCMD..." "info"
     local STEAMCMD_URL="https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz"
     local max_retries=3
     local retry=0
@@ -22,7 +22,7 @@ install_steamcmd() {
             break
         fi
         ((retry++))
-        log_message "Download attempt $retry failed, retrying..." "error"
+        log_message "Download failed (attempt $retry/$max_retries)" "warning"
         sleep 5
     done
 

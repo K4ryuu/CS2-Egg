@@ -1,54 +1,159 @@
 ---
 description: >-
-  This guide helps you find the credentials and values needed for setting up the
-  Auto Restart feature correctly, along with tips for proper configuration.
-icon: '1'
+  Quick setup guide for the Auto-Restart feature with API-based version checking
+  and JSON configuration files.
+icon: "1"
 ---
 
 # Setup Auto Restart
 
-## Steps to Setup Nest - Admin Side
+## Overview
 
-1. Navigate to your <mark style="color:purple;">**Nests**</mark> page of your <mark style="color:purple;">**Admin section**</mark>.
-2. Go to the nest where the egg is located at and open it.
-3. Select the <mark style="color:purple;">**Variables**</mark> page.
-4. For all following steps, press save after you are done. 
-5. Set the default value for <mark style="color:purple;">**Auto Restart - Steam API Key**</mark> to the Steam API Key generated at https://steamcommunity.com/dev/apikey. 
-6. Set the default value for <mark style="color:purple;">**Auto Restart - Check Interval**</mark> to the desired time frequency for server updates. <mark style="color:yellow;">**A longer interval is recommended to avoid rate limiting.**</mark>
-7. Set the default value for <mark style="color:purple;">**Auto Restart - API URL**</mark> to your Pterodactyl panel URL. Don't include any path at the end. Example: https://panel.your-domain.com
-8. Configure any <mark style="color:purple;">**Auto Restart**</mark> default setting according to your preferences, as these will apply to all new servers or servers where you change the egg to this.
-9. You can also configure which settings are visible on client side.
+Auto-Restart now uses:
+
+- **API-based version checking** (`api.steamcmd.net`) - Fast, non-blocking
+- **FTP-editable JSON configs** - User-friendly configuration
+- **Simplified egg variables** - Only enable flags needed
+
+## Admin Setup (Nest Level)
+
+1. Navigate to **Admin** → **Nests** → Your Nest → **Eggs**
+2. Select the **KitsuneLab CS2 Egg**
+3. Go to **Variables** tab
+4. Configure default settings:
+
+### Required Variable
+
+**Enable Auto-Restart** (`ENABLE_AUTO_RESTART`)
+
+- Default: `0` (disabled)
+- Set to `1` to enable by default for all new servers
+- Users can override via `/egg/configs/auto-restart.json`
 
 {% hint style="danger" %}
-**Avoid setting a default** <mark style="color:purple;">**Auto Restart - User API**</mark> **key value if you're hosting servers for others. This can be extracted! Each user should create their own API token.**
+**DO NOT set default API tokens or sensitive values!** Users configure these via FTP-accessible JSON files in `/egg/configs/`.
 {% endhint %}
 
-## Steps to Setup Server - Admin Side
+## Admin Setup (Server Level)
 
-1. Navigate to your <mark style="color:purple;">**Servers**</mark> page of your <mark style="color:purple;">**Admin Section**</mark>.
-2. Go to the desired server you want to modify and open it.
-3. Select the <mark style="color:purple;">**Startup**</mark> page.
-4. Set the default value for <mark style="color:purple;">**Auto Restart - Steam API Key**</mark> to the Steam API Key generated at https://steamcommunity.com/dev/apikey.
-5. Set the default value for <mark style="color:purple;">**Auto Restart - Check Interval**</mark> to the desired time frequency for server updates. A longer interval is recommended to avoid rate limiting.
-6. Set the default value for <mark style="color:purple;">**Auto Restart - API URL**</mark> to your Pterodactyl panel URL. Don't include any path at the end. Example: https://panel.your-domain.com
-7. Configure any <mark style="color:purple;">**Auto Restart**</mark> default setting according to your preferences.
-8. Press the Save Modifications button to store your settings.
+1. Navigate to **Admin** → **Servers** → Select Server
+2. Go to **Startup** tab
+3. Set **Enable Auto-Restart** to `1`
+4. Restart server to generate config file
 
-## Steps to Setup Server - Client Side
+## User Setup (Client Side)
 
-1. Access the server where you wish to activate the feature within the <mark style="color:purple;">**Dashboard**</mark>.
-2. Go to the <mark style="color:purple;">**Startup**</mark> page.
-3. Activate the <mark style="color:purple;">**AUTO RESTART - ENABLED**</mark> setting.
-4. To add your API key, navigate to the <mark style="color:purple;">**AUTO RESTART - USER API KEY**</mark> section. You can generate this key by clicking your profile picture in the top right corner, selecting <mark style="color:purple;">**API Credentials**</mark>, or visiting [https://panel.your-domain.com/account/api](https://panel.your-domain.com/account/api). Create a new key and copy it immediately after generation, as it is only visible once. The key is typically 48 characters long.
-5. Define a JSON structure containing commands and their corresponding timings to execute during the countdown to a restart to <mark style="color:purple;">**AUTO RESTART - COMMANDS**</mark>. These commands can be used to notify players about the upcoming restart or to perform any other actions. Follow the default format, where the key represents the remaining seconds before the restart, and the value specifies the command to execute.
-6. Set the <mark style="color:purple;">**AUTO RESTART - COUNTDOWN INTERVAL**</mark> to the number of seconds to wait before restarting the server upon detecting a new version. It's recommended to set this value to a few minutes to allow players to be notified in advance.
-7. Depending on your admin's preferences, you may have the ability to set <mark style="color:purple;">**Auto Restart - Steam API Key**</mark> to the Steam API Key generated at https://steamcommunity.com/dev/apikey. If you do not see this option in your server, this has not been made available to you. Consult with your server admin for more details.
-8. Press the Save Modifications button to store your settings.
-9. Restart your server, and if everything is set up correctly, you should see a green message at startup indicating that it has successfully started.
+### Step 1: Enable Feature
+
+1. Go to your server in the **Dashboard**
+2. Navigate to **Startup** tab
+3. Set **Enable Auto-Restart** to `1`
+4. Restart server
+
+### Step 2: Configure via FTP
+
+1. Connect via FTP/SFTP to your server
+2. Navigate to `/egg/configs/`
+3. Open `auto-restart.json`
+4. Configure settings:
+
+```json
+{
+  "enabled": true,
+  "check_interval": 300,
+  "countdown_seconds": 300,
+  "pterodactyl_url": "https://panel.your-domain.com",
+  "pterodactyl_api_token": "",
+  "discord_webhook_url": "",
+  "countdown_commands": {
+    "300": "say Server updating in 5 minutes!",
+    "60": "say Server updating in 1 minute!",
+    "30": "say Server updating in 30 seconds!",
+    "10": "say Server updating in 10 seconds!"
+  }
+}
+```
+
+5. Save the file
+
+### Step 3: Generate API Token
+
+1. Click your profile picture (top right)
+2. Select **API Credentials** or visit: `https://panel.your-domain.com/account/api`
+3. Click **Create Client API Key**
+4. Give it a name (e.g., "CS2 Auto-Restart")
+5. **Copy the token immediately** (shown only once!)
+6. Token format: `ptlc_` followed by 43 characters
+
+### Step 4: Add API Token
+
+1. Via FTP, edit `/egg/configs/auto-restart.json`
+2. Update these fields:
+   ```json
+   "pterodactyl_url": "https://your-panel.com",
+   "pterodactyl_api_token": "ptlc_your_token_here"
+   ```
+3. Save the file
+
+### Step 5: Restart & Verify
+
+1. Restart your server
+2. Check console for:
+   ```
+   [INFO] Auto-restart enabled
+   [INFO] Stored initial buildid: 1234567
+   [SUCCESS] Version check cron job added
+   ```
 
 ## Tips and Tricks
 
-* If your server uses centralized and symlinked egg modifications, set the <mark style="color:purple;">**AUTO RESTART - COUNTDOWN INTERVAL**</mark> to at least 5 minutes. This allows the main server time to detect and download updates.
-* If you host only your own servers, you can configure the <mark style="color:purple;">**Auto Restart**</mark> settings in the <mark style="color:purple;">**Nests**</mark> for all servers. Ensure you apply these settings before switching to this egg.
-* If plugins save database changes inefficiently, consider disconnecting players briefly before a restart to trigger the plugin's save logic and ensure data is saved in time. (Rare scenarios)
-* Set the <mark style="color:purple;">**Auto Restart - Check Interval**</mark> to a few minutes in order to avoid being rate limited by Steam.
+### Configuration Best Practices
+
+- **Check Interval:** Set to 300-600 seconds (5-10 minutes) to avoid unnecessary API calls
+- **Countdown Time:** Use 300+ seconds (5+ minutes) to give players adequate warning
+- **VPK Sync Users:** Set countdown to 5+ minutes to allow centralized server to update first
+- **Discord Webhooks:** Optional but helpful for monitoring multiple servers
+- **API Token Security:** Never share or commit to version control
+
+### Hosting Multiple Servers
+
+- Configure nest-level defaults for consistent settings across all servers
+- Each user still needs their own API token (configured via FTP)
+- Use webhooks to monitor all servers from one Discord channel
+
+### Plugin Data Safety
+
+- Some plugins save inefficiently (only on player disconnect)
+- Consider using `mp_timelimit` or similar to trigger saves
+- Test restart behavior with your specific plugins
+
+### Version Checking
+
+- Uses Steam API (`api.steamcmd.net`) - Fast and reliable
+- Non-blocking (doesn't interfere with running server)
+- Automatically detects beta branches via `SRCDS_BETAID`
+- Falls back gracefully if API is unreachable
+
+### Troubleshooting
+
+**No restart happening:**
+
+- Check `/egg/configs/auto-restart.json` has valid API token
+- Verify `pterodactyl_url` is correct (no trailing slash)
+- Test API token with: `curl -H "Authorization: Bearer TOKEN" https://panel.com/api/client`
+
+**Frequent false restarts:**
+
+- Increase `check_interval` to 600+ seconds
+- Verify Steam API is stable: `curl -sf https://api.steamcmd.net/v1/info/730`
+
+**Webhook not working:**
+
+- Verify webhook URL is valid
+- Test with: `curl -X POST "WEBHOOK_URL" -H "Content-Type: application/json" -d '{"content":"test"}'`
+
+## Related Documentation
+
+- [Auto-Restart Feature Guide](./auto-restart.md) - Detailed documentation
+- [Configuration Files](../configuration/configuration-files.md) - JSON configuration reference
+- [Auto-Updaters](./auto-updaters.md) - Plugin auto-update system

@@ -7,7 +7,7 @@ GAME_DIRECTORY="./game/csgo"
 OUTPUT_DIR="./game/csgo/addons"
 TEMP_DIR="./temps"
 ACCELERATOR_DUMPS_DIR="$OUTPUT_DIR/AcceleratorCS2/dumps"
-VERSION_FILE="./game/versions.txt"
+VERSION_FILE="${EGG_DIR:-/home/container/egg}/versions.txt"
 
 get_current_version() {
     local addon="$1"
@@ -45,7 +45,7 @@ handle_download_and_extract() {
             break
         fi
         ((retry++))
-        log_message "Download attempt $retry failed, retrying..." "error"
+        log_message "Download failed (attempt $retry/$max_retries)" "warning"
         sleep 5
     done
 
@@ -59,7 +59,6 @@ handle_download_and_extract() {
         return 1
     fi
 
-    log_message "Extracting to $extract_dir" "debug"
     mkdir -p "$extract_dir"
 
     case $file_type in
@@ -87,16 +86,16 @@ check_version() {
     local new="$3"
 
     if [ "$current" != "$new" ]; then
-        log_message "New version of $addon available: $new (current: $current)" "running"
+        log_message "Update available for $addon: $new (current: $current)" "info"
         return 0
     fi
 
-    log_message "No new version of $addon available. Current: $current" "debug"
+    log_message "$addon is up-to-date ($current)" "debug"
     return 1
 }
 
 cleanup_and_update() {
-    if [ "${CLEANUP_ENABLED:-0}" = "1" ]; then
+    if [ "${CLEANUP_ENABLED:-0}" -eq 1 ]; then
         cleanup
     fi
 
@@ -130,23 +129,28 @@ update_addon() {
         return 1
     fi
 
-    local new_version=$(echo "$api_response" | grep -oP '"tag_name": "\K[^"]+')
+    local new_version=$(echo "$api_response" | jq -r '.tag_name // empty')
     local current_version=$(get_current_version "$addon_name")
-    local asset_url=$(echo "$api_response" | grep -oP '"browser_download_url": "\K[^"]+-with-runtime-linux-[^"]+\.zip')
+    local asset_url=$(echo "$api_response" | jq -r '.assets[] | select(.name | test("-with-runtime-linux-.*\\.zip$")) | .browser_download_url' | head -n1)
+
+    if [ -z "$new_version" ]; then
+        log_message "Failed to get version for $repo" "debug"
+        return 0
+    fi
 
     if ! check_version "$addon_name" "$current_version" "$new_version"; then
         return 0
     fi
 
     if [ -z "$asset_url" ]; then
-        log_message "No suitable asset found for $repo" "error"
-        return 1
+        log_message "No suitable asset found for $repo" "debug"
+        return 0
     fi
 
     if handle_download_and_extract "$asset_url" "$temp_dir/download.zip" "$temp_dir" "zip"; then
         cp -r "$temp_dir/addons/." "$output_path" && \
         update_version_file "$addon_name" "$new_version" && \
-        log_message "Update of $repo completed successfully" "success"
+        log_message "$addon_name updated to $new_version" "debug"
         return 0
     fi
 
@@ -155,7 +159,7 @@ update_addon() {
 
 update_metamod() {
     if [ ! -d "$OUTPUT_DIR/metamod" ]; then
-        log_message "Metamod not installed. Installing Metamod..." "running"
+        log_message "Installing Metamod..." "info"
     fi
 
     local metamod_version=$(curl -sL https://mms.alliedmods.net/mmsdrop/2.0/ | grep -oP 'href="\K(mmsource-[^"]*-linux\.tar\.gz)' | tail -1)
@@ -175,7 +179,48 @@ update_metamod() {
     if handle_download_and_extract "$full_url" "$TEMP_DIR/metamod.tar.gz" "$TEMP_DIR/metamod" "tar.gz"; then
         cp -rf "$TEMP_DIR/metamod/addons/." "$OUTPUT_DIR/" && \
         update_version_file "Metamod" "$new_version" && \
-        log_message "Metamod update completed successfully" "success"
+        log_message "Metamod updated to $new_version" "debug"
+        return 0
+    fi
+
+    return 1
+}
+
+update_swiftly() {
+    local repo="swiftly-solution/swiftly"
+    local temp_dir="$TEMP_DIR/swiftly"
+
+    mkdir -p "$OUTPUT_DIR" "$temp_dir"
+    rm -rf "$temp_dir"/*
+
+    local api_response=$(curl -s "https://api.github.com/repos/$repo/releases/latest")
+    if [ -z "$api_response" ]; then
+        log_message "Failed to get release info for $repo" "error"
+        return 1
+    fi
+
+    local new_version=$(echo "$api_response" | jq -r '.tag_name // empty')
+    local current_version=$(get_current_version "Swiftly")
+    local asset_url=$(echo "$api_response" | jq -r '.assets[] | select(.name | test("Swiftly\\.Plugin\\.Linux\\.zip")) | .browser_download_url' | head -n1)
+
+    if [ -z "$new_version" ]; then
+        log_message "Failed to get version for $repo" "debug"
+        return 0
+    fi
+
+    if ! check_version "Swiftly" "$current_version" "$new_version"; then
+        return 0
+    fi
+
+    if [ -z "$asset_url" ]; then
+        log_message "No suitable asset found for $repo" "debug"
+        return 0
+    fi
+
+    if handle_download_and_extract "$asset_url" "$temp_dir/download.zip" "$temp_dir" "zip"; then
+        cp -r "$temp_dir/addons/." "$OUTPUT_DIR" && \
+        update_version_file "Swiftly" "$new_version" && \
+        log_message "Swiftly updated to $new_version" "debug"
         return 0
     fi
 
@@ -187,10 +232,10 @@ configure_metamod() {
     local GAMEINFO_ENTRY="			Game	csgo/addons/metamod"
 
     if [ -f "${GAMEINFO_FILE}" ]; then
-        if ! grep -q "Game[[:blank:]]*csgo\/addons\/metamod" "$GAMEINFO_FILE"; then # match any whitespace
+        if ! grep -q "Game[[:blank:]]*csgo\/addons\/metamod" "$GAMEINFO_FILE"; then
             awk -v new_entry="$GAMEINFO_ENTRY" '
                 BEGIN { found=0; }
-                // {
+                {
                     if (found) {
                         print new_entry;
                         found=0;

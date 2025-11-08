@@ -22,27 +22,66 @@
     ·
     <a href="https://github.com/K4ryuu/CS2-Egg/issues/new?assignees=KitsuneLab-Development&labels=enhancement&projects=&template=feature_request.md&title=%5BREQ%5D">Request Feature</a>
     ·
-    <a href="https://docs.kitsune-lab.com/main/cs2-egg">Documentations</a>
+    <a href="docs/README.md">Documentation</a>
   </p>
 </div>
 
-## Features
+## ✨ Features
 
-- Console Filter (block unwanted messages from appearing in console) idea from [Poggu](https://github.com/Poggicek), who made that in [Metamod](https://github.com/Source2ZE/CleanerCS2)
-- CounterStrikeSharp Auto-Updater
-- MetaMod Auto-Updater
-- Junk Cleaner (Round backups 24hour, logs 3days, css logs 3days, accelerator logs 7days, demo files 7days)
-- Colored logs from the main scripts
-- Save version and update only if necessary
-- Automatically restart the server after when update detected
-- Premade variables to support custom parameters safely by user
-- Optional Discord Webhook support for scheduled auto-restart
+- 🔄 **Auto-Restart** - Automatically restart when CS2 updates are detected
+- 🔧 **Auto-Updaters** - MetaMod, CounterStrikeSharp, and Swiftly auto-updates
+- 💾 **VPK Sync** - Massive storage & bandwidth savings (80% reduction!)
+- 🧹 **Junk Cleaner** - Automatic cleanup (round backups, logs, demos)
+- 🎨 **Colored Logging** - Enhanced console output with color-coded messages
+- 🚫 **Console Filter** - Block unwanted console messages (inspired by [Poggu](https://github.com/Poggicek)'s [CleanerCS2](https://github.com/Source2ZE/CleanerCS2))
+- 💾 **Version Tracking** - Smart updates only when necessary
+- 🔔 **Discord Webhooks** - Get notified about scheduled restarts
+- ⚙️ **Custom Parameters** - Safe user-configurable startup options
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-## Documentation
+## 📚 Documentation
 
-Detailed documentation on installation, updates, feature configurations, and more can be found at the [KitsuneLab Documentation](https://docs.kitsune-lab.com/main/cs2-egg).
+Comprehensive documentation is available:
+
+### 🚀 Quick Start
+
+- **[Installation Guide](docs/getting-started/installation.md)** - Install and configure the egg
+- **[Quick Start](docs/getting-started/quickstart.md)** - Get running quickly
+- **[Updating](docs/getting-started/updating.md)** - Update guide
+
+### ⚡ Features
+
+- **[Auto-Restart](docs/features/auto-restart.md)** - Automatic CS2 update restarts
+- **[Auto-Updaters](docs/features/auto-updaters.md)** - Plugin auto-updates
+- **[VPK Sync](docs/features/vpk-sync.md)** - 80% storage savings
+- **[Console Filter](docs/features/console-filter.md)** - Message filtering
+- **[Junk Cleaner](docs/features/junk-cleaner.md)** - Automatic cleanup
+
+### 🔧 Advanced
+
+- **[Building from Source](docs/advanced/building.md)** - Build your own image
+- **[Troubleshooting](docs/advanced/troubleshooting.md)** - Common issues
+
+[**📖 View Full Documentation →**](docs/README.md)
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## 🎯 Quick Build
+
+Build your own Docker image:
+
+```bash
+# Clone and build
+git clone https://github.com/K4ryuu/CS2-Egg.git
+cd CS2-Egg
+./build.sh dev
+
+# Push to your registry
+docker push sples1/k4ryuu-cs2:dev
+```
+
+See [Building from Source](docs/advanced/building.md) for details.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

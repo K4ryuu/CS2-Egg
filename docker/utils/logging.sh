@@ -1,19 +1,42 @@
 #!/bin/bash
 
-# Colors and constants
+# Color codes for pretty terminal output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 WHITE='\033[0;37m'
 NC='\033[0m'
 
-# Default values using proper bash parameter expansion
+# Organized directory structure for all egg-related files
+EGG_DIR="${EGG_DIR:=/home/container/egg}"
+EGG_LOGS_DIR="${EGG_LOGS_DIR:=${EGG_DIR}/logs}"
+EGG_CONFIGS_DIR="${EGG_CONFIGS_DIR:=${EGG_DIR}/configs}"
+
+# Default logging settings (can be overridden by config)
 LOG_FILE_ENABLED="${LOG_FILE_ENABLED:=0}"
-LOG_FILE="${LOG_FILE:=./egg.log}"
-LOG_RETENTION_HOURS="${LOG_RETENTION_HOURS:=48}"
+LOG_MAX_SIZE_MB="${LOG_MAX_SIZE_MB:=100}"
+LOG_MAX_FILES="${LOG_MAX_FILES:=30}"
+LOG_MAX_DAYS="${LOG_MAX_DAYS:=7}"
 PREFIX="${PREFIX:=${RED}[KitsuneLab]${WHITE} > }"
 
-# Pre-calculate log level priority
+# Set up the directory structure
+init_egg_directories() {
+    mkdir -p "${EGG_DIR}"
+    mkdir -p "${EGG_CONFIGS_DIR}"
+    
+    # Only create logs directory if logging is actually enabled
+    if [[ "${LOG_FILE_ENABLED}" == "1" ]] || [[ "${LOG_FILE_ENABLED}" == "true" ]]; then
+        mkdir -p "${EGG_LOGS_DIR}"
+    fi
+}
+
+# Each day gets its own log file - way easier to manage
+get_log_file_path() {
+    local date_str=$(date '+%Y-%m-%d')
+    echo "${EGG_LOGS_DIR}/${date_str}.log"
+}
+
+# Map log levels to priorities for filtering
 declare -A log_levels=(
     ["debug"]=0
     ["info"]=1
@@ -28,25 +51,48 @@ get_level_priority() {
         "INFO") echo 1 ;;
         "WARNING") echo 2 ;;
         "ERROR") echo 3 ;;
-        *) echo 1 ;; # Default to INFO
+    *) echo 1 ;; # Default to INFO if something weird is set
     esac
 }
 
 LOG_LEVEL_PRIORITY=$(get_level_priority)
 
-clean_old_logs() {
-    # Use [[ for more reliable conditional testing
+# Clean up old logs based on size/count/age limits
+rotate_logs() {
     [[ "${LOG_FILE_ENABLED}" == "1" ]] || return 0
+    [[ -d "${EGG_LOGS_DIR}" ]] || return 0
 
-    local log_dir
-    local log_name
-
-    log_dir="$(dirname "${LOG_FILE}")"
-    log_name="$(basename "${LOG_FILE}")"
-
-    if [[ -d "${log_dir}" ]]; then
-        find "${log_dir}" -name "${log_name}*" -type f -mmin "+$((LOG_RETENTION_HOURS * 60))" -delete 2>/dev/null
+    # Delete logs older than max_days
+    if [[ ${LOG_MAX_DAYS} -gt 0 ]]; then
+        find "${EGG_LOGS_DIR}" -name "*.log" -type f -mtime "+${LOG_MAX_DAYS}" -delete 2>/dev/null
     fi
+
+    # Keep only max_files count
+    if [[ ${LOG_MAX_FILES} -gt 0 ]]; then
+        local file_count=$(find "${EGG_LOGS_DIR}" -name "*.log" -type f | wc -l)
+        if [[ ${file_count} -gt ${LOG_MAX_FILES} ]]; then
+            find "${EGG_LOGS_DIR}" -name "*.log" -type f -printf '%T+ %p\n' | \
+                sort | head -n $((file_count - LOG_MAX_FILES)) | cut -d' ' -f2- | \
+                xargs -r rm -f
+        fi
+    fi
+
+    # If we're using too much disk space, delete oldest logs first
+    if [[ ${LOG_MAX_SIZE_MB} -gt 0 ]]; then
+        local dir_size_kb=$(du -sk "${EGG_LOGS_DIR}" | cut -f1)
+        local max_size_kb=$((LOG_MAX_SIZE_MB * 1024))
+        
+        while [[ ${dir_size_kb} -gt ${max_size_kb} ]]; do
+            local oldest_log=$(find "${EGG_LOGS_DIR}" -name "*.log" -type f -printf '%T+ %p\n' | sort | head -n 1 | cut -d' ' -f2-)
+            [[ -z "${oldest_log}" ]] && break
+            rm -f "${oldest_log}"
+            dir_size_kb=$(du -sk "${EGG_LOGS_DIR}" | cut -f1)
+        done
+    fi
+}
+
+clean_old_logs() {
+    rotate_logs
 }
 
 log_message() {
@@ -54,15 +100,15 @@ log_message() {
     local type="${2:-info}"
     local msg_priority="${log_levels[$type]:-1}"
 
-    # Early return if log level is not sufficient
+        # Skip if this message doesn't meet our log level threshold
     [[ ${msg_priority} -ge ${LOG_LEVEL_PRIORITY} ]] || return 0
 
-    # Format message
+    # Clean up the message and add timestamp
     local timestamp
     timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
     message="${message%[[:space:]]}"
 
-    # Console output with color
+    # Print to console with appropriate color
     case "$type" in
         running) printf "%b%s%b\n" "${PREFIX}${YELLOW}" "$message" "${NC}" ;;
         error)   printf "%b%s%b\n" "${PREFIX}${RED}" "$message" "${NC}" ;;
@@ -71,9 +117,11 @@ log_message() {
         *)       printf "%b%s%b\n" "${PREFIX}${WHITE}" "$message" "${NC}" ;;
     esac
 
-    # Log to file if enabled
+    # Also write to file if logging is enabled
     if [[ "${LOG_FILE_ENABLED}" == "1" ]]; then
-        echo "[$timestamp] [$type] $message" >> "${LOG_FILE}"
+        mkdir -p "${EGG_LOGS_DIR}"
+        local log_file=$(get_log_file_path)
+        echo "[$timestamp] [$type] $message" >> "${log_file}"
     fi
 }
 
@@ -82,7 +130,7 @@ handle_error() {
     local line_number="${1:-}"
     local last_command="${2:-$BASH_COMMAND}"
 
-    # Handle specific error cases
+    # Give better error messages based on exit code
     case $exit_code in
         127)
             log_message "Command not found: $last_command" "error"
@@ -92,6 +140,7 @@ handle_error() {
             return 0
             ;;
         *)
+            # Don't spam errors from steamcmd - it's noisy enough already
             if [[ $last_command != *"eval ${STEAMCMD}"* ]]; then
                 log_message "Error on line $line_number: $last_command" "error"
                 log_message "Exit code: $exit_code" "error"

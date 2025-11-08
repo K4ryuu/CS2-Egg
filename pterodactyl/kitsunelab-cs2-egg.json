@@ -4,15 +4,14 @@
     "version": "PTDL_v2",
     "update_url": null
   },
-  "exported_at": "2024-06-13T21:31:46+02:00",
+  "exported_at": "2025-11-7T15:31:48+02:00",
   "name": "KitsuneLab CS2 Egg @ K4ryuu",
-  "author": "contact@kitsune-lab.com",
+  "author": "k4ryuu@icloud.com",
   "description": "The SteamRT3 Platform image for Pterodactyl CS2 servers is packed with numerous features, designed to simplify server management and reduce hassle.",
-  "features": null,
+  "features": [],
   "docker_images": {
     "KitsuneLab CS2": "docker.io/sples1/k4ryuu-cs2:latest",
-    "KitsuneLab CS2 Public Beta": "docker.io/sples1/k4ryuu-cs2:beta",
-    "KitsuneLab CS2 Development": "docker.io/sples1/k4ryuu-cs2:dev"
+    "KitsuneLab CS2 Public Beta": "docker.io/sples1/k4ryuu-cs2:beta"
   },
   "file_denylist": [],
   "startup": "./game/cs2.sh {{CUSTOM_PARAMS}} -dedicated +ip 0.0.0.0 -port {{SERVER_PORT}} +map {{SRCDS_MAP}} -maxplayers {{SRCDS_MAXPLAYERS}} +sv_setsteamaccount {{STEAM_ACC}} +game_type {{GAME_TYPE}} +game_mode {{GAME_MODE}}",
@@ -22,24 +21,8 @@
     "logs": "{}",
     "stop": "quit"
   },
-  "scripts": {
-    "installation": {
-      "script": "#!/bin/bash\r\n# steamcmd Base Installation Script\r\n#\r\n# Server Files: /mnt/server\r\n## just in case someone removed the defaults.\r\nif [ \"${STEAM_USER}\" == \"\" ]; then\r\nSTEAM_USER=anonymous\r\nSTEAM_PASS=\"\"\r\nSTEAM_AUTH=\"\"\r\nfi\r\n## download and install steamcmd\r\ncd /tmp\r\nmkdir -p /mnt/server/steamcmd\r\ncurl -sSL -o steamcmd.tar.gz https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz\r\ntar -xzvf steamcmd.tar.gz -C /mnt/server/steamcmd\r\nmkdir -p /mnt/server/steamapps # Fix steamcmd disk write error when this folder is missing\r\ncd /mnt/server/steamcmd\r\n# SteamCMD fails otherwise for some reason, even running as root.\r\n# This is changed at the end of the install process anyways.\r\nchown -R root:root /mnt\r\nexport HOME=/mnt/server\r\n## install game using steamcmd\r\n./steamcmd.sh +force_install_dir /mnt/server +login ${STEAM_USER} ${STEAM_PASS} ${STEAM_AUTH} +app_update ${SRCDS_APPID} ${EXTRA_FLAGS} +quit ## other flags may be needed depending on install. looking at you cs 1.6\r\n## set up 32 bit libraries\r\nmkdir -p /mnt/server/.steam/sdk32\r\ncp -v linux32/steamclient.so ../.steam/sdk32/steamclient.so\r\n## set up 64 bit libraries\r\nmkdir -p /mnt/server/.steam/sdk64\r\ncp -v linux64/steamclient.so ../.steam/sdk64/steamclient.so",
-      "container": "ghcr.io/pterodactyl/installers:debian",
-      "entrypoint": "bash"
-    }
-  },
+  "scripts": {},
   "variables": [
-    {
-      "name": "Map",
-      "description": "The default map for the server.",
-      "env_variable": "SRCDS_MAP",
-      "default_value": "de_dust2",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|string|alpha_dash",
-      "field_type": "text"
-    },
     {
       "name": "Source AppID",
       "description": "NOT VISIBLE TO USERS. DO NOT EDIT.",
@@ -91,6 +74,16 @@
       "field_type": "text"
     },
     {
+      "name": "Map",
+      "description": "The default map for the server.",
+      "env_variable": "SRCDS_MAP",
+      "default_value": "de_dust2",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|alpha_dash",
+      "field_type": "text"
+    },
+    {
       "name": "Game Type",
       "description": "",
       "env_variable": "GAME_TYPE",
@@ -111,49 +104,19 @@
       "field_type": "text"
     },
     {
-      "name": "Junk Cleaner - Enabled",
-      "description": "Cleans up automatically logs after 72 hour, demo files after 7 days and round backup files after 24 hour.",
-      "env_variable": "CLEANUP_ENABLED",
-      "default_value": "0",
+      "name": "Server Add-ons",
+      "description": "Choose which add-ons to automatically install and update on server startup.",
+      "env_variable": "ADDON_SELECTION",
+      "default_value": "None - Vanilla server",
       "user_viewable": true,
       "user_editable": true,
-      "rules": "required|boolean",
+      "rules": "required|string|in:None - Vanilla server,Metamod Only,Metamod + CounterStrikeSharp,Metamod + Swiftly",
       "field_type": "text"
     },
     {
-      "name": "Auto Update - CounterStrikeSharp",
-      "description": "Enable or disable the automatic update of CSS on every server startup.",
-      "env_variable": "CSS_AUTOUPDATE",
-      "default_value": "0",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|boolean",
-      "field_type": "text"
-    },
-    {
-      "name": "Auto Update - MetaMod",
-      "description": "Enable or disable the automatic update of MetaMod on every server startup.",
-      "env_variable": "METAMOD_AUTOUPDATE",
-      "default_value": "0",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|boolean",
-      "field_type": "text"
-    },
-    {
-      "name": "Filter - Enabled",
-      "description": "Enable or disable the console filter to hide specific messages. Configure it using the file at '/game/mute_messages.cfg' when enabled.",
+      "name": "Console Filter",
+      "description": "Filter unwanted console messages. Configure filter patterns in /egg/configs/console-filter.json",
       "env_variable": "ENABLE_FILTER",
-      "default_value": "0",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|boolean",
-      "field_type": "text"
-    },
-    {
-      "name": "Filter - Preview Mode",
-      "description": "Enable or disable preview mode for the console filter. In preview mode, blocked messages are shown in red, allowing you to verify your filter configuration.",
-      "env_variable": "FILTER_PREVIEW_MODE",
       "default_value": "0",
       "user_viewable": true,
       "user_editable": true,
@@ -171,9 +134,9 @@
       "field_type": "text"
     },
     {
-      "name": "Auto Restart - Enabled",
-      "description": "Enable or disable the automatic server restart when a new game version is detected.",
-      "env_variable": "UPDATE_AUTO_RESTART",
+      "name": "Auto Cleanup",
+      "description": "Automatically cleans up old logs, demos, and backup files. Configure cleanup intervals in /egg/configs/cleanup.json",
+      "env_variable": "CLEANUP_ENABLED",
       "default_value": "0",
       "user_viewable": true,
       "user_editable": true,
@@ -181,93 +144,23 @@
       "field_type": "text"
     },
     {
-      "name": "Auto Restart - Check Interval",
-      "description": "The update detection interval, in seconds, for automatic restarts.\r\nPlease note that excessive usage may trigger Steam's rate limiting.",
-      "env_variable": "VERSION_CHECK_INTERVAL",
-      "default_value": "300",
-      "user_viewable": false,
-      "user_editable": false,
-      "rules": "required|integer|min:60",
-      "field_type": "text"
-    },
-    {
-      "name": "Auto Restart - API URL",
-      "description": "The panel URL used for API calls.\r\nThis should remain hidden from users. Update the default value to ensure all new servers use this setting.",
-      "env_variable": "PTERODACTYL_URL",
-      "default_value": "https://panel.domain.com",
-      "user_viewable": false,
-      "user_editable": false,
-      "rules": "nullable|required|regex:/^https?:\\/\\//",
-      "field_type": "text"
-    },
-    {
-      "name": "Auto Restart - User API key",
-      "description": "Your personal API key to this panel. You can generate a new one at \"API Credentials\".\r\nDo not add a default value here from an admin, if you host other people's server as it can be extracted from the docker environment. Let your users create their own.",
-      "env_variable": "PTERODACTYL_API_TOKEN",
-      "default_value": "",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "nullable|string|regex:/^(ptlc_|pacc_).{43}$/",
-      "field_type": "text"
-    },
-    {
-      "name": "Auto Restart - Commands",
-      "description": "JSON structure for configuring update countdown notifications or executing specific commands at defined countdown intervals.",
-      "env_variable": "UPDATE_COMMANDS",
-      "default_value": "{\"300\": \"say Attention: The server will update in 5 minutes. Please prepare to save your progress.\", \"60\": \"say Heads up: The server will update in 1 minute. Save your progress now.\", \"30\": \"say Warning: The server update is happening in 30 seconds. Get ready!\", \"10\": \"say Final notice: The server will update in 10 seconds. Please stand by.\", \"3\": \"say Final countdown: Update in 3 seconds. Hold tight!\", \"2\": \"say Final countdown: Update in 2 seconds. Almost there!\", \"1\": \"say Final countdown: Update in 1 second. Restarting now!\"}",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "nullable|string",
-      "field_type": "text"
-    },
-    {
-      "name": "Auto Restart - Countdown Interval",
-      "description": "The time interval for the countdown in seconds before the restart.",
-      "env_variable": "UPDATE_COUNTDOWN_TIME",
-      "default_value": "300",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|integer|min:1",
-      "field_type": "text"
-    },
-    {
-      "name": "Auto Restart - Steam API Key",
-      "description": "Your personal Steam API key to check for updates. You can generate a new one at https://steamcommunity.com/dev/apikey.",
-      "env_variable": "STEAM_API_KEY",
-      "default_value": "",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "nullable|string|regex:/^[0-9A-F]{32}$/",
-      "field_type": "text"
-    },
-    {
-      "name": "Auto Restart - Discord Webhook",
-      "description": "Discord webhook URL to send notifications when the server is scheduled to update automatically. This sends a cool embed with details such as the patch date and countdown timer.",
-      "env_variable": "DISCORD_WEBHOOK_URL",
-      "default_value": "",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "nullable|string",
-      "field_type": "text"
-    },
-    {
-      "name": "Egg - File Logging",
-      "description": "Log Egg messages to /egg.log, which is stored for 48 hours.",
-      "env_variable": "LOG_FILE_ENABLED",
+      "name": "Auto Update",
+      "description": "Automatically check for updates and restart when CS2 updates are detected. Configure timing, messages, and API credentials in /egg/configs/auto-restart.json",
+      "env_variable": "AUTO_UPDATE",
       "default_value": "0",
-      "user_viewable": false,
-      "user_editable": false,
+      "user_viewable": true,
+      "user_editable": true,
       "rules": "required|boolean",
       "field_type": "text"
     },
     {
-      "name": "Egg - Log Level",
-      "description": "The log level for the Egg to show in the console and log file.",
-      "env_variable": "LOG_LEVEL",
-      "default_value": "INFO",
+      "name": "VPK Sync",
+      "description": "Host directory path containing centralized CS2 game files for syncing. Enables VPK symlinking for massive storage savings. Requires Pterodactyl mount configuration (documentation on GitHub). Leave empty to disable.",
+      "env_variable": "SYNC_LOCATION",
+      "default_value": "",
       "user_viewable": false,
       "user_editable": false,
-      "rules": "required|string|in:DEBUG,INFO,WARNING,ERROR",
+      "rules": "nullable|string",
       "field_type": "text"
     }
   ]
