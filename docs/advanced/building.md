@@ -63,22 +63,6 @@ docker build -f KitsuneLab-Dockerfile -t myrepo/cs2-server:latest .
 
 Currently, the Dockerfile doesn't use build arguments, but you can modify it to add them.
 
-## Testing Your Build
-
-Before deploying, test your custom image:
-
-```bash
-# Run interactively
-docker run -it --rm your-registry/your-image:tag /bin/bash
-
-# Test the entrypoint
-docker run --rm \
-  -e SRCDS_APPID=730 \
-  -e SRCDS_MAP=de_dust2 \
-  -p 27015:27015/udp \
-  your-registry/your-image:tag
-```
-
 ## Pushing to Registry
 
 ### Docker Hub
@@ -108,6 +92,10 @@ docker push your-registry.com/your-image:tag
 
 After building and pushing your image:
 
+**💡 Recommendation:** Use Docker Hub with a **private repository** to protect your customizations.
+
+### Configure the Egg
+
 1. Go to **Admin** → **Nests** → Your Nest → **Eggs**
 2. Edit the KitsuneLab CS2 Egg
 3. In **Docker Images** section, add your custom image:
@@ -116,6 +104,22 @@ After building and pushing your image:
    ```
 4. Save changes
 5. In your server's **Startup** tab, select your custom image
+
+### For Private Registries
+
+If using a private Docker Hub repository or private registry, you must authenticate on **all Pterodactyl nodes**:
+
+```bash
+# SSH into each Pterodactyl node
+ssh root@your-node.com
+
+# Login to Docker Hub (or your private registry)
+docker login
+
+# Enter your credentials when prompted
+```
+
+**Important:** Pterodactyl nodes need registry access to pull private images. Without authentication, container creation will fail with "pull access denied" errors.
 
 ## Modifying the Image
 
@@ -155,38 +159,58 @@ Edit `docker/entrypoint.sh` to change startup behavior.
 
 ## Build Script Details
 
-The `build.sh` script accepts one optional parameter:
+The `build.sh` script provides a streamlined building experience with multiple options:
 
+**Usage:**
 ```bash
-./build.sh [tag]
+./build.sh [TAG] [options]
 ```
 
-- **tag**: The Docker image tag (default: `dev`)
+**Options:**
+- `-t, --tag TAG` - Set the Docker tag (default: `dev`)
+- `-P, --publish` - Automatically push to registry after build
+- `-h, --help` - Show usage information
+
+**Examples:**
+```bash
+./build.sh                    # Build with 'dev' tag
+./build.sh release            # Build with 'release' tag
+./build.sh -t 1.2.3 -P        # Build version 1.2.3 and push
+```
 
 ### Script Output
 
+The script provides a modern, colorful output with progress indicators:
+
 ```
-==========================================
-KitsuneLab CS2 Docker Image Builder
-==========================================
-Image: sples1/k4ryuu-cs2:dev
-==========================================
+──────────────────────────────────────────────────────
+ KitsuneLab CS2 Docker Image Builder
+──────────────────────────────────────────────────────
+Image: sples1/k4ryuu-cs2:latest
 
-Building Docker image...
-[Docker build output...]
 
-==========================================
-Build completed successfully!
-==========================================
-Image: sples1/k4ryuu-cs2:dev
+==> Building Docker image
+
+🔷 INFO  Dockerfile: KitsuneLab-Dockerfile
+🔷 INFO  Tag:        latest
+Building image
+⠋ Building image
+✅ DONE  Building image finished in 45s
+🔷 INFO  Image size: 1.23 GB
+
+
+==> Next steps
 
 To push to Docker Hub, run:
-  docker push sples1/k4ryuu-cs2:dev
-
-To test locally, run:
-  docker run -it --rm sples1/k4ryuu-cs2:dev /bin/bash
-==========================================
+  docker push sples1/k4ryuu-cs2:latest
 ```
+
+**Features:**
+- Animated spinner during build
+- Build time tracking
+- Automatic image size calculation
+- Color-coded status messages (✅ success, ❌ error, ⚠️ warning)
+- Optional auto-publish with `--publish` flag
 
 ## Multi-Architecture Builds
 
