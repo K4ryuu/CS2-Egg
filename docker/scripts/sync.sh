@@ -56,7 +56,7 @@ sync_files() {
     fi
 
     # Now create symlinks for all the VPK files
-    # This is where we save the big bucks (~25GB of VPKs)
+    # This is where we save the big bucks (~56GB of VPKs)
     local vpk_count=0
     local vpk_total_size=0
     while IFS= read -r -d '' vpk_file; do
