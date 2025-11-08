@@ -69,19 +69,19 @@ Comprehensive documentation is available:
 
 ## 🎯 Quick Build
 
-Build your own Docker image:
+Build your own Docker image using the included build script:
 
 ```bash
-# Clone and build
-git clone https://github.com/K4ryuu/CS2-Egg.git
-cd CS2-Egg
-./build.sh dev
+# Build with custom tag
+./build.sh latest
 
-# Push to your registry
-docker push sples1/k4ryuu-cs2:dev
+# Build and publish to Docker Hub
+./build.sh latest --publish
 ```
 
-See [Building from Source](docs/advanced/building.md) for details.
+**💡 Tip:** Edit `build.sh` to change the registry from `sples1/k4ryuu-cs2` to your own.
+
+**[📖 Full Building Guide →](docs/advanced/building.md)** - Customization, multi-arch builds, CI/CD integration
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
