@@ -10,25 +10,39 @@ This guide explains how to build your own Docker image from the source code.
 
 ## Quick Build
 
-The repository includes a build script for easy building:
+The repository includes a `build.sh` script that simplifies the Docker image building process.
+
+**Usage Examples:**
 
 ```bash
-# Clone the repository
-git clone https://github.com/K4ryuu/CS2-Egg.git
-cd CS2-Egg
-
-# Build with default tag (dev)
+# Build with default 'dev' tag
 ./build.sh
 
-# Or specify a custom tag
-./build.sh my-custom-tag
+# Build with custom tag
+./build.sh latest
+
+# Build and publish to Docker Hub
+./build.sh latest --publish
+
+# Build production version
+./build.sh v1.0.0
 ```
 
-The script will:
+**Customizing for Your Registry:**
 
-1. Build the Docker image
-2. Tag it as `sples1/k4ryuu-cs2:TAG`
-3. Provide instructions for pushing and testing
+Before building, edit the `build.sh` script to use your own Docker Hub username or private registry:
+
+1. Open `build.sh` in a text editor
+2. Find the `IMAGE_NAME` variable
+3. Change `sples1/k4ryuu-cs2` to your registry (e.g., `yourusername/cs2-server`)
+4. Save and run with your desired tag
+
+**What the script does:**
+
+1. Builds the Docker image from the Dockerfile
+2. Tags it as `your-registry/image-name:TAG`
+3. Optionally pushes to Docker Hub with `--publish` flag
+4. Displays helpful next steps for testing
 
 ## Manual Build
 
