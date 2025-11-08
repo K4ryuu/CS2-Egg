@@ -1,7 +1,7 @@
 #!/bin/bash
 source /utils/logging.sh
 
-# File system check function
+# Quick check to make sure we have enough disk space
 check_filesystem() {
     local dir="$1"
     local required_space=1048576  # 1GB in KB
@@ -28,7 +28,7 @@ check_filesystem() {
     return 0
 }
 
-# Improved size formatting function
+# Make file sizes readable for humans
 format_size() {
     local size="$1"
     if [[ ! "$size" =~ ^[0-9]+$ ]]; then
@@ -37,27 +37,28 @@ format_size() {
     fi
 
     if [ "$size" -ge 1073741824 ]; then
-        printf "%.2f GB" "$(echo "scale=2; $size/1073741824" | bc)"
+        printf "%.2f GB" "$(awk "BEGIN {printf \"%.2f\", $size/1073741824}")"
     elif [ "$size" -ge 1048576 ]; then
-        printf "%.2f MB" "$(echo "scale=2; $size/1048576" | bc)"
+        printf "%.2f MB" "$(awk "BEGIN {printf \"%.2f\", $size/1048576}")"
     elif [ "$size" -ge 1024 ]; then
-        printf "%.2f KB" "$(echo "scale=2; $size/1024" | bc)"
+        printf "%.2f KB" "$(awk "BEGIN {printf \"%.2f\", $size/1024}")"
     else
         printf "%d B" "$size"
     fi
 }
 
 cleanup() {
-    log_message "Starting cleanup..." "running"
+    # Grab config values (already loaded by config.sh)
+    local GAME_DIRECTORY="${CLEANUP_GAME_DIR:-./game/csgo}"
+    local BACKUP_ROUND_PURGE_INTERVAL="${CLEANUP_BACKUP_HOURS:-24}"
+    local DEMO_PURGE_INTERVAL="${CLEANUP_DEMOS_HOURS:-168}"
+    local CSS_JUNK_PURGE_INTERVAL="${CLEANUP_LOGS_HOURS:-72}"
+    local ACCELERATOR_DUMP_PURGE_INTERVAL="${CLEANUP_DUMPS_HOURS:-168}"
+    local ACCELERATOR_DUMPS_DIR="${CLEANUP_DUMPS_DIR:-./game/csgo/addons/AcceleratorCS2/dumps}"
 
-    # Validate required variables
-    if [ -z "$GAME_DIRECTORY" ]; then
-        log_message "GAME_DIRECTORY is not set" "error"
-        return 1
-    fi
-
+    # Make sure the game dir actually exists
     if [ ! -d "$GAME_DIRECTORY" ]; then
-        log_message "GAME_DIRECTORY does not exist: $GAME_DIRECTORY" "error"
+        log_message "Game directory not found: $GAME_DIRECTORY" "error"
         return 1
     fi
 
@@ -67,14 +68,7 @@ cleanup() {
         return 1
     fi
 
-    # Configuration
-    local BACKUP_ROUND_PURGE_INTERVAL=24
-    local DEMO_PURGE_INTERVAL=168
-    local CSS_JUNK_PURGE_INTERVAL=72
-    local ACCELERATOR_DUMP_PURGE_INTERVAL=168
-    local ACCELERATOR_DUMPS_DIR="${OUTPUT_DIR:-$GAME_DIRECTORY}/AcceleratorCS2/dumps"
-
-    # Statistics for debug
+    # Track how much stuff we delete
     declare -A stats=(
         ["backup_rounds"]=0
         ["demos"]=0
@@ -110,7 +104,6 @@ cleanup() {
             total_size=$((total_size + size))
             ((stats[$category]++))
             ((deleted_count++))
-            log_message "Deleted ${category}: ${file##*/} ($(format_size "$size"))" "debug"
         else
             log_message "Failed to delete: $file" "error"
         fi
@@ -151,14 +144,12 @@ cleanup() {
 
     # Final status report
     if ((deleted_count > 0)); then
-        log_message "Cleanup completed successfully! Freed $(format_size "$total_size") across $deleted_count files in $duration seconds." "success"
+        log_message "Cleaned up $deleted_count file(s), freed $(format_size "$total_size") in ${duration}s" "success"
         for category in "${!stats[@]}"; do
             if ((stats[$category] > 0)); then
-                log_message "- $category: ${stats[$category]} files" "debug"
+                log_message "  ${category}: ${stats[$category]} file(s)" "debug"
             fi
         done
-    else
-        log_message "Cleanup completed. No files were deleted." "success"
     fi
 
     return 0

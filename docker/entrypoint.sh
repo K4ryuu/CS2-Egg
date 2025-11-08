@@ -1,9 +1,14 @@
 #!/bin/bash
 
+source /utils/logging.sh
+source /utils/config.sh
 source /scripts/install.sh
+source /scripts/sync.sh
 source /scripts/cleanup.sh
 source /scripts/update.sh
 source /scripts/filter.sh
+source /scripts/setup-cron.sh
+source /scripts/update_helper.sh
 
 # Enhanced error handling
 trap 'handle_error ${LINENO} "$BASH_COMMAND"' ERR
@@ -11,44 +16,57 @@ trap 'handle_error ${LINENO} "$BASH_COMMAND"' ERR
 cd /home/container
 sleep 1
 
+# Run legacy file migration check (only runs on first boot with new structure)
+migrate_legacy_files
+
+# Initialize and load configurations
+init_configs
+load_configs
+
 # Get internal Docker IP
 INTERNAL_IP=$(ip route get 1 | awk '{print $NF;exit}')
 
-# Initial setup and sync
-install_steamcmd
-clean_old_logs
+# VPK Sync and SteamCMD installation (skip if updates disabled)
+if [ ${SRCDS_STOP_UPDATE:-0} -eq 0 ]; then
+    # VPK Sync (if configured) - must happen before SteamCMD
+    sync_files
+    sync_cfg_files
+
+    # Initial setup and sync
+    install_steamcmd
+    clean_old_logs
+else
+    log_message "Updates disabled, skipping VPK sync and SteamCMD" "warning"
+fi
 
 # Server update process
-if [ ! -z ${SRCDS_APPID} ] && [ ${SRCDS_STOP_UPDATE:-0} -eq 0 ]; then
-    log_message "Starting SteamCMD for AppID: ${SRCDS_APPID}" "running"
-
+if [ -n "${SRCDS_APPID}" ] && [ "${SRCDS_STOP_UPDATE:-0}" -eq 0 ]; then
     STEAMCMD=""
-    if [ ! -z ${SRCDS_BETAID} ]; then
-        if [ ! -z ${SRCDS_BETAPASS} ]; then
-            if [ ${SRCDS_VALIDATE} -eq 1 ]; then
-                log_message "SteamCMD Validate Flag Enabled! Triggered install validation for AppID: ${SRCDS_APPID}" "error"
-                log_message "THIS MAY WIPE CUSTOM CONFIGURATIONS! Please stop the server if this was not intended." "error"
-                if [ ! -z ${SRCDS_LOGIN} ]; then
+    if [ -n "${SRCDS_BETAID}" ]; then
+        if [ -n "${SRCDS_BETAPASS}" ]; then
+            if [ "${SRCDS_VALIDATE}" -eq 1 ]; then
+                log_message "Validation enabled: THIS MAY WIPE CUSTOM CONFIGURATIONS!" "error"
+                if [ -n "${SRCDS_LOGIN}" ]; then
                     STEAMCMD="./steamcmd/steamcmd.sh +login ${SRCDS_LOGIN} ${SRCDS_LOGIN_PASS} +force_install_dir /home/container +app_update ${SRCDS_APPID} -beta ${SRCDS_BETAID} -betapassword ${SRCDS_BETAPASS} validate +quit"
                 else
                     STEAMCMD="./steamcmd/steamcmd.sh +login anonymous +force_install_dir /home/container +app_update ${SRCDS_APPID} -beta ${SRCDS_BETAID} -betapassword ${SRCDS_BETAPASS} validate +quit"
                 fi
             else
-                if [ ! -z ${SRCDS_LOGIN} ]; then
+                if [ -n "${SRCDS_LOGIN}" ]; then
                     STEAMCMD="./steamcmd/steamcmd.sh +login ${SRCDS_LOGIN} ${SRCDS_LOGIN_PASS} +force_install_dir /home/container +app_update ${SRCDS_APPID} -beta ${SRCDS_BETAID} -betapassword ${SRCDS_BETAPASS} +quit"
                 else
                     STEAMCMD="./steamcmd/steamcmd.sh +login anonymous +force_install_dir /home/container +app_update ${SRCDS_APPID} -beta ${SRCDS_BETAID} -betapassword ${SRCDS_BETAPASS} +quit"
                 fi
             fi
         else
-            if [ ${SRCDS_VALIDATE} -eq 1 ]; then
-                if [ ! -z ${SRCDS_LOGIN} ]; then
+            if [ "${SRCDS_VALIDATE}" -eq 1 ]; then
+                if [ -n "${SRCDS_LOGIN}" ]; then
                     STEAMCMD="./steamcmd/steamcmd.sh +login ${SRCDS_LOGIN} ${SRCDS_LOGIN_PASS} +force_install_dir /home/container +app_update ${SRCDS_APPID} -beta ${SRCDS_BETAID} validate +quit"
                 else
                     STEAMCMD="./steamcmd/steamcmd.sh +login anonymous +force_install_dir /home/container +app_update ${SRCDS_APPID} -beta ${SRCDS_BETAID} validate +quit"
                 fi
             else
-                if [ ! -z ${SRCDS_LOGIN} ]; then
+                if [ -n "${SRCDS_LOGIN}" ]; then
                     STEAMCMD="./steamcmd/steamcmd.sh +login ${SRCDS_LOGIN} ${SRCDS_LOGIN_PASS} +force_install_dir /home/container +app_update ${SRCDS_APPID} -beta ${SRCDS_BETAID} +quit"
                 else
                     STEAMCMD="./steamcmd/steamcmd.sh +login anonymous +force_install_dir /home/container +app_update ${SRCDS_APPID} -beta ${SRCDS_BETAID} +quit"
@@ -56,16 +74,15 @@ if [ ! -z ${SRCDS_APPID} ] && [ ${SRCDS_STOP_UPDATE:-0} -eq 0 ]; then
             fi
         fi
     else
-        if [ ${SRCDS_VALIDATE} -eq 1 ]; then
-        log_message "SteamCMD Validate Flag Enabled! Triggered install validation for AppID: ${SRCDS_APPID}" "error"
-        log_message "THIS MAY WIPE CUSTOM CONFIGURATIONS! Please stop the server if this was not intended." "error"
-            if [ ! -z ${SRCDS_LOGIN} ]; then
+        if [ "${SRCDS_VALIDATE}" -eq 1 ]; then
+            log_message "Validation enabled: THIS MAY WIPE CUSTOM CONFIGURATIONS!" "error"
+            if [ -n "${SRCDS_LOGIN}" ]; then
                 STEAMCMD="./steamcmd/steamcmd.sh +login ${SRCDS_LOGIN} ${SRCDS_LOGIN_PASS} +force_install_dir /home/container +app_update ${SRCDS_APPID} validate +quit"
             else
                 STEAMCMD="./steamcmd/steamcmd.sh +login anonymous +force_install_dir /home/container +app_update ${SRCDS_APPID} validate +quit"
             fi
         else
-            if [ ! -z ${SRCDS_LOGIN} ]; then
+            if [ -n "${SRCDS_LOGIN}" ]; then
                 STEAMCMD="./steamcmd/steamcmd.sh +login ${SRCDS_LOGIN} ${SRCDS_LOGIN_PASS} +force_install_dir /home/container +app_update ${SRCDS_APPID} +quit"
             else
                 STEAMCMD="./steamcmd/steamcmd.sh +login anonymous +force_install_dir /home/container +app_update ${SRCDS_APPID} +quit"
@@ -75,6 +92,16 @@ if [ ! -z ${SRCDS_APPID} ] && [ ${SRCDS_STOP_UPDATE:-0} -eq 0 ]; then
 
     log_message "SteamCMD command: $(echo "$STEAMCMD" | sed -E 's/(\+login [^ ]+ )[^ ]+/\1****/')" "debug"
     eval ${STEAMCMD}
+    STEAM_EXIT_CODE=$?
+
+    if [ $STEAM_EXIT_CODE -eq 8 ]; then
+        log_message "SteamCMD connection error (exit code 8)" "error"
+        log_message "1. Check network and Steam server status (steamstat.us)" "info"
+        log_message "2. Ensure 30-40GB free disk space available" "info"
+        log_message "3. Disable proxy/VPN if enabled" "info"
+    elif [ $STEAM_EXIT_CODE -ne 0 ]; then
+        log_message "SteamCMD failed with exit code $STEAM_EXIT_CODE" "error"
+    fi
 
     # Update steamclient.so files
     cp -f ./steamcmd/linux32/steamclient.so ./.steam/sdk32/steamclient.so
@@ -83,32 +110,58 @@ if [ ! -z ${SRCDS_APPID} ] && [ ${SRCDS_STOP_UPDATE:-0} -eq 0 ]; then
     configure_metamod
 fi
 
-# Run cleanup and setup message filter
-cleanup_and_update
-setup_message_filter
-
-if [ "${UPDATE_AUTO_RESTART:-0}" -eq 1 ]; then
-    log_message "Auto-restart is enabled. Server will restart automatically if a new version is detected." "running"
-    version_check_loop &
+# Handle the addon installations based on the selection
+if [ "${CLEANUP_ENABLED:-0}" -eq 1 ]; then
+    cleanup
 fi
 
-# Prepare startup command
+mkdir -p "$TEMP_DIR"
+
+if [ "${ADDON_SELECTION}" = "Metamod Only" ] || [ "${ADDON_SELECTION}" = "Metamod + CounterStrikeSharp" ] || [ "${ADDON_SELECTION}" = "Metamod + Swiftly" ]; then
+    update_metamod
+fi
+
+if [ "${ADDON_SELECTION}" = "Metamod + CounterStrikeSharp" ]; then
+    update_addon "roflmuffin/CounterStrikeSharp" "$OUTPUT_DIR" "css" "CSS"
+fi
+
+if [ "${ADDON_SELECTION}" = "Metamod + Swiftly" ]; then
+    update_swiftly
+fi
+
+# Clean up
+rm -rf "$TEMP_DIR"
+
+# Set up console filter
+setup_message_filter
+
+if [ "${AUTO_UPDATE:-${UPDATE_AUTO_RESTART:-0}}" -eq 1 ]; then
+    # Try to set up cron-based checking first
+    if setup_version_check_cron; then
+        log_message "Version checking: cron-based" "debug"
+    else
+    # Fall back to script-based checking if cron doesn't work
+        log_message "Version checking: script-based" "debug"
+        version_check_loop &
+    fi
+fi
+
+# Build the actual startup command from template
 MODIFIED_STARTUP=$(eval echo $(echo ${STARTUP} | sed -e 's/{{/${/g' -e 's/}}/}/g'))
-MODIFIED_STARTUP="unbuffer -p ${MODIFIED_STARTUP}"
 
-# Log censored startup command
-LOGGED_STARTUP=$(echo "${MODIFIED_STARTUP#unbuffer -p }" | \
+# Log the command but hide the Steam account token for security
+LOGGED_STARTUP=$(echo "${MODIFIED_STARTUP}" | \
     sed -E 's/(\+sv_setsteamaccount\s+[A-Z0-9]{32})/+sv_setsteamaccount ************************/g')
-log_message "Starting server with command: ${LOGGED_STARTUP}" "running"
+log_message "Starting server: ${LOGGED_STARTUP}" "info"
 
-# Run the server with output handling
-$MODIFIED_STARTUP 2>&1 | while IFS= read -r line; do
+# Actually start the server and handle its output
+script -qfc "$MODIFIED_STARTUP" /dev/null 2>&1 | while IFS= read -r line; do
     line="${line%[[:space:]]}"
     [[ "$line" =~ Segmentation\ fault.*"${GAMEEXE}" ]] && continue
     handle_server_output "$line"
 done
 
-# Kill all background processes
+# Clean up any background processes we started
 pkill -P $$ 2>/dev/null || true
 
-log_message "Server has stopped successfully." "success"
+log_message "Server stopped" "success"

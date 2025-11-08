@@ -1,3 +1,40 @@
+-- update - 2025.11.07
+
+- feat: Introduced organized /egg/ directory structure for all egg-related files
+- feat: Implemented FTP-editable JSON configuration system with 5 config files
+- feat: Added config version migration system with automatic backup and smart merge
+- feat: Replaced environment variables with JSON configs for auto-restart, webhook, filter, cleanup, and logging
+- feat: Implemented API-based version checking via api.steamcmd.net (non-blocking, fast)
+- feat: Added Pterodactyl API integration for automatic server restart
+- feat: Introduced daily log rotation with triple limits (size, count, age)
+- feat: Created automatic legacy file migration system (update_helper.sh)
+- refactor: Moved auto-restart configuration from ~10 environment variables to single JSON file
+- refactor: Consolidated all configs into /egg/configs/ directory (FTP accessible)
+- refactor: Complete rewrite of docker/utils/config.sh with version management
+- refactor: Simplified Pterodactyl egg variables from ~20 to ~8 (60% reduction)
+- refactor: Switched add-on selection values to descriptive labels (more readable Panel UI)
+- refactor: Unified update control under AUTO_UPDATE (replaces UPDATE_AUTO_RESTART)
+- upgrade: Enhanced auto-restart system with client API token support
+- optimise: Replaced unbuffer (expect) with stdbuf for console piping (~1.2MB compressed saving)
+- optimise: Switched awk dependency from gawk to mawk to reduce image size (~3-4MB compressed saving)
+- remove: Deleted redundant steamcmd_version_check.sh (merged into version.sh)
+- remove: Removed 12+ legacy environment variables (migrated to JSON configs)
+- remove: Removed expect package from Docker image (no longer needed after stdbuf switch)
+- security: API tokens now user-configurable via FTP (not environment)
+- security: Removed default API token values from egg to prevent extraction
+- security: Implemented per-user API token system (not shared across servers)
+- security: Added automatic GSLT token masking in logs
+- docs: Updated 15+ documentation pages for new configuration system
+- docs: Created comprehensive troubleshooting guide with new scenarios
+- docs: Created detailed configuration files reference documentation
+- fix: Fixed entrypoint.sh syntax error with sed regex escaping
+
+-- update - 2025.04.29
+
+- feat: Replaced separate toggles for MetaMod and CounterStrikeSharp with a unified "Server Add-ons" dropdown
+- feat: Added support for Swiftly as a server add-on option
+- feat: Server add-ons now offer four options as None, Metamod Only, Metamod + CounterStrikeSharp, Metamod + Swiftly
+
 -- update - 2025.03.27
 
 - feat: Added support for the new CounterStrikeSharp versioning schema
