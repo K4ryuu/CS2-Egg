@@ -21,7 +21,13 @@
     "logs": "{}",
     "stop": "quit"
   },
-  "scripts": {},
+  "scripts": {
+    "installation": {
+      "script": "#!/bin/bash\n# Dummy install script - actual installation happens on first startup\nexit 0",
+      "container": "ghcr.io/pterodactyl/installers:debian",
+      "entrypoint": "bash"
+    }
+  },
   "variables": [
     {
       "name": "Source AppID",
