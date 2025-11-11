@@ -65,6 +65,13 @@ php artisan cache:clear
 
 We provide an automated update script that handles everything: version checking, downloading, permissions, and optionally restarting servers.
 
+**Prerequisites for the update script:**
+
+- **Required:** `jq` must be installed for JSON parsing (version check + API communication)
+  - Install: `apt-get install jq` on Debian/Ubuntu
+  - The script will exit with error if jq is not found
+- **Auto-installed:** SteamCMD will be downloaded automatically if not present
+
 #### Download and Configure
 
 Download the script:
@@ -330,6 +337,10 @@ steamcmd +force_install_dir /srv/cs2-shared +login anonymous +app_update 730 +qu
 > - ✅ **Permission errors** - Automatically runs `chown` and `chmod` after every update
 > - ✅ **Steam libraries** - Copies SDK files automatically
 > - ✅ **Directory creation** - Creates required directories if missing
+>
+> **Not Auto-Fixed:**
+>
+> - ❌ **jq missing** - Must be installed manually: `apt-get install jq`
 >
 > If you encounter issues, the script likely fixed them automatically on the next run.
 
