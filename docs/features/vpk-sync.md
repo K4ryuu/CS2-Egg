@@ -20,12 +20,21 @@ VPK Sync allows multiple CS2 servers to share game files from a single centraliz
 3. Sync script symlinks .vpk files (~52GB) and syncs other files
 4. Each server uses shared files, maintains separate configs
 
+**Update Management Advantage:**
+
+The centralized update script can automatically restart **all servers together** after downloading the update once. This is far superior to the [egg-based auto-restart](auto-restart.md), which makes each server download and restart independently.
+
+- ✅ **Single download** vs multiple duplicate downloads
+- ✅ **Coordinated restarts** vs staggered individual restarts
+- ✅ **Bandwidth savings** vs redundant traffic
+- ✅ **Faster updates** vs waiting for each server
+
 ## Prerequisites
 
-✅ **KitsuneLab CS2 Egg installed in Nests**
-✅ **Pterodactyl Panel with [PR #4034](https://github.com/pterodactyl/panel/pull/4034) applied** (adds mount support)
-✅ **Root access to node** (for cron setup and permissions)
-✅ **Sufficient storage** for one complete CS2 installation
+- ✅ **KitsuneLab CS2 Egg installed in Nests**
+- ✅ **Pterodactyl Panel with [PR #4034](https://github.com/pterodactyl/panel/pull/4034) applied** (adds mount support)
+- ✅ **Root access to node** (for cron setup and permissions)
+- ✅ **Sufficient storage** for one complete CS2 installation
 
 ## Setup Guide
 
@@ -51,25 +60,174 @@ php artisan cache:clear
 
 ### Step 3: Setup Automated Updates (Cron Job)
 
-Create a cron job that updates CS2 files every 1-2 minutes to the centralized location (on the server machine, not inside containers).
+We provide an automated update script that handles everything: version checking, downloading, permissions, and optionally restarting servers.
 
-**Why frequent checks?** SteamCMD only downloads when updates exist, otherwise it's just a quick version check.
+#### Download and Configure
 
-**Example cron job request:** If you need a reference script, [request it via GitHub Issues](https://github.com/K4ryuu/CS2-Egg/issues).
-
-**Basic concept:**
+Download the script:
 
 ```bash
-# Cron runs every 1-2 minutes
-# Updates /srv/cs2-shared when CS2 updates
-# Uses steamcmd +login anonymous +app_update 730 +quit
+cd /root
+curl -O https://raw.githubusercontent.com/K4ryuu/CS2-Egg/main/misc/update-cs2-centralized.sh
+chmod +x update-cs2-centralized.sh
 ```
 
-**Set permissions after initial download:**
+Edit configuration at the top of the script:
 
 ```bash
-chown -R pterodactyl:pterodactyl /srv/cs2-shared
-chmod -R 755 /srv/cs2-shared
+nano update-cs2-centralized.sh
+```
+
+**Configuration section (at the top of the file):**
+
+```bash
+# ============================================================================
+# CONFIGURATION - Edit these values for your setup
+# ============================================================================
+
+# Required: Path where centralized CS2 files are stored
+CS2_DIR="/srv/cs2-shared"
+
+# Required: SteamCMD installation directory
+STEAMCMD_DIR="/root/steamcmd"
+
+# Optional: Pterodactyl Panel URL (for automatic server restart)
+PTERODACTYL_API_URL=""
+
+# Optional: Pterodactyl Application API Token
+PTERODACTYL_API_TOKEN=""
+
+# Optional: Docker image filter for server detection
+SERVER_IMAGE="sples1/k4ryuu-cs2"
+
+# Optional: Enable automatic server restart (true/false)
+AUTO_RESTART_SERVERS="false"
+```
+
+**For automatic server restarts**, add Pterodactyl API credentials:
+
+1. Admin Panel → Application API → Create New
+2. Permissions needed: `servers.read`, `servers.power`
+3. Copy token and URL to script:
+
+```bash
+PTERODACTYL_API_URL="https://panel.yourdomain.com"
+PTERODACTYL_API_TOKEN="ptla_YOUR_API_TOKEN_HERE"
+AUTO_RESTART_SERVERS="true"
+```
+
+#### Test the Script
+
+Run manually to verify configuration:
+
+```bash
+./update-cs2-centralized.sh
+```
+
+**Expected output (no update available):**
+
+```
+──────────────────────────────────────────────────────
+ KitsuneLab CS2 Centralized Update
+──────────────────────────────────────────────────────
+
+==> Pre-flight Checks
+
+✓ DONE  Dependencies satisfied
+ℹ INFO  CS2 Directory: /srv/cs2-shared
+ℹ INFO  SteamCMD Directory: /root/steamcmd
+
+==> SteamCMD Setup
+
+✓ DONE  SteamCMD already installed
+
+==> Version Check
+
+ℹ INFO  Checking CS2 updates (current: 14589)...
+✓ DONE  CS2 is up to date (version: 14589)
+```
+
+**Expected output (update available):**
+
+```
+==> Version Check
+
+ℹ INFO  Checking CS2 updates (current: 14589)...
+⚠ WARN  Update available! Current: 14589 → Required: 14590
+
+==> Updating CS2 to version 14590
+
+Downloading CS2 update
+ Update state (0x5) downloading, progress: 45.67 (24821478192 / 54352914432)
+ Update state (0x5) downloading, progress: 67.23 (36537648512 / 54352914432)
+ Update state (0x5) downloading, progress: 89.41 (48592374192 / 54352914432)
+✓ DONE  Downloading CS2 update finished in 245s
+ℹ INFO  Installing Steam client libraries...
+ℹ INFO  Setting permissions...
+✓ DONE  CS2 updated successfully to version 14590
+ℹ INFO  CS2 directory size: 55G
+
+==> Detecting Affected Servers
+
+ℹ INFO  Fetching servers from Pterodactyl API...
+✓ DONE  Found 12 server(s) using CS2 image
+
+==> Restarting Servers
+
+ℹ INFO  Preparing to restart 12 server(s)...
+✓ DONE  All servers restarted successfully (12/12)
+```
+
+**Note:** During download/update operations, you'll see real-time progress with the last 3 lines of SteamCMD output. These lines automatically update as new output arrives, and clear when the operation completes.
+
+#### Setup Cron Job
+
+Add to crontab to run every 1-2 minutes:
+
+```bash
+crontab -e
+```
+
+**Without logging** (script output goes nowhere):
+```bash
+# CS2 Centralized Update - Runs every 2 minutes
+*/2 * * * * /root/update-cs2-centralized.sh >/dev/null 2>&1
+```
+
+**With logging** (save output to file for monitoring):
+```bash
+# CS2 Centralized Update - Runs every 2 minutes (with logging)
+*/2 * * * * /root/update-cs2-centralized.sh >> /var/log/cs2-update.log 2>&1
+```
+
+**Why frequent checks?** SteamCMD only downloads when updates exist. If no update, it's just a quick API check (~1 second).
+
+**Alternative intervals:**
+
+```bash
+# Every 1 minute (aggressive) - with logging
+* * * * * /root/update-cs2-centralized.sh >> /var/log/cs2-update.log 2>&1
+
+# Every 5 minutes (conservative) - with logging
+*/5 * * * * /root/update-cs2-centralized.sh >> /var/log/cs2-update.log 2>&1
+
+# Every 2 minutes - without logging
+*/2 * * * * /root/update-cs2-centralized.sh >/dev/null 2>&1
+```
+
+#### Monitor Updates
+
+Check the log file (if you configured cron with output redirect):
+
+```bash
+# Real-time monitoring
+tail -f /var/log/cs2-update.log
+
+# Last 50 lines
+tail -n 50 /var/log/cs2-update.log
+
+# Check for successful updates
+grep "DONE.*updated successfully" /var/log/cs2-update.log
 ```
 
 ### Step 4: Configure Pterodactyl System
@@ -260,4 +418,4 @@ A: Every 1-2 minutes is safe - SteamCMD only downloads when updates exist.
 Need help with VPK sync?
 
 - [Report Issue](https://github.com/K4ryuu/CS2-Egg/issues)
-- [Request Cron Script Example](https://github.com/K4ryuu/CS2-Egg/issues)
+- [View Update Script](https://github.com/K4ryuu/CS2-Egg/blob/main/misc/update-cs2-centralized.sh)

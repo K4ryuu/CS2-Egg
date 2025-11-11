@@ -19,6 +19,16 @@ The Auto-Restart feature monitors CS2 for updates using the Steam API (`api.stea
 - Discord webhook integration
 - Customizable countdown commands
 
+> **⚠️ Better Alternative Available**
+>
+> If you use **[VPK Sync](vpk-sync.md)** with the centralized update script, you get **superior update management**:
+> - ✅ **Single download** for all servers (saves bandwidth and time)
+> - ✅ **Coordinated restarts** - all servers restart together after one download completes
+> - ✅ **Centralized control** - manage updates from one location
+> - ✅ **Faster updates** - no duplicate downloads across servers
+>
+> The egg-based auto-restart works per-server (each server downloads and restarts independently). For multiple servers, the centralized script is **significantly more efficient**.
+
 ## Prerequisites
 
 Before setting up Auto-Restart:
