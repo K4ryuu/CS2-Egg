@@ -317,9 +317,21 @@ steamcmd +force_install_dir /srv/cs2-shared +login anonymous +app_update 730 +qu
 
 ## Troubleshooting
 
+> **💡 Auto-Fixed Issues**
+>
+> The update script automatically handles most common problems:
+> - ✅ **SteamCMD missing** - Auto-downloads and installs if not found
+> - ✅ **Permission errors** - Automatically runs `chown` and `chmod` after every update
+> - ✅ **Steam libraries** - Copies SDK files automatically
+> - ✅ **Directory creation** - Creates required directories if missing
+>
+> If you encounter issues, the script likely fixed them automatically on the next run.
+
 ### Sync Location Not Found
 
 **Error:** `Sync location not found: /tmp/cs2_ds`
+
+**Cause:** Mount not configured or not assigned to egg.
 
 **Fix:**
 
@@ -332,16 +344,31 @@ steamcmd +force_install_dir /srv/cs2-shared +login anonymous +app_update 730 +qu
 
 **Error:** `Failed to sync base files`
 
-**Fix:**
+**Note:** The update script automatically fixes permissions after every update (`chown pterodactyl:pterodactyl` + `chmod 755`).
+
+**Manual fix (if needed immediately):**
 
 ```bash
 chown -R pterodactyl:pterodactyl /srv/cs2-shared
 chmod -R 755 /srv/cs2-shared
 ```
 
+### SteamCMD Missing
+
+**Note:** The update script automatically downloads and installs SteamCMD if it's missing or incomplete.
+
+**Manual installation (if needed):**
+
+```bash
+mkdir -p /root/steamcmd
+cd /root/steamcmd
+curl -sqL "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz" | tar zxf -
+chmod +x steamcmd.sh
+```
+
 ### Cron Job Not Running
 
-**Fix:**
+**Check status:**
 
 ```bash
 # Check cron service
@@ -351,10 +378,14 @@ systemctl status cron
 crontab -l
 
 # Test manual run
-/path/to/your/update-script.sh
+/root/update-cs2-centralized.sh
 ```
 
-Also you can add the cron as root by running `sudo crontab -e`.
+**Add as root cron:**
+
+```bash
+sudo crontab -e
+```
 
 ## Configuration Reference
 
