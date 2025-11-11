@@ -1,436 +1,263 @@
 # VPK Sync Feature
 
-Dramatically reduce storage and bandwidth usage by syncing CS2 game files from a centralized location.
+Dramatically reduce storage and bandwidth by centralizing CS2 game files.
 
 ## Overview
 
-The VPK Sync feature allows multiple CS2 servers to share the same game files stored on the host machine, instead of each server having its own complete copy.
+VPK Sync allows multiple CS2 servers to share game files from a single centralized location instead of each server storing its own complete copy.
 
-### Storage Savings
+**Storage Savings:**
 
-**Without VPK Sync:**
+- Without sync: ~55GB per server
+- With sync: ~3GB per server (configs + workshop only)
+- **Savings per server: ~52GB** (real data)
+- **10 servers**: 550GB → 82GB (85% reduction)
 
-- Each server: ~30GB (game files + VPK files)
-- 10 servers: ~300GB total storage
+**How It Works:**
 
-**With VPK Sync:**
-
-- Centralized storage: ~30GB (one complete copy)
-- Each server: ~3GB (configs + workshop content only)
-- 10 servers: ~30GB + (10 × 3GB) = ~60GB total
-- **Savings: ~240GB (80% reduction!)**
-
-### Bandwidth Savings
-
-- Game files downloaded **once** to centralized location
-- Updates downloaded **once**, synced to all servers instantly
-- No redundant downloads across multiple servers
-
-## How It Works
-
-1. **Centralized Storage**: Complete CS2 installation in a host directory
-2. **VPK Symlinks**: Large .vpk files are symlinked (not copied) to each server
-3. **File Sync**: Non-VPK files are synced using rsync
-4. **Config Preservation**: Server-specific configs are preserved
-5. **Auto-Update**: Update centralized location once, all servers benefit
-
-### Technical Details
-
-- Uses `rsync` for efficient file synchronization
-- Creates symbolic links for `.vpk` files (25GB+ of data)
-- Preserves existing configuration files
-- Runs on every server startup before SteamCMD
+1. Automated cron job keeps centralized CS2 installation updated
+2. Pterodactyl mounts this directory into containers (read-only)
+3. Sync script symlinks .vpk files (~52GB) and syncs other files
+4. Each server uses shared files, maintains separate configs
 
 ## Prerequisites
 
-### Required Pterodactyl Panel Modification
-
-This feature requires a **specific panel modification** to allow host directory mounts.
-
-**Panel PR:** https://github.com/pterodactyl/panel/pull/4034/files
-
-This PR adds support for mounting host directories into containers, which is essential for VPK sync.
-
-### Requirements
-
-- ✅ Pterodactyl Panel with PR #4034 applied
-- ✅ Node with sufficient storage for centralized CS2 installation
-- ✅ Admin access to configure mounts
-- ✅ CS2 game files in centralized location
+✅ **KitsuneLab CS2 Egg installed in Nests**
+✅ **Pterodactyl Panel with [PR #4034](https://github.com/pterodactyl/panel/pull/4034) applied** (adds mount support)
+✅ **Root access to node** (for cron setup and permissions)
+✅ **Sufficient storage** for one complete CS2 installation
 
 ## Setup Guide
 
-### Step 1: Apply Pterodactyl Panel Patch
+### Step 1: Install Egg in Nests
 
-1. **Check if already applied:**
+Before proceeding, ensure the KitsuneLab CS2 Egg is imported into your Pterodactyl Nests.
 
-   ```bash
-   # Check panel version or manually verify code
-   grep -r "additional_mounts" /var/www/pterodactyl/app/
-   ```
+### Step 2: Apply Pterodactyl Panel Modification
 
-2. **Apply the patch:**
-
-   ```bash
-   cd /var/www/pterodactyl
-
-   # Backup first!
-   cp -r app app.backup
-
-   # Apply PR #4034 changes manually or merge the PR
-   # See: https://github.com/pterodactyl/panel/pull/4034/files
-   ```
-
-3. **Restart panel:**
-   ```bash
-   php artisan config:clear
-   php artisan cache:clear
-   ```
-
-### Step 2: Create Centralized Storage
-
-On your node, create a directory for centralized CS2 files:
+Apply [PR #4034](https://github.com/pterodactyl/panel/pull/4034) to enable directory mounting:
 
 ```bash
-# Create directory
-mkdir -p /srv/cs2-shared
+cd /var/www/pterodactyl
+cp -r app app.backup  # Backup first!
 
-# Set permissions (important!)
+# Apply PR #4034 changes
+# See: https://github.com/pterodactyl/panel/pull/4034/files
+
+# Clear cache
+php artisan config:clear
+php artisan cache:clear
+```
+
+### Step 3: Setup Automated Updates (Cron Job)
+
+Create a cron job that updates CS2 files every 1-2 minutes to the centralized location (on the server machine, not inside containers).
+
+**Why frequent checks?** SteamCMD only downloads when updates exist, otherwise it's just a quick version check.
+
+**Example cron job request:** If you need a reference script, [request it via GitHub Issues](https://github.com/K4ryuu/CS2-Egg/issues).
+
+**Basic concept:**
+
+```bash
+# Cron runs every 1-2 minutes
+# Updates /srv/cs2-shared when CS2 updates
+# Uses steamcmd +login anonymous +app_update 730 +quit
+```
+
+**Set permissions after initial download:**
+
+```bash
 chown -R pterodactyl:pterodactyl /srv/cs2-shared
 chmod -R 755 /srv/cs2-shared
 ```
 
-### Step 3: Download CS2 to Centralized Location
+### Step 4: Configure Pterodactyl System
 
-Install CS2 to the centralized directory:
+Edit `/etc/pterodactyl/config.yml` and add mount path to allowed list:
+
+```yaml
+allowed_mounts:
+  - /srv/cs2-shared
+```
+
+Restart Wings:
 
 ```bash
-# Install SteamCMD if not already installed
-apt-get install steamcmd
-
-# Download CS2
-steamcmd +force_install_dir /srv/cs2-shared +login anonymous +app_update 730 +quit
+systemctl restart wings
 ```
 
-This downloads the complete CS2 server (~30GB).
+### Step 5: Create Mount in Admin Panel
 
-### Step 4: Configure Pterodactyl Mount
+Navigate to: **Admin Panel** → **Mounts** → **Create New**
 
-In Pterodactyl panel:
+**Configuration:**
 
-1. Go to **Admin** → **Nests** → Your Nest → **Mounts**
-2. Create a new mount:
+- **Name**: CS2 Shared Files
+- **Source**: `/srv/cs2-shared` (external path on node)
+- **Target**: `/tmp/cs2_ds` (internal path in container)
+- **Read Only**: ✅ **ON** (prevents servers from modifying shared files)
+- **Auto Mount**: ✅ **ON** (mounts automatically for assigned servers)
 
-   - **Name**: CS2 Shared Files
-   - **Source**: `/srv/cs2-shared`
-   - **Target**: `/tmp/cs2_ds` (inside container)
-   - **Read Only**: ✅ Yes (recommended for safety)
-   - **User Mountable**: ❌ No
+Save the mount.
 
-3. Save the mount
+### Step 6: Configure Egg-Level Environment Variable
 
-### Step 5: Enable Mount for Servers
+**This is critical** - setting at egg level ensures ALL new servers inherit the configuration.
 
-**Option A: Enable for all servers (Egg level)**
+Navigate to: **Admin Panel** → **Nests** → **Your Nest** → **Eggs** → **KitsuneLab CS2**
 
-1. Go to **Nests** → Your Nest → **Eggs** → KitsuneLab CS2 Egg
-2. Go to **Mounts** tab
-3. Enable the "CS2 Shared Files" mount
+Go to **Variables** tab and find **VPK Sync**:
 
-**Option B: Enable per server**
+- **Default Value**: `/tmp/cs2_ds` (the internal mount target from Step 5)
+- **User Editable**: You can leave this on if you want per-server control
+- **User Viewable**: No
 
-1. Go to specific server
-2. Go to **Mounts** tab
-3. Enable the "CS2 Shared Files" mount
+Save changes.
 
-### Step 6: Configure Sync Location Variable
+**Assign mount to egg:**
 
-Set the environment variable:
+- Go to **Mounts** tab in the same egg settings
+- Enable the "CS2 Shared Files" mount
+- Save
 
-**For all new servers (Nest level):**
+Now **all new servers** will automatically use VPK sync!
 
-1. **Nests** → **Eggs** → KitsuneLab CS2 Egg → **Variables**
-2. Find **VPK Sync - Location**
-3. Set default value to: `/tmp/cs2_ds`
-4. Save
+### Step 7: Deploy or Resize Servers
 
-**For existing server:**
+**For new servers:** Create as normal - VPK sync activates automatically on first start.
 
-1. Server → **Startup** tab
-2. Find **VPK SYNC - LOCATION**
-3. Set to: `/tmp/cs2_ds`
-4. Save
+**For existing servers:** Resize to trigger sync:
 
-### Step 7: Restart Server
+1. Stop server
+2. Change allocation or trigger reinstall
+3. Start server - sync will run and reduce storage
 
-Restart your CS2 server. You should see:
+Console output on successful sync:
 
 ```
-[RUNNING] Starting VPK sync from: /tmp/cs2_ds
-[RUNNING] Syncing base files (excluding VPKs and configs)...
-[SUCCESS] Base files synced successfully
-[RUNNING] Creating VPK symlinks...
-[SUCCESS] VPK symlinks created successfully
-[SUCCESS] VPK sync completed! Server size reduced significantly.
+[RUNNING] Syncing VPK files...
+[SUCCESS] VPK sync complete — linked 28 file(s), total VPK size ~52 GB
 ```
 
 ## Maintenance
 
-### Updating CS2
+### Updates
 
-When CS2 updates, only update the centralized location:
+**Automatic:** Cron job handles everything. When CS2 updates:
+
+1. Cron detects update and downloads to `/srv/cs2-shared`
+2. Servers sync new files on next restart
+3. No manual intervention needed
+
+**Manual trigger** (if needed, on the server node):
 
 ```bash
-# Update centralized CS2
+# On node, as root
 steamcmd +force_install_dir /srv/cs2-shared +login anonymous +app_update 730 +quit
-
-# Restart all servers
-# Each server will sync the new files on startup
-```
-
-All servers will get the update on their next restart!
-
-### Monitoring Storage
-
-Check storage usage:
-
-```bash
-# Centralized storage
-du -sh /srv/cs2-shared
-
-# Individual server
-du -sh /var/lib/pterodactyl/volumes/YOUR_SERVER_UUID
-
-# Compare before/after VPK sync
-```
-
-### Verifying Symlinks
-
-Check if VPK files are symlinked:
-
-```bash
-# Inside a server container
-ls -lh /home/container/game/csgo/*.vpk
-
-# Should show: pak01_000.vpk -> /tmp/cs2_ds/game/csgo/pak01_000.vpk
 ```
 
 ## Troubleshooting
 
 ### Sync Location Not Found
 
-**Error:** `Sync location does not exist: /tmp/cs2_ds`
+**Error:** `Sync location not found: /tmp/cs2_ds`
 
-**Solutions:**
+**Fix:**
 
-1. Verify mount is enabled for the server
-2. Check mount source exists on node: `ls /srv/cs2-shared`
-3. Verify mount target is `/tmp/cs2_ds` in mount configuration
-4. Restart server after enabling mount
+1. Verify mount exists: **Admin** → **Mounts**
+2. Check mount is assigned to egg: **Eggs** → **Mounts** tab
+3. Verify `/srv/cs2-shared` exists on node
+4. Restart server
 
-### Permission Denied Errors
+### Permission Denied
 
-**Error:** `Failed to sync base files` or `Permission denied`
+**Error:** `Failed to sync base files`
 
-**Solutions:**
+**Fix:**
 
 ```bash
-# On node, fix permissions
 chown -R pterodactyl:pterodactyl /srv/cs2-shared
 chmod -R 755 /srv/cs2-shared
-
-# Check container user has read access
 ```
 
-### Symlinks Not Working
+### Cron Job Not Running
 
-**Problem:** VPK files copied instead of symlinked
-
-**Solutions:**
-
-1. Ensure mount is configured (symlinks require mount)
-2. Check `rsync` flags include `-L` for symlink handling
-3. Verify source VPK files exist in `/srv/cs2-shared`
-
-### Server Won't Start After Enabling
-
-**Solutions:**
-
-1. Check sync completed successfully in console
-2. Verify centralized CS2 installation is complete
-3. Try disabling sync temporarily: `SYNC_LOCATION=""`
-4. Check container has network access (for fallback to SteamCMD)
-
-### Updates Not Syncing
-
-**Problem:** Server doesn't get updated files
-
-**Solutions:**
-
-1. Verify centralized location was updated
-2. Check mount is read-only (forces sync, not write-back)
-3. Restart server to trigger sync
-4. Check rsync completed without errors
-
-## Advanced Configuration
-
-### Custom Sync Location
-
-Use a different path:
+**Fix:**
 
 ```bash
-# Different mount point
-SYNC_LOCATION=/mnt/cs2-central
+# Check cron service
+systemctl status cron
 
-# Network share (if mounted)
-SYNC_LOCATION=/mnt/nfs/cs2-shared
+# Verify crontab entry
+crontab -l
+
+# Test manual run
+/path/to/your/update-script.sh
 ```
 
-### Selective Sync
+Also you can add the cron as root by running `sudo crontab -e`.
 
-Modify `docker/scripts/sync.sh` to customize what's synced:
+## Configuration Reference
 
-```bash
-# Exclude additional paths
-rsync -aKLz --exclude '*.vpk' \
-             --exclude 'cfg/' \
-             --exclude 'maps/' \
-             "$src_dir/" "$dest_dir"
-```
-
-### Workshop Content Handling
-
-Workshop content is NOT synced (server-specific):
-
-- Each server maintains its own workshop content
-- Located in `game/csgo/addons/` and workshop folders
-- Not included in VPK sync
-
-## Performance Impact
-
-### Startup Time
-
-- **First startup**: Slightly slower (rsync + symlink creation)
-- **Subsequent startups**: Much faster (only changed files synced)
-- **After updates**: Instant sync vs. 10-30 minute download
-
-### Runtime Performance
-
-- **No performance impact** - symlinks are transparent to the game
-- **Same speed** as having files locally
-- **Network storage**: May have minimal latency (use local storage recommended)
-
-## Best Practices
-
-1. **Use local storage** for centralized location (fastest)
-2. **Mount as read-only** to prevent accidental modifications
-3. **Update centralized location** during low-traffic hours
-4. **Monitor disk space** on centralized location
-5. **Regular backups** of centralized location
-6. **Test updates** on one server before restarting all
-7. **Document your setup** for other admins
-
-## Architecture Examples
-
-### Small Setup (1-5 servers)
+### File Hierarchy
 
 ```
-Node 1:
-├── /srv/cs2-shared (30GB) ← Centralized CS2
-└── Servers (5 × 3GB = 15GB)
-Total: ~45GB vs. 150GB without sync
+Node (Physical Server):
+├── /srv/cs2-shared (~55GB)       ← Cron updates this
+└── /etc/pterodactyl/config.yml   ← allowed_mounts
+
+Pterodactyl Admin Panel:
+├── Mounts: /srv/cs2-shared → /tmp/cs2_ds
+└── Egg Variables: SYNC_LOCATION = /tmp/cs2_ds
+
+Container (Inside Server):
+├── /tmp/cs2_ds (mounted, read-only)     ← Shared files (~55GB)
+└── /home/container/game/csgo/*.vpk      ← Symlinks (~52GB saved)
 ```
 
-### Medium Setup (10-20 servers)
+### Mount Settings Summary
 
-```
-Node 1:
-├── /srv/cs2-shared (30GB)
-└── Servers 1-10 (10 × 3GB = 30GB)
+| Setting    | Value             | Why                                   |
+| ---------- | ----------------- | ------------------------------------- |
+| Source     | `/srv/cs2-shared` | External path on node                 |
+| Target     | `/tmp/cs2_ds`     | Internal path in container            |
+| Read Only  | ✅ ON             | Prevents modification of shared files |
+| Auto Mount | ✅ ON             | Automatically mounts for servers      |
 
-Node 2:
-├── /srv/cs2-shared (30GB) ← Same version
-└── Servers 11-20 (10 × 3GB = 30GB)
+### Storage Calculation
 
-Total: ~120GB vs. 600GB without sync
-```
+| Servers | Without Sync | With Sync | Savings      |
+| ------- | ------------ | --------- | ------------ |
+| 1       | 55GB         | 55GB      | 0GB (0%)     |
+| 5       | 275GB        | 70GB      | 205GB (75%)  |
+| 10      | 550GB        | 85GB      | 465GB (85%)  |
+| 20      | 1.1TB        | 115GB     | 1025GB (86%) |
+| 50      | 2.75TB       | 205GB     | 2.6TB (87%)  |
 
-### Large Setup (Many servers, NFS)
-
-```
-NFS Server:
-└── /exports/cs2-shared (30GB) ← Single source of truth
-
-Node 1, 2, 3... N:
-├── /mnt/nfs/cs2-shared (NFS mount)
-└── Multiple servers (3GB each)
-
-Total: 30GB + (N servers × 3GB)
-```
-
-## Security Considerations
-
-### Read-Only Mounts
-
-- ✅ Prevents servers from modifying shared files
-- ✅ Protects against malicious plugins
-- ✅ Ensures consistency across servers
-
-### File Permissions
-
-```bash
-# Centralized storage should be:
-Owner: pterodactyl:pterodactyl
-Permissions: 755 (rwxr-xr-x)
-
-# Individual files:
-644 (rw-r--r--)
-```
-
-### Network Mounts
-
-If using NFS/network storage:
-
-- Use secure mount options
-- Restrict access to Pterodactyl nodes only
-- Consider encryption for sensitive data
+_Real data: ~55GB per server without sync, ~3GB per server with sync, ~52GB VPK files saved_
 
 ## FAQ
-
-**Q: Does this work with Windows nodes?**
-A: No, this requires Linux with rsync and symlink support.
-
-**Q: Can I use this with Docker Compose?**
-A: Yes! Mount the centralized directory as a volume and set `SYNC_LOCATION`.
-
-**Q: What if centralized storage fails?**
-A: Server will skip sync and download files normally via SteamCMD (fallback).
 
 **Q: Can servers modify shared files?**
 A: No if mounted read-only (recommended). Modifications are server-specific.
 
-**Q: Does this sync workshop maps?**
-A: No, workshop content is server-specific and not synced.
+**Q: What if the cron job fails?**
+A: Servers continue using existing files. Update manually if needed.
 
-**Q: Can I sync between different CS2 versions?**
-A: Not recommended. Use separate centralized locations for beta branches.
-
-**Q: How do I disable sync for one server?**
-A: Set `SYNC_LOCATION=""` for that server, or disable the mount.
-
-**Q: Does this work with the auto-restart feature?**
-A: Yes! Update centralized location, all servers sync on restart.
+**Q: How often should cron run?**
+A: Every 1-2 minutes is safe - SteamCMD only downloads when updates exist.
 
 ## Related Documentation
 
 - [Installation Guide](../getting-started/installation.md)
-- [Environment Variables](../configuration/environment-variables.md)
+- [Auto-Restart Feature](auto-restart.md) - Automatically restart servers when CS2 updates
+- [Configuration Files](../configuration/configuration-files.md)
 - [Building from Source](../advanced/building.md)
-- [Troubleshooting](../advanced/troubleshooting.md)
 
 ## Support
 
 Need help with VPK sync?
 
 - [Report Issue](https://github.com/K4ryuu/CS2-Egg/issues)
-- Include mount configuration and console logs
+- [Request Cron Script Example](https://github.com/K4ryuu/CS2-Egg/issues)
