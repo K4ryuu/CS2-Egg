@@ -53,6 +53,9 @@ cp -r app app.backup  # Backup first!
 # Apply PR #4034 changes
 # See: https://github.com/pterodactyl/panel/pull/4034/files
 
+# Run database migrations (new tables for mount support)
+php artisan migrate --force
+
 # Clear cache
 php artisan config:clear
 php artisan cache:clear
