@@ -129,12 +129,12 @@ If an update causes issues:
 
 ### CS2 Server Rollback
 
-Use SteamCMD's beta branch feature:
+CS2 server rollback via beta branches is not currently supported by this egg. For version-specific deployments, consider using Docker image tags:
 
-1. Add these environment variables (admin access required):
-   - `SRCDS_BETAID` - Beta branch name
-   - `SRCDS_BETAPASS` - Beta branch password (if required)
-2. Restart the server
+- `docker.io/sples1/k4ryuu-cs2:latest` - Latest stable CS2
+- `docker.io/sples1/k4ryuu-cs2:beta` - Public beta branch
+
+Manual rollback requires direct SteamCMD usage outside the egg's automated update system.
 
 ## Best Practices
 

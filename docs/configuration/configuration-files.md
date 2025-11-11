@@ -15,7 +15,7 @@ Files are automatically created on first startup with default values and detaile
 
 ### How It Works
 
-1. **Enable features** via Pterodactyl egg variables (e.g., `UPDATE_AUTO_RESTART=1`)
+1. **Enable features** via Pterodactyl egg variables (e.g., `AUTO_UPDATE=1`)
 2. **Configure details** via JSON files (e.g., API tokens, intervals, patterns)
 3. **Edit via FTP** - All configs are accessible through SFTP/FTP
 4. **Restart to apply** - Changes take effect on server restart
@@ -34,7 +34,7 @@ Files are automatically created on first startup with default values and detaile
 
 **Purpose:** Configure automatic server restart when CS2 updates are detected
 
-**Enable:** Set `UPDATE_AUTO_RESTART=1` in Pterodactyl egg
+**Enable:** Set `AUTO_UPDATE=1` in Pterodactyl egg
 
 ```json
 {
@@ -70,7 +70,7 @@ Files are automatically created on first startup with default values and detaile
 
 **Purpose:** Discord webhook notifications for server events
 
-**Enable:** Set `ENABLE_WEBHOOK=1` in Pterodactyl egg
+**Enable:** Automatically enabled when `url` field is non-empty
 
 ```json
 {
@@ -132,8 +132,6 @@ Files are automatically created on first startup with default values and detaile
 
 **Note:** `STEAM_ACC` (GSLT token) is automatically masked regardless of settings.
 
-[Console Filter Guide →](../features/console-filter.md)
-
 ---
 
 ### `cleanup.json`
@@ -165,8 +163,6 @@ Files are automatically created on first startup with default values and detaile
   - `accelerator_dumps_hours` - Crash dumps (default: 168h = 7 days)
 
 Cleanup runs every hour automatically.
-
-[Junk Cleaner Guide →](../features/junk-cleaner.md)
 
 ---
 
@@ -207,8 +203,6 @@ Cleanup runs every hour automatically.
 - One file per day: `YYYY-MM-DD.log`
 - Automatically deleted when ANY limit is reached (size OR count OR age)
 - Location: `/home/container/egg/logs/`
-
-[Colored Logging Guide →](../features/colored-logging.md)
 
 ---
 
@@ -254,10 +248,11 @@ On first startup:
 ### Step 1: Enable Feature
 
 In Pterodactyl egg variables, set to `1`:
-- `UPDATE_AUTO_RESTART` - Auto-restart
-- `ENABLE_WEBHOOK` - Discord webhooks
+- `AUTO_UPDATE` - Auto-restart on CS2 updates
 - `ENABLE_FILTER` - Console filter
 - `CLEANUP_ENABLED` - Junk cleaner
+
+**Note:** Webhook notifications are automatically enabled when you add a webhook URL to `webhook.json`.
 
 ### Step 2: Configure Details
 
@@ -275,7 +270,7 @@ Changes apply on next server start.
 
 ### Enable Auto-Restart with API
 
-1. Set `UPDATE_AUTO_RESTART=1` in egg
+1. Set `AUTO_UPDATE=1` in egg
 2. Edit `egg/configs/auto-restart.json`:
 
 ```json
@@ -399,9 +394,8 @@ tar -xzf egg-backup.tar.gz
 ## 🔗 Related Documentation
 
 - [Auto-Restart Feature](../features/auto-restart.md)
-- [Console Filter](../features/console-filter.md)
-- [Junk Cleaner](../features/junk-cleaner.md)
-- [Colored Logging](../features/colored-logging.md)
+- [Auto-Updaters](../features/auto-updaters.md)
+- [VPK Sync](../features/vpk-sync.md)
 - [Quick Start](../getting-started/quickstart.md)
 
 ## 💡 Support
