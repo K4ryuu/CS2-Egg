@@ -78,6 +78,8 @@ The egg can automatically restart your server when a new CS2 update is detected.
 
 See the [Auto-Restart Guide](../features/auto-restart.md) for full setup instructions.
 
+> **💡 Tip for Multiple Servers:** If you run multiple CS2 servers, use [VPK Sync](../features/vpk-sync.md) with the centralized update script instead. It downloads once and restarts all servers together, saving bandwidth and time compared to per-server auto-restart.
+
 ### Webhook Notifications
 
 You can configure Discord webhooks to receive notifications about scheduled updates. The webhook feature sends formatted embeds with update information and countdown timers.
