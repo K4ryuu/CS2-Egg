@@ -68,7 +68,7 @@ Download the script:
 
 ```bash
 cd /root
-curl -O https://raw.githubusercontent.com/K4ryuu/CS2-Egg/main/misc/update-cs2-centralized.sh
+curl -O https://raw.githubusercontent.com/K4ryuu/CS2-Egg/refs/heads/dev/misc/update-cs2-centralized.sh
 chmod +x update-cs2-centralized.sh
 ```
 
@@ -189,12 +189,14 @@ crontab -e
 ```
 
 **Without logging** (script output goes nowhere):
+
 ```bash
 # CS2 Centralized Update - Runs every 2 minutes
 */2 * * * * /root/update-cs2-centralized.sh >/dev/null 2>&1
 ```
 
 **With logging** (save output to file for monitoring):
+
 ```bash
 # CS2 Centralized Update - Runs every 2 minutes (with logging)
 */2 * * * * /root/update-cs2-centralized.sh >> /var/log/cs2-update.log 2>&1
@@ -320,6 +322,7 @@ steamcmd +force_install_dir /srv/cs2-shared +login anonymous +app_update 730 +qu
 > **💡 Auto-Fixed Issues**
 >
 > The update script automatically handles most common problems:
+>
 > - ✅ **SteamCMD missing** - Auto-downloads and installs if not found
 > - ✅ **Permission errors** - Automatically runs `chown` and `chmod` after every update
 > - ✅ **Steam libraries** - Copies SDK files automatically
