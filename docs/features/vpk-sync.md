@@ -110,7 +110,7 @@ AUTO_RESTART_SERVERS="false"
 **For automatic server restarts**, add Pterodactyl API credentials:
 
 1. Admin Panel → Application API → Create New
-2. Permissions needed: `servers.read`, `servers.power`
+2. **Permissions needed:** Full read-write access to **Servers** resource (that adds both `servers.read` and `servers.write` permissions)
 3. Copy token and URL to script:
 
 ```bash
