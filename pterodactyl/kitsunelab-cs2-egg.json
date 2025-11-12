@@ -116,7 +116,7 @@
       "default_value": "None - Vanilla server",
       "user_viewable": true,
       "user_editable": true,
-      "rules": "required|string|in:None - Vanilla server,Metamod Only,Metamod + CounterStrikeSharp,Metamod + Swiftly",
+      "rules": "required|string|in:None - Vanilla server,Metamod Only,Metamod + CounterStrikeSharp,SwiftlyS2,ModSharp",
       "field_type": "text"
     },
     {

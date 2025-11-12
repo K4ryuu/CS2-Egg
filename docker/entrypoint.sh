@@ -97,7 +97,7 @@ if [ -n "${SRCDS_APPID}" ] && [ "${SRCDS_STOP_UPDATE:-0}" -eq 0 ]; then
     if [ $STEAM_EXIT_CODE -eq 8 ]; then
         log_message "SteamCMD connection error (exit code 8)" "error"
         log_message "1. Check network and Steam server status (steamstat.us)" "info"
-        log_message "2. Ensure 30-40GB free disk space available" "info"
+        log_message "2. Ensure 60-70GB free disk space available (with VPK-Sync 3GB free)" "info"
         log_message "3. Disable proxy/VPN if enabled" "info"
     elif [ $STEAM_EXIT_CODE -ne 0 ]; then
         log_message "SteamCMD failed with exit code $STEAM_EXIT_CODE" "error"
@@ -106,31 +106,10 @@ if [ -n "${SRCDS_APPID}" ] && [ "${SRCDS_STOP_UPDATE:-0}" -eq 0 ]; then
     # Update steamclient.so files
     cp -f ./steamcmd/linux32/steamclient.so ./.steam/sdk32/steamclient.so
     cp -f ./steamcmd/linux64/steamclient.so ./.steam/sdk64/steamclient.so
-
-    configure_metamod
 fi
 
 # Handle the addon installations based on the selection
-if [ "${CLEANUP_ENABLED:-0}" -eq 1 ]; then
-    cleanup
-fi
-
-mkdir -p "$TEMP_DIR"
-
-if [ "${ADDON_SELECTION}" = "Metamod Only" ] || [ "${ADDON_SELECTION}" = "Metamod + CounterStrikeSharp" ] || [ "${ADDON_SELECTION}" = "Metamod + Swiftly" ]; then
-    update_metamod
-fi
-
-if [ "${ADDON_SELECTION}" = "Metamod + CounterStrikeSharp" ]; then
-    update_addon "roflmuffin/CounterStrikeSharp" "$OUTPUT_DIR" "css" "CSS"
-fi
-
-if [ "${ADDON_SELECTION}" = "Metamod + Swiftly" ]; then
-    update_swiftly
-fi
-
-# Clean up
-rm -rf "$TEMP_DIR"
+update_addons
 
 # Set up console filter
 setup_message_filter

@@ -1,3 +1,15 @@
+-- update - 2025.11.12
+
+- feat: Added ModSharp as standalone addon with .NET 9 runtime auto-installation
+- feat: Migrated to SwiftlyS2 v2 (standalone, no MetaMod dependency)
+- feat: Smart Docker image cleanup in build script (only removes replaced images)
+- refactor: Code restructure with centralized updater functions (~320 lines eliminated)
+- refactor: Standardized logging and version management across all updaters
+- upgrade: Enhanced addon selection with descriptive standalone options
+- upgrade: All scripts now read-only (555 permissions) for security
+- remove: Obsolete per-addon AUTOUPDATE variables and old Swiftly v1 option
+- fix: Version file operations and duplicate migration messages
+
 -- update - 2025.11.07
 
 - feat: Introduced organized /egg/ directory structure for all egg-related files

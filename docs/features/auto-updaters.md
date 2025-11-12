@@ -1,14 +1,15 @@
 # Auto-Updaters
 
-Automatically update MetaMod, CounterStrikeSharp, and Swiftly on server startup.
+Automatically update MetaMod, CounterStrikeSharp, Swiftly, and ModSharp on server startup.
 
 ## Overview
 
 The egg includes automatic updaters for popular CS2 server plugins:
 
 - **MetaMod:Source** - Core plugin framework
-- **CounterStrikeSharp (CSS)** - C# plugin framework
-- **Swiftly** - Alternative plugin framework
+- **CounterStrikeSharp (CSS)** - C# plugin framework (.NET 8)
+- **SwiftlyS2** - Alternative plugin framework (v2)
+- **ModSharp** - Modern .NET 9 modding solution (standalone)
 
 Updates happen automatically on server startup, keeping your plugins current without manual intervention.
 
@@ -20,12 +21,13 @@ Updates happen automatically on server startup, keeping your plugins current wit
 
 The `ADDON_SELECTION` variable controls which plugins are auto-updated:
 
-| Value             | What Gets Updated            |
-| ----------------- | ---------------------------- |
-| `none`            | Nothing (vanilla server)     |
-| `metamod`         | MetaMod only                 |
-| `metamod_css`     | MetaMod + CounterStrikeSharp |
-| `metamod_swiftly` | MetaMod + Swiftly            |
+| Value                          | What Gets Updated            |
+| ------------------------------ | ---------------------------- |
+| `None - Vanilla server`        | Nothing (vanilla server)     |
+| `Metamod Only`                 | MetaMod only                 |
+| `Metamod + CounterStrikeSharp` | MetaMod + CounterStrikeSharp |
+| `SwiftlyS2`                    | SwiftlyS2 (standalone)       |
+| `ModSharp`                     | ModSharp (standalone)        |
 
 ### Setting Up
 
@@ -116,36 +118,77 @@ CSS updates may break plugins. Consider:
 - Monitor CSS changelog for breaking changes
 - Backup before enabling auto-updates
 
-## Swiftly
+## SwiftlyS2
 
 ### What It Does
 
-- Downloads latest Swiftly from GitHub releases
-- Extracts to `game/csgo/addons/swiftly/`
-- Installs Linux plugin version
+- Downloads latest SwiftlyS2 from GitHub releases
+- Extracts to `game/csgo/addons/swiftlys2/`
+- Installs with-runtime Linux version
+- Configures `gameinfo.gi` automatically
 - Stores version in `/home/container/egg/versions.txt`
 
 ### Prerequisites
 
-- **MetaMod must be installed** (Swiftly requires it)
-- Set `ADDON_SELECTION=metamod_swiftly`
+- **MetaMod must be installed** (SwiftlyS2 requires it)
+- Set `ADDON_SELECTION=Metamod + Swiftly`
 
 ### How It Works
 
 1. Verifies MetaMod is installed
-2. Checks current Swiftly version
-3. Fetches latest from swiftly-solution/swiftly
-4. Downloads Swiftly.Plugin.Linux.zip
-5. Extracts and updates version tracking
+2. Checks current SwiftlyS2 version
+3. Fetches latest from swiftly-solution/swiftlys2
+4. Downloads with-runtime-linux.zip
+5. Extracts swiftlys2 (skips bundled metamod)
+6. Updates `gameinfo.gi` to load SwiftlyS2
 
 ### Console Output
 
 ```
-[INFO] Checking Swiftly version...
+[INFO] Checking SwiftlyS2 version...
 [INFO] Current: v2.0.0, Latest: v2.1.0
-[INFO] Downloading Swiftly...
-[SUCCESS] Swiftly updated successfully
+[INFO] Downloading SwiftlyS2...
+[SUCCESS] SwiftlyS2 updated successfully
 ```
+
+## ModSharp
+
+### What It Does
+
+- Downloads latest ModSharp from GitHub releases
+- Installs .NET 9 runtime automatically
+- Extracts to `game/sharp/`
+- Configures `gameinfo.gi` automatically
+- Stores versions in `/home/container/egg/versions.txt`
+
+### Prerequisites
+
+- **MetaMod NOT required** - ModSharp is standalone
+- Set `ADDON_SELECTION=modsharp`
+
+### How It Works
+
+1. Checks and installs .NET 9 runtime if needed
+2. Checks current ModSharp version
+3. Fetches latest from Kxnrl/modsharp-public
+4. Downloads core + extensions assets
+5. Extracts preserving existing configs
+6. Updates `gameinfo.gi` to load ModSharp
+
+### Console Output
+
+```
+[INFO] Installing .NET 9.x.x runtime...
+[SUCCESS] .NET runtime installed successfully
+[INFO] Checking ModSharp version...
+[INFO] Current: git69, Latest: git70
+[INFO] Downloading ModSharp...
+[SUCCESS] ModSharp git70 installed successfully
+```
+
+### Configuration
+
+ModSharp configs are in `game/sharp/configs/core.json`. First install creates default config, updates preserve your settings.
 
 ## Version Tracking
 
@@ -157,6 +200,8 @@ Versions are stored in `/home/container/egg/versions.txt`:
 Metamod=git1245
 CSS=v1.1.0
 Swiftly=v2.1.0
+ModSharp=git70
+DotNet=10.0.1
 ```
 
 ### Location

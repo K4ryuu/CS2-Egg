@@ -17,14 +17,15 @@ RUN         apt update && \
 
 # Create directories and copy files
 RUN         mkdir -p /scripts /utils
-COPY        ./scripts/* /scripts/
-COPY        ./utils/* /utils/
+COPY        ./scripts /scripts/
+COPY        ./utils /utils/
 COPY        ./entrypoint.sh /entrypoint.sh
 
-# Set permissions
-RUN         chmod +x /scripts/*.sh && \
-            chmod +x /utils/*.sh && \
-            chmod +x /entrypoint.sh
+# Set permissions (read-only + executable)
+RUN         chmod 555 /scripts/*.sh && \
+            chmod 555 /scripts/updaters/*.sh && \
+            chmod 555 /utils/*.sh && \
+            chmod 555 /entrypoint.sh
 
 USER        container
 ENV         USER=container HOME=/home/container
