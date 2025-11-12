@@ -107,6 +107,13 @@ pushd "$(dirname "$0")/docker" >/dev/null
 
 log_info "Dockerfile: ${BOLD}KitsuneLab-Dockerfile${RESET}"
 log_info "Tag:        ${BOLD}${TAG}${RESET}"
+
+# Check if image with this tag already exists (will become dangling after rebuild)
+OLD_IMAGE_ID=$(docker images -q "${FULL_IMAGE}" 2>/dev/null || echo "")
+if [[ -n "$OLD_IMAGE_ID" ]]; then
+    log_info "Existing image found: ${OLD_IMAGE_ID:0:12}"
+fi
+
 run_with_spinner() {
     local label="$1"; shift
     local cmd=("$@")
@@ -144,6 +151,16 @@ if [[ -f "$BUILD_LAST_LOG" ]]; then
     if [[ "$size" =~ ^[0-9]+$ ]] && [ "$size" -gt 0 ]; then
         human_size=$(awk -v s="$size" 'BEGIN{u[1]="B";u[2]="KB";u[3]="MB";u[4]="GB";u[5]="TB";i=1;while(s>1024&&i<5){s/=1024;i++}printf("%.2f %s",s,u[i])}')
         log_info "Image size: ${human_size}"
+    fi
+fi
+
+# Clean up old image that was replaced
+if [[ -n "$OLD_IMAGE_ID" ]]; then
+    # Check if the old image became dangling (no tag anymore)
+    if docker images -f "dangling=true" -q | grep -q "$OLD_IMAGE_ID"; then
+        log_info "Cleaning up replaced image ${OLD_IMAGE_ID:0:12}..."
+        docker rmi "$OLD_IMAGE_ID" >/dev/null 2>&1 || true
+        log_ok "Removed old image"
     fi
 fi
 
