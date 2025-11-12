@@ -28,10 +28,10 @@
 
 ## Supported Modding Frameworks
 
-- **[MetaMod:Source](https://www.sourcemm.net/)** → Core plugin framework (required for CSS)
-- **[CounterStrikeSharp](https://docs.cssharp.dev/)** → C# plugin framework with .NET 8 runtime
-- **[SwiftlyS2](https://github.com/swiftly-solution/swiftlys2)** → Standalone plugin framework v2
-- **[ModSharp](https://github.com/Kxnrl/modsharp-public)** → Modern .NET 9 modding solution (standalone)
+- **[MetaMod:Source](https://www.metamodsource.net/downloads.php?branch=dev)** → Core plugin framework (required for CSS)
+- **[CounterStrikeSharp](https://github.com/roflmuffin/CounterStrikeSharp)** → C# plugin framework with .NET 8 runtime
+- **[SwiftlyS2](https://github.com/swiftly-solution/swiftlys2)** → Standalone C# framework v2
+- **[ModSharp](https://github.com/Kxnrl/modsharp-public)** → Standalone C# platform with .NET 9 runtime
 
 ## Features
 
