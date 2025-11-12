@@ -30,6 +30,16 @@
   },
   "variables": [
     {
+      "name": "Allow Tokenless Servers",
+      "description": "Internal setting to allow servers to run without GSLT token.",
+      "env_variable": "ALLOW_TOKENLESS",
+      "default_value": "0",
+      "user_viewable": false,
+      "user_editable": false,
+      "rules": "required|boolean",
+      "field_type": "text"
+    },
+    {
       "name": "Source AppID",
       "description": "NOT VISIBLE TO USERS. DO NOT EDIT.",
       "env_variable": "SRCDS_APPID",
@@ -71,7 +81,7 @@
     },
     {
       "name": "Game Server Login Token (GSLT)",
-      "description": "The Steam Account Token required for the server to be displayed publicly. https://steamcommunity.com/dev/managegameservers",
+      "description": "The Steam Game Server Login Token (GSLT) used to publicly list your server. Optional, but recommended for increased visibility and access to additional features. Learn more: https://steamcommunity.com/dev/managegameservers",
       "env_variable": "STEAM_ACC",
       "default_value": "",
       "user_viewable": true,
@@ -110,13 +120,43 @@
       "field_type": "text"
     },
     {
-      "name": "Server Add-ons",
-      "description": "Choose which add-ons to automatically install and update on server startup.",
-      "env_variable": "ADDON_SELECTION",
-      "default_value": "None - Vanilla server",
+      "name": "MetaMod:Source",
+      "description": "Base plugin framework required by CounterStrikeSharp. Auto-enabled if CSS is selected. Automatically updates on server restart while enabled.",
+      "env_variable": "INSTALL_METAMOD",
+      "default_value": "0",
       "user_viewable": true,
       "user_editable": true,
-      "rules": "required|string|in:None - Vanilla server,Metamod Only,Metamod + CounterStrikeSharp,SwiftlyS2,ModSharp",
+      "rules": "required|boolean",
+      "field_type": "text"
+    },
+    {
+      "name": "CounterStrikeSharp",
+      "description": "C# scripting platform for CS2 plugins. Requires MetaMod:Source (auto-enabled). Automatically updates on server restart while enabled.",
+      "env_variable": "INSTALL_CSS",
+      "default_value": "0",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|boolean",
+      "field_type": "text"
+    },
+    {
+      "name": "SwiftlyS2",
+      "description": "Standalone C# framework for Source Engine 2 servers (no MetaMod required). Automatically updates on server restart while enabled.",
+      "env_variable": "INSTALL_SWIFTLY",
+      "default_value": "0",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|boolean",
+      "field_type": "text"
+    },
+    {
+      "name": "ModSharp",
+      "description": "Standalone C# scripting platform with .NET 9 runtime (no MetaMod required). Automatically updates on server restart while enabled.",
+      "env_variable": "INSTALL_MODSHARP",
+      "default_value": "0",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|boolean",
       "field_type": "text"
     },
     {

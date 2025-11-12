@@ -430,7 +430,7 @@ A: Not built-in, but you can temporarily set `enabled: false` in config.
 A: Yes, automatically detects branch from `SRCDS_BETAID`.
 
 **Q: Will this reinstall plugins?**
-A: No, only updates CS2. Plugins update based on `ADDON_SELECTION`.
+A: No, only updates CS2. Frameworks update based on their boolean toggles (`INSTALL_METAMOD`, `INSTALL_CSS`, `INSTALL_SWIFTLY`, `INSTALL_MODSHARP`).
 
 **Q: What if Steam API is down?**
 A: System times out gracefully, logs error, skips that check cycle.

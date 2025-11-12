@@ -59,16 +59,29 @@ The server automatically updates on startup by default. To disable:
 3. Set to `1` to disable automatic updates
 4. Save changes
 
-### MetaMod & Plugins Auto-Updates
+### Framework Auto-Updates
 
-Configure the **Server Add-ons** dropdown:
+**Multi-Framework Support** - Enable any combination of frameworks with independent boolean toggles:
 
-- `none` - No auto-updates (vanilla server)
-- `metamod` - Auto-update MetaMod only
-- `metamod_css` - Auto-update MetaMod + CounterStrikeSharp
-- `metamod_swiftly` - Auto-update MetaMod + Swiftly
+| Variable             | Framework                 | Auto-Updates |
+| -------------------- | ------------------------- | ------------ |
+| `INSTALL_METAMOD`    | MetaMod:Source            | ✅           |
+| `INSTALL_CSS`        | CounterStrikeSharp        | ✅           |
+| `INSTALL_SWIFTLY`    | SwiftlyS2                 | ✅           |
+| `INSTALL_MODSHARP`   | ModSharp                  | ✅           |
 
-These update automatically on server startup when enabled.
+**Configuration:**
+
+1. Go to **Startup** tab
+2. Toggle checkboxes for desired frameworks
+3. Save and restart server
+4. Enabled frameworks auto-update on every server startup
+
+**Dependencies:**
+- CounterStrikeSharp automatically enables MetaMod (required dependency)
+- SwiftlyS2 and ModSharp are standalone (no MetaMod required)
+
+See [Auto-Updaters Documentation](../features/auto-updaters.md) for full details.
 
 ## Update Notifications
 
@@ -102,14 +115,16 @@ The server logs show the current BuildID on startup:
 [INFO] Stored initial buildid: 1234567
 ```
 
-### Installed Add-ons
+### Installed Frameworks
 
 Version information is stored in `/home/container/egg/versions.txt`:
 
 ```
-Metamod=git1234
-CSS=v1.0.0
-Swiftly=v2.0.0
+Metamod=2.x-dev1245
+CSS=v1.1.0
+Swiftly=v0.2.38
+ModSharp=git70
+DotNet=9.0.0
 ```
 
 **Accessing versions:**
@@ -117,6 +132,11 @@ Swiftly=v2.0.0
 - Via FTP: Navigate to `/egg/versions.txt`
 - Via console: `cat /home/container/egg/versions.txt`
 - Via logs: Check startup logs for version info
+
+**Framework Updates:**
+- Only enabled frameworks appear in versions.txt
+- Versions update automatically on server restart while framework is enabled
+- To force re-download: delete versions.txt and restart
 
 ## Rollback
 

@@ -113,7 +113,7 @@ log_message() {
         running) printf "%b%s%b\n" "${PREFIX}${YELLOW}" "$message" "${NC}" ;;
         error)   printf "%b%s%b\n" "${PREFIX}${RED}" "$message" "${NC}" ;;
         success) printf "%b%s%b\n" "${PREFIX}${GREEN}" "$message" "${NC}" ;;
-        warning) printf "%b⚠️  %s%b\n" "${PREFIX}${YELLOW}" "$message" "${NC}" ;;
+        warning) printf "%b[WARNING] %s%b\n" "${PREFIX}${YELLOW}" "$message" "${NC}" ;;
         debug)   printf "%b[DEBUG] %s%b\n" "${PREFIX}${WHITE}" "$message" "${NC}" ;;
         *)       printf "%b%s%b\n" "${PREFIX}${WHITE}" "$message" "${NC}" ;;
     esac

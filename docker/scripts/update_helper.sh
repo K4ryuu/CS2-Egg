@@ -131,3 +131,18 @@ CONFIGEOF
         log_message "No legacy files found - clean installation" "debug"
     fi
 }
+
+# Check for deprecated ADDON_SELECTION variable
+check_deprecated_variables() {
+    if [ -n "${ADDON_SELECTION}" ]; then
+        log_message "⚠️  DEPRECATION WARNING ⚠️" "warning"
+        log_message "The ADDON_SELECTION variable is deprecated and will be removed in the next update!" "warning"
+        log_message "Please update your Pterodactyl egg to use the new multi-framework support:" "warning"
+        log_message "  → INSTALL_METAMOD (boolean)" "warning"
+        log_message "  → INSTALL_CSS (boolean)" "warning"
+        log_message "  → INSTALL_SWIFTLY (boolean)" "warning"
+        log_message "  → INSTALL_MODSHARP (boolean)" "warning"
+        log_message "Current ADDON_SELECTION value: ${ADDON_SELECTION}" "warning"
+        log_message "This will continue to work for now, but UPDATE YOUR EGG before the next patch!" "warning"
+    fi
+}
