@@ -12,8 +12,26 @@ When a new version of the egg is released:
 2. Go to **Admin** → **Nests** → Your Nest → **Eggs**
 3. Click on the KitsuneLab CS2 Egg
 4. Either:
-   - **Option A**: Click **Import Egg** and upload the new JSON (will update all variables)
+   - **Option A**: Click **Import Egg** and upload the new JSON
+     - ⚠️ **Warning**: This resets ALL variables to default values
+     - You must reconfigure: VPK Sync path and else that are default values.
    - **Option B**: Manually update changed variables in the **Variables** tab
+     - ✅ Preserves your existing configuration
+     - Only update variables mentioned in changelog
+
+### Recommended Approach
+
+**For production servers**, use **Option B** (manual update) to avoid reconfiguration:
+
+1. Check the [CHANGELOG](../../CHANGELOG) for new/changed variables
+2. Update only those specific variables in the **Variables** tab
+3. Your existing configuration remains intact
+
+**For new deployments** or **major version upgrades**, **Option A** (import) is acceptable:
+
+1. Make note of your current variable values before importing
+2. Import the new egg JSON
+3. Reconfigure all custom variables (VPK Sync, tokens, etc.)
 
 ### For Existing Servers
 
@@ -21,8 +39,8 @@ After updating the egg:
 
 1. Go to each server using this egg
 2. Navigate to **Startup** tab
-3. Click **Reinstall** if needed (be careful, this may reset configurations)
-4. Or simply restart the server to use the new egg configuration
+3. If variables were reset (Option A), reconfigure them now
+4. Restart the server to apply changes
 
 ## Updating the Docker Image
 
@@ -63,12 +81,12 @@ The server automatically updates on startup by default. To disable:
 
 **Multi-Framework Support** - Enable any combination of frameworks with independent boolean toggles:
 
-| Variable             | Framework                 | Auto-Updates |
-| -------------------- | ------------------------- | ------------ |
-| `INSTALL_METAMOD`    | MetaMod:Source            | ✅           |
-| `INSTALL_CSS`        | CounterStrikeSharp        | ✅           |
-| `INSTALL_SWIFTLY`    | SwiftlyS2                 | ✅           |
-| `INSTALL_MODSHARP`   | ModSharp                  | ✅           |
+| Variable           | Framework          | Auto-Updates |
+| ------------------ | ------------------ | ------------ |
+| `INSTALL_METAMOD`  | MetaMod:Source     | ✅           |
+| `INSTALL_CSS`      | CounterStrikeSharp | ✅           |
+| `INSTALL_SWIFTLY`  | SwiftlyS2          | ✅           |
+| `INSTALL_MODSHARP` | ModSharp           | ✅           |
 
 **Configuration:**
 
@@ -78,6 +96,7 @@ The server automatically updates on startup by default. To disable:
 4. Enabled frameworks auto-update on every server startup
 
 **Dependencies:**
+
 - CounterStrikeSharp automatically enables MetaMod (required dependency)
 - SwiftlyS2 and ModSharp are standalone (no MetaMod required)
 
@@ -134,6 +153,7 @@ DotNet=9.0.0
 - Via logs: Check startup logs for version info
 
 **Framework Updates:**
+
 - Only enabled frameworks appear in versions.txt
 - Versions update automatically on server restart while framework is enabled
 - To force re-download: delete versions.txt and restart
@@ -160,12 +180,14 @@ Manual rollback requires direct SteamCMD usage outside the egg's automated updat
 
 ## Best Practices
 
-1. **Always backup** before major updates
-2. **Test updates** on a development server first
-3. **Monitor the changelog** for breaking changes
-4. **Keep the egg updated** to get new features and fixes
-5. **Use stable images** for production servers
-6. **Enable auto-restart** to minimize downtime during CS2 updates
+1. **Use manual variable updates (Option B)** for production servers to preserve configuration
+2. **Always backup** before major updates
+3. **Test updates** on a development server first
+4. **Monitor the changelog** for breaking changes
+5. **Document your custom variables** before egg imports (VPK Sync, tokens, etc.)
+6. **Keep the egg updated** to get new features and fixes
+7. **Use stable images** for production servers
+8. **Enable auto-restart** to minimize downtime during CS2 updates
 
 ## Changelog
 
