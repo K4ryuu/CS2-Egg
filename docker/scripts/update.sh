@@ -53,6 +53,16 @@ update_addons() {
         INSTALL_METAMOD=1
     fi
 
+    # Compatibility check: ModSharp is incompatible with CSS and SwiftlyS2
+    # If CSS or SwiftlyS2 is enabled, disable ModSharp (they have priority)
+    if [ "${INSTALL_MODSHARP:-0}" -eq 1 ]; then
+        if [ "${INSTALL_CSS:-0}" -eq 1 ] || [ "${INSTALL_SWIFTLY:-0}" -eq 1 ]; then
+            log_message "ModSharp is incompatible with CSS/SwiftlyS2, disabling ModSharp..." "warning"
+            INSTALL_MODSHARP=0
+            remove_from_gameinfo "sharp"
+        fi
+    fi
+
     # MetaMod:Source
     if [ "${INSTALL_METAMOD:-0}" -eq 1 ]; then
         if type update_metamod &>/dev/null; then

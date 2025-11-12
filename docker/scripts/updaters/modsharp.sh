@@ -6,6 +6,11 @@ source /utils/logging.sh
 source /utils/version.sh
 source /utils/updater_common.sh
 
+# Configuration
+MODSHARP_DIR="./game/sharp"
+DOTNET_VERSION="9.0.0"
+TEMP_DIR="./temps"
+
 # Install or update .NET runtime
 install_dotnet_runtime() {
     local runtime_dir="$MODSHARP_DIR/runtime"
@@ -193,8 +198,6 @@ update_modsharp() {
     local TEMP_DIR="./temps"
     local DOTNET_VERSION="9.0.0"
 
-    log_message "Checking ModSharp updates..." "running"
-
     # Step 1: Install/update .NET runtime
     if ! install_dotnet_runtime; then
         log_message "Failed to install .NET runtime, aborting ModSharp update" "error"
@@ -261,7 +264,6 @@ update_modsharp() {
 
 # Install ModSharp (first time)
 install_modsharp() {
-    log_message "Installing ModSharp..." "running"
     update_modsharp
 }
 

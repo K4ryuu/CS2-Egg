@@ -29,9 +29,11 @@ Each framework has an independent boolean toggle in the Pterodactyl panel:
 | `INSTALL_MODSHARP`   | ModSharp standalone with .NET 9                  | ✅           |
 
 **Multi-Framework Examples:**
-- MetaMod + CSS + ModSharp → All three enabled simultaneously
-- SwiftlyS2 + ModSharp → Both standalone frameworks together
-- CSS only → MetaMod auto-enabled as dependency
+- MetaMod + CSS + SwiftlyS2 → All three enabled simultaneously ✅
+- MetaMod + ModSharp → Compatible combination ✅
+- CSS only → MetaMod auto-enabled as dependency ✅
+- ModSharp + CSS → ModSharp auto-disabled (incompatible) ❌
+- ModSharp + SwiftlyS2 → ModSharp auto-disabled (incompatible) ❌
 
 ### Setting Up
 
@@ -144,6 +146,13 @@ CSS updates may break plugins. Consider:
 - Monitor CSS changelog for breaking changes
 - Backup before enabling auto-updates
 
+### Multi-Framework Compatibility
+
+CounterStrikeSharp can coexist with:
+- ✅ MetaMod (required dependency)
+- ✅ SwiftlyS2
+- ❌ ModSharp (incompatible - ModSharp auto-disabled if CSS enabled)
+
 ## SwiftlyS2
 
 ### What It Does
@@ -179,9 +188,9 @@ CSS updates may break plugins. Consider:
 ### Multi-Framework Compatibility
 
 SwiftlyS2 can coexist with:
-- ✅ ModSharp (both standalone)
-- ✅ MetaMod + CSS (different frameworks)
-- ✅ All frameworks simultaneously
+- ✅ CounterStrikeSharp (CSS)
+- ✅ MetaMod
+- ❌ ModSharp (incompatible - auto-disabled if ModSharp enabled)
 
 ## ModSharp
 
@@ -224,9 +233,11 @@ ModSharp configs are in `game/sharp/configs/core.json`. First install creates de
 ### Multi-Framework Compatibility
 
 ModSharp can coexist with:
-- ✅ SwiftlyS2 (both standalone)
-- ✅ MetaMod + CSS (different frameworks)
-- ✅ All frameworks simultaneously
+- ✅ MetaMod only
+- ❌ CounterStrikeSharp (CSS) - incompatible, auto-disabled if ModSharp enabled
+- ❌ SwiftlyS2 - incompatible, auto-disabled if ModSharp enabled
+
+**Note:** ModSharp is a standalone framework that conflicts with other C# frameworks. Only MetaMod can run alongside it.
 
 ## Version Tracking
 
@@ -461,10 +472,16 @@ This compatibility will be removed in the next major update!
 ## FAQ
 
 **Q: Can I use CSS and SwiftlyS2 together?**
-A: Yes! They are different frameworks and can coexist. Test compatibility first.
+A: Yes! They are compatible frameworks and can coexist.
 
 **Q: Can I use CSS and ModSharp together?**
-A: Yes! ModSharp is standalone and doesn't conflict with CSS.
+A: No. ModSharp is incompatible with CSS. If ModSharp is enabled, CSS will be auto-disabled with a warning message.
+
+**Q: Can I use SwiftlyS2 and ModSharp together?**
+A: No. ModSharp is incompatible with SwiftlyS2. If ModSharp is enabled, SwiftlyS2 will be auto-disabled with a warning message.
+
+**Q: What frameworks are compatible with ModSharp?**
+A: ModSharp is only compatible with MetaMod. It cannot run alongside CSS or SwiftlyS2.
 
 **Q: Will updates break my plugins?**
 A: Possibly. Major updates can have breaking changes. Test on dev server first.
@@ -491,7 +508,7 @@ A: In `/home/container/egg/versions.txt` (accessible via FTP)
 A: No! SwiftlyS2 v2 is standalone and doesn't require MetaMod.
 
 **Q: Can I enable all 4 frameworks simultaneously?**
-A: Technically yes, but test thoroughly. MetaMod + CSS + SwiftlyS2 + ModSharp is a lot of overhead.
+A: No. ModSharp is incompatible with CSS and SwiftlyS2. Maximum 3 frameworks simultaneously: MetaMod + CSS + SwiftlyS2. If you enable ModSharp with CSS/SwiftlyS2, ModSharp will be auto-disabled with a warning.
 
 ## Related Documentation
 
