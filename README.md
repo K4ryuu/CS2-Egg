@@ -10,7 +10,7 @@
 <div align="center">
   <h1 align="center">KitsuneLab©</h1>
   <h3 align="center">CS2 Egg</h3>
-  <a align="center">CS2 Pterodactyl Egg with custom scripts such as CSS auto-updater, MetaMod auto-updater, junk cleaner, auto restart on update with colored logging.</a>
+  <a align="center">Production-ready CS2 Pterodactyl Egg with automated updates, intelligent cleanup, auto-restart on game updates, and advanced configuration management.</a>
 
   <p align="center">
     <br />
@@ -26,48 +26,62 @@
   </p>
 </div>
 
-## ✨ Features
+## Supported Modding Frameworks
 
-- 🔄 **Auto-Restart** - Automatically restart when CS2 updates are detected
-- 🔧 **Auto-Updaters** - MetaMod, CounterStrikeSharp, and Swiftly auto-updates
-- 💾 **VPK Sync** - Massive storage & bandwidth savings (80% reduction!)
-- 🧹 **Junk Cleaner** - Automatic cleanup (round backups, logs, demos)
-- 🎨 **Colored Logging** - Enhanced console output with color-coded messages
-- 🚫 **Console Filter** - Block unwanted console messages (inspired by [Poggu](https://github.com/Poggicek)'s [CleanerCS2](https://github.com/Source2ZE/CleanerCS2))
-- 💾 **Version Tracking** - Smart updates only when necessary
-- 🔔 **Discord Webhooks** - Get notified about scheduled restarts
-- ⚙️ **Custom Parameters** - Safe user-configurable startup options
+- **[MetaMod:Source](https://www.sourcemm.net/)** → Core plugin framework (required for CSS)
+- **[CounterStrikeSharp](https://docs.cssharp.dev/)** → C# plugin framework with .NET 8 runtime
+- **[SwiftlyS2](https://github.com/swiftly-solution/swiftlys2)** → Standalone plugin framework v2
+- **[ModSharp](https://github.com/Kxnrl/modsharp-public)** → Modern .NET 9 modding solution (standalone)
+
+## Features
+
+### Automation & Updates
+- **Auto-Restart** → Automatically restart when CS2 updates detected
+- **Auto-Updaters** → MetaMod, CounterStrikeSharp, SwiftlyS2, ModSharp
+- **Version Tracking** → Smart updates only when necessary
+- **Discord Webhooks** → Notifications for scheduled restarts
+
+### Storage & Performance
+- **VPK Sync** → 80% storage & bandwidth reduction
+- **Junk Cleaner** → Automatic cleanup (backups, logs, demos)
+- **Optimized Builds** → Enterprise-grade code structure
+
+### Management & Configuration
+- **Console Filter** → Block unwanted messages (inspired by [Poggu](https://github.com/Poggicek)'s [CleanerCS2](https://github.com/Source2ZE/CleanerCS2))
+- **JSON Configs** → FTP-editable configuration files
+- **Colored Logging** → Enhanced console output
+- **Custom Parameters** → Safe user-configurable startup options
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-## 📚 Documentation
+## Documentation
 
 Comprehensive documentation is available:
 
-### 🚀 Quick Start
+### Getting Started
 
-- **[Installation Guide](docs/getting-started/installation.md)** - Install and configure the egg
-- **[Quick Start](docs/getting-started/quickstart.md)** - Get running quickly
-- **[Updating](docs/getting-started/updating.md)** - Update guide
+- **[Installation Guide](docs/getting-started/installation.md)** → Install and configure the egg
+- **[Quick Start](docs/getting-started/quickstart.md)** → Get running quickly
+- **[Updating](docs/getting-started/updating.md)** → Update guide
 
-### ⚡ Features
+### Features
 
-- **[Auto-Restart](docs/features/auto-restart.md)** - Automatic CS2 update restarts
-- **[Auto-Updaters](docs/features/auto-updaters.md)** - Plugin auto-updates
-- **[VPK Sync](docs/features/vpk-sync.md)** - 80% storage savings
-- **[Console Filter](docs/features/console-filter.md)** - Message filtering
-- **[Junk Cleaner](docs/features/junk-cleaner.md)** - Automatic cleanup
+- **[Auto-Restart](docs/features/auto-restart.md)** → Automatic CS2 update restarts
+- **[Auto-Updaters](docs/features/auto-updaters.md)** → Plugin auto-updates (MetaMod, CSS, SwiftlyS2, ModSharp)
+- **[VPK Sync](docs/features/vpk-sync.md)** → 80% storage savings
+- **[Console Filter](docs/features/console-filter.md)** → Message filtering
+- **[Junk Cleaner](docs/features/junk-cleaner.md)** → Automatic cleanup
 
-### 🔧 Advanced
+### Advanced
 
-- **[Building from Source](docs/advanced/building.md)** - Build your own image
-- **[Troubleshooting](docs/advanced/troubleshooting.md)** - Common issues
+- **[Building from Source](docs/advanced/building.md)** → Build your own image
+- **[Troubleshooting](docs/advanced/troubleshooting.md)** → Common issues
 
-[**📖 View Full Documentation →**](docs/README.md)
+**[View Full Documentation →](docs/README.md)**
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-## 🎯 Quick Build
+## Quick Build
 
 Build your own Docker image using the included build script:
 
@@ -79,9 +93,9 @@ Build your own Docker image using the included build script:
 ./build.sh latest --publish
 ```
 
-**💡 Tip:** Edit `build.sh` to change the registry from `sples1/k4ryuu-cs2` to your own.
+**Note:** Edit `build.sh` to change the registry from `sples1/k4ryuu-cs2` to your own.
 
-**[📖 Full Building Guide →](docs/advanced/building.md)** - Customization, multi-arch builds, CI/CD integration
+**[Full Building Guide →](docs/advanced/building.md)** - Customization, multi-arch builds, CI/CD integration
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
