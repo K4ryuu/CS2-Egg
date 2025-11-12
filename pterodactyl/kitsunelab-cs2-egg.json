@@ -121,7 +121,7 @@
     },
     {
       "name": "MetaMod:Source",
-      "description": "Base plugin framework required by CounterStrikeSharp. Auto-enabled if CSS is selected. Automatically updates on server restart while enabled.",
+      "description": "Base plugin framework required by CounterStrikeSharp. Compatible with all frameworks. Auto-enabled if CSS is selected. Automatically updates on server restart while enabled.",
       "env_variable": "INSTALL_METAMOD",
       "default_value": "0",
       "user_viewable": true,
@@ -131,7 +131,7 @@
     },
     {
       "name": "CounterStrikeSharp",
-      "description": "C# scripting platform for CS2 plugins. Requires MetaMod:Source (auto-enabled). Automatically updates on server restart while enabled.",
+      "description": "C# scripting platform for CS2 plugins. Requires MetaMod:Source (auto-enabled). Compatible with SwiftlyS2. Incompatible with ModSharp. Automatically updates on server restart while enabled.",
       "env_variable": "INSTALL_CSS",
       "default_value": "0",
       "user_viewable": true,
@@ -141,7 +141,7 @@
     },
     {
       "name": "SwiftlyS2",
-      "description": "Standalone C# framework for Source Engine 2 servers (no MetaMod required). Automatically updates on server restart while enabled.",
+      "description": "Standalone C# framework for Source Engine 2 servers (no MetaMod required). Compatible with CSS. Incompatible with ModSharp. Automatically updates on server restart while enabled.",
       "env_variable": "INSTALL_SWIFTLY",
       "default_value": "0",
       "user_viewable": true,
@@ -151,7 +151,7 @@
     },
     {
       "name": "ModSharp",
-      "description": "Standalone C# scripting platform with .NET 9 runtime (no MetaMod required). Automatically updates on server restart while enabled.",
+      "description": "Standalone C# scripting platform with .NET 9 runtime. Compatible with MetaMod only. Incompatible with CSS and SwiftlyS2 (auto-disabled if enabled). Automatically updates on server restart while enabled.",
       "env_variable": "INSTALL_MODSHARP",
       "default_value": "0",
       "user_viewable": true,
