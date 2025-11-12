@@ -6,13 +6,11 @@ source /utils/logging.sh
 source /utils/version.sh
 source /utils/updater_common.sh
 
-# Configuration
-OUTPUT_DIR="./game/csgo/addons"
-TEMP_DIR="./temps"
-REPO="swiftly-solution/swiftlys2"
-
 # Update Swiftly
 update_swiftly() {
+    local OUTPUT_DIR="./game/csgo/addons"
+    local TEMP_DIR="./temps"
+    local REPO="swiftly-solution/swiftlys2"
     local temp_dir="$TEMP_DIR/swiftly"
 
     mkdir -p "$OUTPUT_DIR" "$temp_dir"
@@ -29,18 +27,18 @@ update_swiftly() {
     local asset_url=$(echo "$api_response" | jq -r '.assets[] | select(.name | test("linux.*with-runtimes\\.zip")) | .browser_download_url' | head -n1)
 
     if [ -z "$new_version" ]; then
-        log_message "Failed to get version for $REPO" "debug"
+        log_message "Failed to get version for $REPO" "error"
         return 0
     fi
 
     # Check if update needed
     if [ "$current_version" = "$new_version" ]; then
-        log_message "SwiftlyS2 is up-to-date ($current_version)" "debug"
+        log_message "SwiftlyS2 is up-to-date ($current_version)" "info"
         return 0
     fi
 
     if [ -z "$asset_url" ]; then
-        log_message "No suitable asset found for $REPO" "debug"
+        log_message "No suitable asset found for $REPO" "error"
         return 0
     fi
 

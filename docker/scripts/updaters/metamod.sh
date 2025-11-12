@@ -6,11 +6,10 @@ source /utils/logging.sh
 source /utils/version.sh
 source /utils/updater_common.sh
 
-# Configuration
-OUTPUT_DIR="./game/csgo/addons"
-TEMP_DIR="./temps"
-
 update_metamod() {
+    local OUTPUT_DIR="./game/csgo/addons"
+    local TEMP_DIR="./temps"
+
     if [ ! -d "$OUTPUT_DIR/metamod" ]; then
         log_message "Installing Metamod..." "info"
     fi
@@ -27,7 +26,7 @@ update_metamod() {
 
     # Check if update needed
     if [ "$current_version" = "$new_version" ]; then
-        log_message "Metamod is up-to-date ($current_version)" "debug"
+        log_message "Metamod is up-to-date ($current_version)" "info"
         return 0
     fi
 

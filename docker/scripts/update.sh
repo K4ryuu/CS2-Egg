@@ -7,7 +7,6 @@ source /utils/updater_common.sh
 GAME_DIRECTORY="./game/csgo"
 OUTPUT_DIR="./game/csgo/addons"
 TEMP_DIR="./temps"
-ACCELERATOR_DUMPS_DIR="$OUTPUT_DIR/AcceleratorCS2/dumps"
 
 # Source modular updaters
 source /scripts/updaters/metamod.sh
