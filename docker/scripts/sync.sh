@@ -46,9 +46,10 @@ sync_files() {
 
     log_message "Syncing VPK files..." "info"
 
-    # Sync everything EXCEPT .vpk files and configs
+    # Sync everything EXCEPT .vpk files, configs, and gameinfo.gi
     # We'll symlink VPKs separately to save space
-    if rsync -aKLz --exclude '*.vpk' --exclude 'cfg/' "$src_dir/" "$dest_dir" 2>/dev/null; then
+    # gameinfo.gi is excluded to preserve addon configurations
+    if rsync -aKLz --exclude '*.vpk' --exclude 'cfg/' --exclude 'game/csgo/gameinfo.gi' "$src_dir/" "$dest_dir" 2>/dev/null; then
         : # base files synced silently
     else
         log_message "Failed to sync base files" "error"
