@@ -6,11 +6,6 @@ source /utils/logging.sh
 source /utils/version.sh
 source /utils/updater_common.sh
 
-# Configuration
-MODSHARP_DIR="./game/sharp"
-TEMP_DIR="./temps"
-DOTNET_VERSION="9.0.0"
-
 # Install or update .NET runtime
 install_dotnet_runtime() {
     local runtime_dir="$MODSHARP_DIR/runtime"
@@ -194,6 +189,10 @@ download_modsharp_asset() {
 
 # Main update function
 update_modsharp() {
+    local MODSHARP_DIR="./game/sharp"
+    local TEMP_DIR="./temps"
+    local DOTNET_VERSION="9.0.0"
+
     log_message "Checking ModSharp updates..." "running"
 
     # Step 1: Install/update .NET runtime
@@ -216,7 +215,7 @@ update_modsharp() {
 
     # Check if update needed
     if [ "$current_version" = "$latest_version" ] && [ -d "$MODSHARP_DIR" ]; then
-        log_message "ModSharp is up-to-date ($current_version)" "debug"
+        log_message "ModSharp is up-to-date ($current_version)" "info"
         return 0
     fi
 
