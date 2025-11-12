@@ -62,36 +62,6 @@ update_swiftly() {
     return 1
 }
 
-# Configure SwiftlyS2 in gameinfo.gi
-configure_swiftly() {
-    local GAMEINFO_FILE="/home/container/game/csgo/gameinfo.gi"
-    local GAMEINFO_ENTRY="\t\t\tGame\tcsgo/addons/swiftlys2"
-    local OLD_VDF="/home/container/game/csgo/addons/metamod/swiftlys2.vdf"
-
-    if [ -f "${GAMEINFO_FILE}" ]; then
-        if ! grep -q "csgo/addons/swiftlys2" "$GAMEINFO_FILE"; then
-            awk -v new_entry="$GAMEINFO_ENTRY" '
-                BEGIN { found=0; }
-                {
-                    if (found) {
-                        print new_entry;
-                        found=0;
-                    }
-                    print;
-                }
-                /Game_LowViolence/ { found=1; }
-            ' "$GAMEINFO_FILE" > "$GAMEINFO_FILE.tmp" && mv "$GAMEINFO_FILE.tmp" "$GAMEINFO_FILE"
-            log_message "SwiftlyS2 configured in gameinfo.gi" "debug"
-        fi
-
-        # Remove old swiftlys2.vdf from metamod directory to avoid conflicts
-        if [ -f "$OLD_VDF" ]; then
-            rm -f "$OLD_VDF"
-            log_message "Removed old swiftlys2.vdf from metamod" "debug"
-        fi
-    fi
-}
-
 # Main function
 main() {
     mkdir -p "$TEMP_DIR"

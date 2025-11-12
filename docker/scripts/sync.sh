@@ -56,6 +56,14 @@ sync_files() {
         return 1
     fi
 
+    # Copy gameinfo.gi only if it doesn't exist (first boot)
+    local gameinfo_src="$src_dir/game/csgo/gameinfo.gi"
+    local gameinfo_dest="$dest_dir/game/csgo/gameinfo.gi"
+    if [ -f "$gameinfo_src" ] && [ ! -f "$gameinfo_dest" ]; then
+        cp "$gameinfo_src" "$gameinfo_dest" 2>/dev/null
+        log_message "Copied initial gameinfo.gi" "debug"
+    fi
+
     # Now create symlinks for all the VPK files
     # This is where we save the big bucks (~56GB of VPKs)
     local vpk_count=0

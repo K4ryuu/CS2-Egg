@@ -19,6 +19,9 @@ sleep 1
 # Run legacy file migration check (only runs on first boot with new structure)
 migrate_legacy_files
 
+# Check for deprecated variables (ADDON_SELECTION)
+check_deprecated_variables
+
 # Initialize and load configurations
 init_configs
 load_configs

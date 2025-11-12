@@ -119,11 +119,12 @@ Common issues and their solutions.
 
 **Solutions**:
 
-1. Check `ADDON_SELECTION` is set to `metamod`, `metamod_css`, or `metamod_swiftly`
+1. Check `INSTALL_METAMOD` is set to `1` in Pterodactyl Startup tab
 2. Verify internet connectivity
-3. Check AlliedMods website is accessible
+3. Check metamodsource.net website is accessible
 4. Manually check `/game/csgo/addons/metamod/` exists
 5. Review console logs for download errors
+6. Delete `/egg/versions.txt` and restart to force re-download
 
 ### CounterStrikeSharp Won't Update
 
@@ -131,22 +132,36 @@ Common issues and their solutions.
 
 **Solutions**:
 
-1. Set `ADDON_SELECTION` to `metamod_css`
-2. Ensure MetaMod is installed first (it's a dependency)
+1. Set `INSTALL_CSS` to `1` in Pterodactyl Startup tab
+2. MetaMod automatically enabled (it's a dependency) - check for warning message
 3. Check GitHub API isn't rate-limited
 4. Verify `/game/csgo/addons/counterstrikesharp/` directory
 5. Check console for download/extraction errors
+6. Delete `/egg/versions.txt` and restart to force re-download
 
-### Swiftly Won't Install
+### SwiftlyS2 Won't Install
 
-**Problem**: Swiftly plugin not working.
+**Problem**: SwiftlyS2 not working.
 
 **Solutions**:
 
-1. Set `ADDON_SELECTION` to `metamod_swiftly`
-2. Verify MetaMod is installed
-3. Check Swiftly GitHub releases are accessible
+1. Set `INSTALL_SWIFTLY` to `1` in Pterodactyl Startup tab
+2. SwiftlyS2 v2 is standalone (no MetaMod required)
+3. Check GitHub releases are accessible (swiftly-solution/swiftlys2)
 4. Look for errors in console during startup
+5. Verify `/game/csgo/addons/swiftlys2/` directory exists
+
+### ModSharp Won't Install
+
+**Problem**: ModSharp not working.
+
+**Solutions**:
+
+1. Set `INSTALL_MODSHARP` to `1` in Pterodactyl Startup tab
+2. Check .NET 9 runtime installation succeeded (check logs)
+3. Verify GitHub releases accessible (Kxnrl/modsharp-public)
+4. Check `/game/sharp/` directory exists
+5. Review console for download/extraction errors
 
 ## Console Filter Issues
 

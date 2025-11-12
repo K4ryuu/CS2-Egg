@@ -42,29 +42,6 @@ update_metamod() {
     return 1
 }
 
-# Configure MetaMod in gameinfo.gi
-configure_metamod() {
-    local GAMEINFO_FILE="/home/container/game/csgo/gameinfo.gi"
-    local GAMEINFO_ENTRY="			Game	csgo/addons/metamod"
-
-    if [ -f "${GAMEINFO_FILE}" ]; then
-        if ! grep -q "Game[[:blank:]]*csgo\/addons\/metamod" "$GAMEINFO_FILE"; then
-            awk -v new_entry="$GAMEINFO_ENTRY" '
-                BEGIN { found=0; }
-                {
-                    if (found) {
-                        print new_entry;
-                        found=0;
-                    }
-                    print;
-                }
-                /Game_LowViolence/ { found=1; }
-            ' "$GAMEINFO_FILE" > "$GAMEINFO_FILE.tmp" && mv "$GAMEINFO_FILE.tmp" "$GAMEINFO_FILE"
-            log_message "Metamod configured in gameinfo.gi" "debug"
-        fi
-    fi
-}
-
 # Main function
 main() {
     mkdir -p "$TEMP_DIR"

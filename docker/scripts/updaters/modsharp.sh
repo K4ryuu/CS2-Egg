@@ -265,29 +265,6 @@ install_modsharp() {
     update_modsharp
 }
 
-# Configure ModSharp in gameinfo.gi
-configure_modsharp() {
-    local GAMEINFO_FILE="/home/container/game/csgo/gameinfo.gi"
-    local GAMEINFO_ENTRY="			Game	sharp"
-
-    if [ -f "${GAMEINFO_FILE}" ]; then
-        if ! grep -q "Game[[:blank:]]*sharp" "$GAMEINFO_FILE"; then
-            awk -v new_entry="$GAMEINFO_ENTRY" '
-                BEGIN { found=0; }
-                {
-                    if (found) {
-                        print new_entry;
-                        found=0;
-                    }
-                    print;
-                }
-                /Game_LowViolence/ { found=1; }
-            ' "$GAMEINFO_FILE" > "$GAMEINFO_FILE.tmp" && mv "$GAMEINFO_FILE.tmp" "$GAMEINFO_FILE"
-            log_message "ModSharp configured in gameinfo.gi" "debug"
-        fi
-    fi
-}
-
 # Entry point
 main() {
     # Create temp directory

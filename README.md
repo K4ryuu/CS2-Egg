@@ -28,10 +28,14 @@
 
 ## Supported Modding Frameworks
 
+**Multi-Framework Support** → Enable multiple frameworks simultaneously with independent boolean toggles. The egg automatically handles framework dependencies, load order, and gameinfo.gi configuration.
+
 - **[MetaMod:Source](https://www.metamodsource.net/downloads.php?branch=dev)** → Core plugin framework (required for CSS)
 - **[CounterStrikeSharp](https://github.com/roflmuffin/CounterStrikeSharp)** → C# plugin framework with .NET 8 runtime
 - **[SwiftlyS2](https://github.com/swiftly-solution/swiftlys2)** → Standalone C# framework v2
 - **[ModSharp](https://github.com/Kxnrl/modsharp-public)** → Standalone C# platform with .NET 9 runtime
+
+Each framework can be enabled/disabled independently via Pterodactyl panel. Auto-updates on server restart while enabled.
 
 ## Features
 
@@ -51,6 +55,7 @@
 - **JSON Configs** → FTP-editable configuration files
 - **Colored Logging** → Enhanced console output
 - **Custom Parameters** → Safe user-configurable startup options
+- **Tokenless Servers** → Run servers without GSLT token requirement
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

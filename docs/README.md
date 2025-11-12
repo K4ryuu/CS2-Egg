@@ -26,7 +26,7 @@ New to this egg? Start here:
 
 - [🔄 Auto-Restart](features/auto-restart.md) - Automatically restart when CS2 updates
 
-- [🔧 Auto-Updaters](features/auto-updaters.md) - MetaMod, CounterStrikeSharp, Swiftly, and ModSharp
+- [🔧 Auto-Updaters](features/auto-updaters.md) - Multi-framework support with independent toggles
 
 - [💾 VPK Sync](features/vpk-sync.md) - Massive storage savings with centralized game files
 
@@ -57,6 +57,8 @@ This egg includes many powerful features:
 - **🚫 Console Filter** - Pattern-based message filtering
 
 - **🔔 Webhooks** - Optional Discord notifications for events
+
+- **🔓 Tokenless Servers** - Run servers without GSLT token requirement
 
 - **⚙️ Flexible** - Works with Pterodactyl or standalone Docker
 

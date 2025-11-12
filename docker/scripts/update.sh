@@ -14,7 +14,28 @@ source /scripts/updaters/counterstrikesharp.sh
 source /scripts/updaters/swiftlys2.sh
 source /scripts/updaters/modsharp.sh
 
-# Main addon update function based on ADDON_SELECTION
+# Backwards compatibility: Map old ADDON_SELECTION to new boolean variables
+migrate_addon_selection() {
+    if [ -n "${ADDON_SELECTION}" ]; then
+        case "${ADDON_SELECTION}" in
+            "Metamod Only")
+                INSTALL_METAMOD=1
+                ;;
+            "Metamod + CounterStrikeSharp")
+                INSTALL_METAMOD=1
+                INSTALL_CSS=1
+                ;;
+            "SwiftlyS2")
+                INSTALL_SWIFTLY=1
+                ;;
+            "ModSharp")
+                INSTALL_MODSHARP=1
+                ;;
+        esac
+    fi
+}
+
+# Main addon update function based on boolean variables
 update_addons() {
     # Cleanup if enabled
     if [ "${CLEANUP_ENABLED:-0}" -eq 1 ]; then
@@ -23,8 +44,17 @@ update_addons() {
 
     mkdir -p "$TEMP_DIR"
 
-    # Metamod (required for CSS)
-    if [ "${ADDON_SELECTION}" = "Metamod Only" ] || [ "${ADDON_SELECTION}" = "Metamod + CounterStrikeSharp" ]; then
+    # Backwards compatibility migration
+    migrate_addon_selection
+
+    # Dependency check: CSS requires MetaMod
+    if [ "${INSTALL_CSS:-0}" -eq 1 ] && [ "${INSTALL_METAMOD:-0}" -ne 1 ]; then
+        log_message "CounterStrikeSharp requires MetaMod:Source, auto-enabling..." "warning"
+        INSTALL_METAMOD=1
+    fi
+
+    # MetaMod:Source
+    if [ "${INSTALL_METAMOD:-0}" -eq 1 ]; then
         if type update_metamod &>/dev/null; then
             update_metamod
         else
@@ -32,13 +62,11 @@ update_addons() {
         fi
 
         # Configure metamod in gameinfo.gi
-        if type configure_metamod &>/dev/null; then
-            configure_metamod
-        fi
+        add_to_gameinfo "csgo/addons/metamod"
     fi
 
     # CounterStrikeSharp
-    if [ "${ADDON_SELECTION}" = "Metamod + CounterStrikeSharp" ]; then
+    if [ "${INSTALL_CSS:-0}" -eq 1 ]; then
         if type update_counterstrikesharp &>/dev/null; then
             update_counterstrikesharp
         else
@@ -47,7 +75,7 @@ update_addons() {
     fi
 
     # SwiftlyS2 (standalone)
-    if [ "${ADDON_SELECTION}" = "SwiftlyS2" ]; then
+    if [ "${INSTALL_SWIFTLY:-0}" -eq 1 ]; then
         if type update_swiftly &>/dev/null; then
             update_swiftly
         else
@@ -55,13 +83,18 @@ update_addons() {
         fi
 
         # Configure swiftlys2 in gameinfo.gi
-        if type configure_swiftly &>/dev/null; then
-            configure_swiftly
+        add_to_gameinfo "csgo/addons/swiftlys2"
+
+        # Remove old metamod VDF file if present
+        local OLD_VDF="/home/container/game/csgo/addons/metamod/swiftlys2.vdf"
+        if [ -f "$OLD_VDF" ]; then
+            rm -f "$OLD_VDF"
+            log_message "Removed old swiftlys2.vdf from metamod" "debug"
         fi
     fi
 
     # ModSharp (standalone)
-    if [ "${ADDON_SELECTION}" = "ModSharp" ]; then
+    if [ "${INSTALL_MODSHARP:-0}" -eq 1 ]; then
         if [ -f "/scripts/updaters/modsharp.sh" ]; then
             bash /scripts/updaters/modsharp.sh
         else
@@ -69,10 +102,14 @@ update_addons() {
         fi
 
         # Configure modsharp in gameinfo.gi
-        if type configure_modsharp &>/dev/null; then
-            configure_modsharp
-        fi
+        add_to_gameinfo "sharp"
     fi
+
+    # Ensure MetaMod is always first addon after LowViolence (if present)
+    ensure_metamod_first
+
+    # Patch RequireLoginForDedicatedServers setting based on ALLOW_TOKENLESS
+    patch_tokenless_setting
 
     # Clean up
     rm -rf "$TEMP_DIR"

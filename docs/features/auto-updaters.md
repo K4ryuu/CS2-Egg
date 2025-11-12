@@ -1,15 +1,15 @@
 # Auto-Updaters
 
-Automatically update MetaMod, CounterStrikeSharp, Swiftly, and ModSharp on server startup.
+Automatically update MetaMod, CounterStrikeSharp, SwiftlyS2, and ModSharp on server startup with independent control per framework.
 
 ## Overview
 
-The egg includes automatic updaters for popular CS2 server plugins:
+The egg includes automatic updaters for popular CS2 server plugins with **multi-framework support** → enable multiple frameworks simultaneously:
 
-- **MetaMod:Source** - Core plugin framework
-- **CounterStrikeSharp (CSS)** - C# plugin framework (.NET 8)
-- **SwiftlyS2** - Alternative plugin framework (v2)
-- **ModSharp** - Modern .NET 9 modding solution (standalone)
+- **MetaMod:Source** → Core plugin framework (required for CSS)
+- **CounterStrikeSharp (CSS)** → C# plugin framework (.NET 8)
+- **SwiftlyS2** → Standalone C# framework v2 (no MetaMod required)
+- **ModSharp** → Standalone C# platform with .NET 9 runtime
 
 Updates happen automatically on server startup, keeping your plugins current without manual intervention.
 
@@ -17,66 +17,93 @@ Updates happen automatically on server startup, keeping your plugins current wit
 
 ## Configuration
 
-### Server Add-ons Selection
+### Multi-Framework Selection
 
-The `ADDON_SELECTION` variable controls which plugins are auto-updated:
+Each framework has an independent boolean toggle in the Pterodactyl panel:
 
-| Value                          | What Gets Updated            |
-| ------------------------------ | ---------------------------- |
-| `None - Vanilla server`        | Nothing (vanilla server)     |
-| `Metamod Only`                 | MetaMod only                 |
-| `Metamod + CounterStrikeSharp` | MetaMod + CounterStrikeSharp |
-| `SwiftlyS2`                    | SwiftlyS2 (standalone)       |
-| `ModSharp`                     | ModSharp (standalone)        |
+| Variable             | Description                                      | Auto-Updates |
+| -------------------- | ------------------------------------------------ | ------------ |
+| `INSTALL_METAMOD`    | MetaMod:Source (required for CSS)                | ✅           |
+| `INSTALL_CSS`        | CounterStrikeSharp (auto-enables MetaMod)        | ✅           |
+| `INSTALL_SWIFTLY`    | SwiftlyS2 standalone (no MetaMod required)       | ✅           |
+| `INSTALL_MODSHARP`   | ModSharp standalone with .NET 9                  | ✅           |
+
+**Multi-Framework Examples:**
+- MetaMod + CSS + ModSharp → All three enabled simultaneously
+- SwiftlyS2 + ModSharp → Both standalone frameworks together
+- CSS only → MetaMod auto-enabled as dependency
 
 ### Setting Up
 
-**Via Pterodactyl:**
+**Via Pterodactyl Panel:**
 
 1. Go to **Startup** tab
-2. Find **Server Add-ons** dropdown
-3. Select your preferred option
-4. Save and restart server
+2. Toggle checkboxes for desired frameworks:
+   - ☑ MetaMod:Source
+   - ☑ CounterStrikeSharp
+   - ☐ SwiftlyS2
+   - ☑ ModSharp
+3. Save and restart server
 
-**Via Environment Variable:**
+**Via Environment Variables:**
 
 ```bash
-ADDON_SELECTION=metamod_css
+INSTALL_METAMOD=1
+INSTALL_CSS=1
+INSTALL_SWIFTLY=0
+INSTALL_MODSHARP=1
+```
+
+### Dependency Handling
+
+The egg automatically handles dependencies:
+
+```
+CSS enabled + MetaMod disabled
+       ↓
+[WARNING] CounterStrikeSharp requires MetaMod:Source, auto-enabling...
+       ↓
+Both MetaMod and CSS installed
+```
+
+### Load Order Management
+
+**MetaMod always loads first** after Game_LowViolence (critical for proper initialization):
+
+```
+Game_LowViolence    csgo_lv
+            Game    csgo/addons/metamod        ← Always first
+            Game    csgo/addons/counterstrikesharp
+            Game    csgo/addons/swiftlys2
+            Game    sharp                       ← ModSharp
+
+            Game    csgo
 ```
 
 ## MetaMod:Source
 
 ### What It Does
 
-- Downloads latest stable MetaMod from AlliedMods/GitHub
+- Downloads latest stable MetaMod from MetaMod downloads
 - Extracts to `game/csgo/addons/metamod/`
-- Configures `gameinfo.gi` automatically
+- Configures `gameinfo.gi` automatically (always first position)
 - Stores version in `/home/container/egg/versions.txt`
 
 ### How It Works
 
 1. Checks current installed version
-2. Fetches latest version from AlliedMods/GitHub
-3. Compares versions (format: `git1234`)
+2. Fetches latest version from metamodsource.net
+3. Compares versions (format: `2.x-devXXXX`)
 4. Downloads and extracts if newer version available
-5. Updates `gameinfo.gi` to load MetaMod
+5. Updates `gameinfo.gi` to load MetaMod first
 
 ### Console Output
 
 ```
-[INFO] Checking MetaMod version...
-[INFO] Current: git1234, Latest: git1245
-[INFO] Updating MetaMod...
-[SUCCESS] MetaMod updated successfully
+[KitsuneLab] > Checking MetaMod updates...
+[KitsuneLab] > Update available for MetaMod: 2.x-dev1245 (current: 2.x-dev1234)
+[KitsuneLab] > MetaMod updated to 2.x-dev1245
 ```
-
-### Manual Installation
-
-If you prefer manual control:
-
-1. Set `ADDON_SELECTION=none`
-2. Install MetaMod manually
-3. Server won't overwrite your installation
 
 ## CounterStrikeSharp
 
@@ -85,16 +112,16 @@ If you prefer manual control:
 - Downloads latest CSS from GitHub releases
 - Extracts to `game/csgo/addons/counterstrikesharp/`
 - Installs with-runtime version (includes .NET runtime)
+- Auto-enables MetaMod if not already enabled
 - Stores version in `/home/container/egg/versions.txt`
 
 ### Prerequisites
 
-- **MetaMod must be installed** (CSS requires it)
-- Set `ADDON_SELECTION=metamod_css`
+- **MetaMod required** → Automatically enabled when CSS is toggled on
 
 ### How It Works
 
-1. Verifies MetaMod is installed
+1. Checks if MetaMod enabled (auto-enables with warning if not)
 2. Checks current CSS version
 3. Fetches latest release from roflmuffin/CounterStrikeSharp
 4. Downloads with-runtime Linux build
@@ -103,10 +130,9 @@ If you prefer manual control:
 ### Console Output
 
 ```
-[INFO] Checking CSS version...
-[INFO] Current: v1.0.0, Latest: v1.1.0
-[INFO] Downloading CSS...
-[SUCCESS] CSS updated successfully
+[KitsuneLab] > [WARNING] CounterStrikeSharp requires MetaMod:Source, auto-enabling...
+[KitsuneLab] > Checking CSS updates...
+[KitsuneLab] > CSS is up-to-date (v1.0.0)
 ```
 
 ### Plugin Compatibility
@@ -126,30 +152,36 @@ CSS updates may break plugins. Consider:
 - Extracts to `game/csgo/addons/swiftlys2/`
 - Installs with-runtime Linux version
 - Configures `gameinfo.gi` automatically
+- **Standalone** → No MetaMod dependency
 - Stores version in `/home/container/egg/versions.txt`
 
 ### Prerequisites
 
-- **MetaMod must be installed** (SwiftlyS2 requires it)
-- Set `ADDON_SELECTION=Metamod + Swiftly`
+- **None** → Completely standalone framework
 
 ### How It Works
 
-1. Verifies MetaMod is installed
-2. Checks current SwiftlyS2 version
-3. Fetches latest from swiftly-solution/swiftlys2
-4. Downloads with-runtime-linux.zip
-5. Extracts swiftlys2 (skips bundled metamod)
-6. Updates `gameinfo.gi` to load SwiftlyS2
+1. Checks current SwiftlyS2 version
+2. Fetches latest from swiftly-solution/swiftlys2
+3. Downloads with-runtimes-linux.zip
+4. Extracts swiftlys2 directory
+5. Updates `gameinfo.gi` to load SwiftlyS2
+6. Removes old metamod VDF file if present (legacy cleanup)
 
 ### Console Output
 
 ```
-[INFO] Checking SwiftlyS2 version...
-[INFO] Current: v2.0.0, Latest: v2.1.0
-[INFO] Downloading SwiftlyS2...
-[SUCCESS] SwiftlyS2 updated successfully
+[KitsuneLab] > Checking SwiftlyS2 updates...
+[KitsuneLab] > Update available for SwiftlyS2: v0.2.38 (current: v0.2.37)
+[KitsuneLab] > SwiftlyS2 updated to v0.2.38
 ```
+
+### Multi-Framework Compatibility
+
+SwiftlyS2 can coexist with:
+- ✅ ModSharp (both standalone)
+- ✅ MetaMod + CSS (different frameworks)
+- ✅ All frameworks simultaneously
 
 ## ModSharp
 
@@ -159,36 +191,42 @@ CSS updates may break plugins. Consider:
 - Installs .NET 9 runtime automatically
 - Extracts to `game/sharp/`
 - Configures `gameinfo.gi` automatically
+- **Standalone** → No MetaMod dependency
 - Stores versions in `/home/container/egg/versions.txt`
 
 ### Prerequisites
 
-- **MetaMod NOT required** - ModSharp is standalone
-- Set `ADDON_SELECTION=modsharp`
+- **None** → Completely standalone with bundled .NET 9
 
 ### How It Works
 
-1. Checks and installs .NET 9 runtime if needed
+1. Checks and installs .NET 9.0.0 runtime if needed
 2. Checks current ModSharp version
 3. Fetches latest from Kxnrl/modsharp-public
 4. Downloads core + extensions assets
-5. Extracts preserving existing configs
+5. Extracts preserving existing configs (`core.json` not overwritten)
 6. Updates `gameinfo.gi` to load ModSharp
 
 ### Console Output
 
 ```
-[INFO] Installing .NET 9.x.x runtime...
-[SUCCESS] .NET runtime installed successfully
-[INFO] Checking ModSharp version...
-[INFO] Current: git69, Latest: git70
-[INFO] Downloading ModSharp...
-[SUCCESS] ModSharp git70 installed successfully
+[KitsuneLab] > Installing .NET 9.0.0 runtime...
+[KitsuneLab] > .NET 9.0.0 runtime installed successfully
+[KitsuneLab] > Checking ModSharp updates...
+[KitsuneLab] > Update available for ModSharp: git70 (current: git69)
+[KitsuneLab] > ModSharp updated to git70
 ```
 
 ### Configuration
 
 ModSharp configs are in `game/sharp/configs/core.json`. First install creates default config, updates preserve your settings.
+
+### Multi-Framework Compatibility
+
+ModSharp can coexist with:
+- ✅ SwiftlyS2 (both standalone)
+- ✅ MetaMod + CSS (different frameworks)
+- ✅ All frameworks simultaneously
 
 ## Version Tracking
 
@@ -197,16 +235,14 @@ ModSharp configs are in `game/sharp/configs/core.json`. First install creates de
 Versions are stored in `/home/container/egg/versions.txt`:
 
 ```
-Metamod=git1245
+Metamod=2.x-dev1245
 CSS=v1.1.0
-Swiftly=v2.1.0
+Swiftly=v0.2.38
 ModSharp=git70
-DotNet=10.0.1
+DotNet=9.0.0
 ```
 
 ### Location
-
-The version file is stored in the organized egg directory:
 
 - **Path:** `/home/container/egg/versions.txt`
 - **Accessible via FTP:** Yes
@@ -227,9 +263,9 @@ This saves bandwidth and startup time.
 
 ### When Updates Happen
 
-- **On server startup** - Every time container starts
-- **Not during runtime** - Server must restart to update
-- **After game updates** - Auto-restart triggers update
+- **On server startup** → Every time container starts
+- **Not during runtime** → Server must restart to update
+- **After game updates** → Auto-restart triggers update
 
 ### Forcing Updates
 
@@ -241,11 +277,11 @@ To force update:
 
 ### Preventing Updates
 
-To keep current versions:
+To disable updates for specific framework:
 
-1. Set `ADDON_SELECTION=none`
-2. Or manually manage addons
-3. Version file won't be created/updated
+1. Toggle off the framework checkbox in Pterodactyl panel
+2. Or set environment variable to `0`: `INSTALL_CSS=0`
+3. Framework won't be updated or installed
 
 ## Combining with Auto-Restart
 
@@ -260,6 +296,8 @@ Game Files Update (SteamCMD)
        ↓
 Plugins Update (Auto-Updaters)
        ↓
+gameinfo.gi Load Order Verified
+       ↓
 Server Online with Latest Everything
 ```
 
@@ -271,8 +309,7 @@ Perfect for hands-off server management!
 
 **Check:**
 
-- AlliedMods website accessible
-- GitHub API accessible
+- metamodsource.net accessible
 - Sufficient disk space
 - Write permissions on `game/csgo/addons/`
 
@@ -280,14 +317,14 @@ Perfect for hands-off server management!
 
 ```bash
 # Check manually
-curl -s https://mms.alliedmods.net/mmsdrop/2.0/ | grep linux
+curl -I https://www.metamodsource.net/downloads.php?branch=dev
 ```
 
 ### CSS Not Installing
 
 **Check:**
 
-- MetaMod installed first
+- MetaMod auto-enabled (check for [WARNING] message)
 - GitHub API not rate-limited
 - Downloaded correct platform (Linux)
 - Sufficient disk space
@@ -295,27 +332,37 @@ curl -s https://mms.alliedmods.net/mmsdrop/2.0/ | grep linux
 **Common error:**
 
 ```
-[ERROR] MetaMod not found, CSS requires MetaMod
+[ERROR] No suitable asset found for roflmuffin/CounterStrikeSharp
 ```
 
-**Solution:** Change to `metamod_css` (not just `css`)
+**Solution:** GitHub API rate limit → wait 1 hour or check network access
 
-### Swiftly Not Installing
+### SwiftlyS2 Not Installing
 
 **Check:**
 
-- MetaMod installed first
 - GitHub releases accessible
-- Correct asset downloaded
-- No conflicts with CSS
+- Correct asset downloaded (with-runtimes-linux.zip)
+- No file permission issues
 
-**Note:** Don't use `metamod_css` and `metamod_swiftly` together - choose one plugin framework.
+**Note:** SwiftlyS2 is standalone, doesn't require MetaMod
+
+### ModSharp Not Installing
+
+**Check:**
+
+- .NET runtime installation succeeded
+- GitHub releases accessible
+- Both core and extensions assets downloading
+- Sufficient disk space for .NET 9 runtime
+
+**Common issue:** .NET runtime download failure → check Microsoft CDN access
 
 ### Version Not Updating
 
-**Problem:** Same version reinstalls every startup.
+**Problem:** Same version reinstalls every startup
 
-**Cause:** Version file not being written/read correctly.
+**Cause:** Version file not being written/read correctly
 
 **Solution:**
 
@@ -324,104 +371,109 @@ curl -s https://mms.alliedmods.net/mmsdrop/2.0/ | grep linux
 3. Check for errors in console during update
 4. Delete version file and restart to regenerate
 
+### Load Order Issues
+
+**Problem:** Plugins not loading correctly
+
+**Cause:** Incorrect gameinfo.gi load order
+
+**Solution:** MetaMod must be first addon after LowViolence. The egg handles this automatically via `ensure_metamod_first()` function.
+
+**Verify load order:**
+
+```bash
+cat game/csgo/gameinfo.gi | grep -A 10 "Game_LowViolence"
+```
+
+Should show:
+```
+Game_LowViolence    csgo_lv
+            Game    csgo/addons/metamod        ← MetaMod FIRST
+            Game    csgo/addons/counterstrikesharp
+            ...other addons...
+
+            Game    csgo
+```
+
 ### Rate Limiting
 
 **Error:** `API rate limit exceeded` or `403 Forbidden`
 
-**Cause:** Too many requests to GitHub API.
+**Cause:** Too many requests to GitHub API
 
 **Solution:**
 
 - Wait 1 hour for rate limit reset
-- Add GitHub token (advanced, requires modifying scripts)
 - Less frequent restarts during development
+- Check GitHub status: https://www.githubstatus.com/
 
-## Manual Updates
+## Migration from Old System
 
-### Updating MetaMod Manually
+### Deprecated ADDON_SELECTION Variable
 
-```bash
-# Download
-wget https://mms.alliedmods.net/mmsdrop/2.0/mmsource-latest-linux.tar.gz
+If you're using the old `ADDON_SELECTION` dropdown:
 
-# Extract
-tar -xzf mmsource-latest-linux.tar.gz -C game/csgo/
-
-# Update gameinfo
-# (automatically done by egg on startup)
+**Warning Message:**
+```
+[KitsuneLab] > [WARNING] ⚠️  DEPRECATION WARNING ⚠️
+[KitsuneLab] > [WARNING] The ADDON_SELECTION variable is deprecated and will be removed in the next update!
+[KitsuneLab] > [WARNING] Please update your Pterodactyl egg to use the new multi-framework support:
+[KitsuneLab] > [WARNING]   → INSTALL_METAMOD (boolean)
+[KitsuneLab] > [WARNING]   → INSTALL_CSS (boolean)
+[KitsuneLab] > [WARNING]   → INSTALL_SWIFTLY (boolean)
+[KitsuneLab] > [WARNING]   → INSTALL_MODSHARP (boolean)
 ```
 
-### Updating CSS Manually
+**Migration Steps:**
 
-```bash
-# Download latest
-wget https://github.com/roflmuffin/CounterStrikeSharp/releases/download/v1.x.x/counterstrikesharp-with-runtime-linux-xxx.zip
+1. Download latest egg JSON from GitHub
+2. Re-import egg in Pterodactyl panel
+3. Configure new boolean variables to match your current setup:
+   - Old: `ADDON_SELECTION="Metamod + CounterStrikeSharp"`
+   - New: `INSTALL_METAMOD=1` + `INSTALL_CSS=1`
+4. Restart server
+5. Verify frameworks load correctly
 
-# Extract
-unzip counterstrikesharp-with-runtime-linux-xxx.zip -d game/csgo/
-```
+**Backwards Compatibility:**
 
-### Updating Swiftly Manually
+The old `ADDON_SELECTION` variable still works temporarily:
 
-```bash
-# Download latest
-wget https://github.com/swiftly-solution/swiftly/releases/download/v2.x.x/Swiftly.Plugin.Linux.zip
+| Old Value                          | New Equivalent                      |
+| ---------------------------------- | ----------------------------------- |
+| `Metamod Only`                     | `INSTALL_METAMOD=1`                 |
+| `Metamod + CounterStrikeSharp`     | `INSTALL_METAMOD=1` + `INSTALL_CSS=1` |
+| `SwiftlyS2`                        | `INSTALL_SWIFTLY=1`                 |
+| `ModSharp`                         | `INSTALL_MODSHARP=1`                |
 
-# Extract
-unzip Swiftly.Plugin.Linux.zip -d game/csgo/
-```
+This compatibility will be removed in the next major update!
 
 ## Best Practices
 
 1. **Test updates** on dev server before production
 2. **Backup plugins** before enabling auto-updates
 3. **Monitor changelogs** for breaking changes
-4. **Choose one framework** (CSS or Swiftly, not both)
-5. **Keep MetaMod updated** - required by other plugins
+4. **Use multi-framework wisely** → Test compatibility between frameworks
+5. **Keep MetaMod updated** → Required by CSS
 6. **Check plugin compatibility** after updates
 7. **Use stable releases** in production
-
-## Advanced
-
-### Disabling Specific Updates
-
-Currently not supported, but you can:
-
-1. Set `ADDON_SELECTION=none`
-2. Manually install desired plugins
-3. They won't be auto-updated
-
-### Custom Update Logic
-
-To modify update behavior:
-
-1. Edit `docker/scripts/update.sh`
-2. Modify `update_metamod`, `update_addon`, or `update_swiftly` functions
-3. Rebuild Docker image
-4. See [Building from Source](../advanced/building.md)
-
-### Update Notifications
-
-No built-in notifications for plugin updates, but you can:
-
-- Monitor console logs
-- Check `/home/container/egg/versions.txt` changes
-- Add custom logging to update scripts
-- Combine with logging feature for persistent logs
+8. **Enable only needed frameworks** → Reduces startup time
 
 ## FAQ
 
-**Q: Can I use CSS and Swiftly together?**
-A: Not recommended. Choose one plugin framework to avoid conflicts.
+**Q: Can I use CSS and SwiftlyS2 together?**
+A: Yes! They are different frameworks and can coexist. Test compatibility first.
+
+**Q: Can I use CSS and ModSharp together?**
+A: Yes! ModSharp is standalone and doesn't conflict with CSS.
 
 **Q: Will updates break my plugins?**
 A: Possibly. Major updates can have breaking changes. Test on dev server first.
 
 **Q: Can I rollback an update?**
-A: Yes, manually install older version and set `ADDON_SELECTION=none` to prevent auto-update.
+A: Yes, manually install older version and toggle off auto-updates for that framework.
 
 **Q: How do I update only MetaMod, not CSS?**
-A: Set `ADDON_SELECTION=metamod`
+A: Toggle off CSS checkbox, keep MetaMod enabled.
 
 **Q: Are beta versions supported?**
 A: No, only stable releases from official repos.
@@ -435,11 +487,17 @@ A: Not built-in. You'll need to modify update scripts or manage them manually.
 **Q: Where are versions stored?**
 A: In `/home/container/egg/versions.txt` (accessible via FTP)
 
+**Q: Does SwiftlyS2 require MetaMod?**
+A: No! SwiftlyS2 v2 is standalone and doesn't require MetaMod.
+
+**Q: Can I enable all 4 frameworks simultaneously?**
+A: Technically yes, but test thoroughly. MetaMod + CSS + SwiftlyS2 + ModSharp is a lot of overhead.
+
 ## Related Documentation
 
-- [Auto-Restart](auto-restart.md) - Automatic server restarts
-- [Environment Variables](../configuration/environment-variables.md) - All configuration options
-- [Building from Source](../advanced/building.md) - Customize update logic
+- [Auto-Restart](auto-restart.md) → Automatic server restarts
+- [Configuration Files](../configuration/configuration-files.md) → All configuration options
+- [Building from Source](../advanced/building.md) → Customize update logic
 
 ## Support
 
