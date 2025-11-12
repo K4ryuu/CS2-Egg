@@ -131,6 +131,3 @@ CONFIGEOF
         log_message "No legacy files found - clean installation" "debug"
     fi
 }
-
-# Run migration check
-migrate_legacy_files
