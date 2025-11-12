@@ -26,7 +26,7 @@ New to this egg? Start here:
 
 - [🔄 Auto-Restart](features/auto-restart.md) - Automatically restart when CS2 updates
 
-- [🔧 Auto-Updaters](features/auto-updaters.md) - MetaMod, CounterStrikeSharp, and Swiftly
+- [🔧 Auto-Updaters](features/auto-updaters.md) - MetaMod, CounterStrikeSharp, Swiftly, and ModSharp
 
 - [💾 VPK Sync](features/vpk-sync.md) - Massive storage savings with centralized game files
 
@@ -46,7 +46,7 @@ This egg includes many powerful features:
 
 - **🔄 Auto-Restart** - Detect CS2 updates and restart automatically
 
-- **🔧 Auto-Updaters** - Keep MetaMod, CounterStrikeSharp, and Swiftly updated
+- **🔧 Auto-Updaters** - Keep MetaMod, CounterStrikeSharp, Swiftly, and ModSharp updated
 
 - **💾 VPK Sync** - Save ~52GB per server with centralized files
 
