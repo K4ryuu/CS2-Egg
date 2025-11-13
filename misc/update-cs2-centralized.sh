@@ -140,7 +140,7 @@ acquire_lock() {
     if ! flock -n 200; then
         log_error "Another CS2 update instance is already running"
         log_info "Likely cause: Cron job is currently executing (runs every 1-2 minutes)"
-        log_info "If stuck, remove lock file: $lockfile"
+        log_info "This is normal behavior during updates. Only remove lock if truly stuck: $lockfile"
         exit 1
     fi
 
