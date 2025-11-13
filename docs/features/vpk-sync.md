@@ -46,6 +46,8 @@ Before proceeding, ensure the KitsuneLab CS2 Egg is imported into your Pterodact
 
 ### Step 2: Apply Pterodactyl Panel Modification
 
+> **Warning:** Do **NOT** copy and paste the entire PR or overwrite files directly. Instead, carefully apply the changes **line by line** as shown in [PR #4034](https://github.com/pterodactyl/panel/pull/4034/files). Pterodactyl versions may differ, and blindly replacing files can break your panel or cause compatibility issues. Review each change and adapt as needed for your version.
+
 Apply [PR #4034](https://github.com/pterodactyl/panel/pull/4034/files) to enable directory auto mounting:
 
 ```bash
@@ -399,6 +401,95 @@ Console output on successful sync:
 >
 > If you encounter issues, check the error message first - the script provides specific solutions.
 
+### Mount Shows "Unmounted" Status
+
+**Issue:** Server doesn't recognize the mount path and shows **Unmounted** status, preventing VPK sync from working
+
+**Causes:**
+
+- Mount not assigned to the egg
+- Mount not assigned to the node where server is located
+- Server existed before mount was created (most common)
+- Auto Mount is disabled
+- Mount not manually activated on existing server
+
+**Quick Fix Options:**
+
+> **This is the most common issue for servers created before VPK sync was activated!**
+
+**Option 1: Bulk Script (Recommended for Multiple Servers)**
+
+Use our automated script to mount VPK sync on all servers at once via Pterodactyl API:
+
+```bash
+# Download script
+cd /root
+curl -O https://raw.githubusercontent.com/K4ryuu/CS2-Egg/refs/heads/dev/misc/mount-vpk-sync-bulk.sh
+chmod +x mount-vpk-sync-bulk.sh
+
+# Edit configuration
+nano mount-vpk-sync-bulk.sh
+```
+
+Configure the script (edit top of file):
+
+**Required Settings:**
+
+- `PANEL_URL`: Your Pterodactyl panel URL (e.g., `https://panel.yourdomain.com`)
+- `API_KEY`: Application API key from Admin Panel → **Application API** → **Create New**
+  - Required permissions: **Servers** (read), **Mounts** (read/write)
+- `MOUNT_ID`: VPK sync mount ID
+  - Find at: Admin Panel → **Mounts** → Click **CS2 Shared Files** → Check URL
+  - Example: URL `/admin/mounts/view/3` = `MOUNT_ID="3"`
+
+**Optional Settings:**
+
+- `DRY_RUN`: Set to `"true"` to preview, `"false"` to apply changes (default: `"true"`)
+- `EGG_ID`: Filter by specific egg ID (leave empty to process all servers)
+
+Run in dry-run mode first to preview:
+
+```bash
+./mount-vpk-sync-bulk.sh
+```
+
+When ready, set `DRY_RUN="false"` and run again to apply mounts to all servers.
+
+**Option 2: Manual Per-Server (For Single Servers)**
+
+1. Go to your server in Pterodactyl
+2. Click **Mounts** tab
+3. Find the VPK sync mount showing **Unmounted** status
+4. Click the **green plus icon (+)** button next to the mount
+5. Mount will change to **Mounted** and stay mounted permanently
+6. Restart server to activate VPK sync
+
+**Full Fix (If Quick Fix Doesn't Work):**
+
+1. **Check Mount Assignment (Admin Panel):**
+
+   - Go to **Admin** → **Mounts** → **CS2 Shared Files**
+   - Verify **Eggs** panel includes **KitsuneLab CS2 Egg**
+   - Verify **Nodes** panel includes the node where your server runs
+   - If missing, click **Add Eggs** or **Add Nodes** and select appropriately
+
+2. **Verify Auto Mount:**
+
+   - In mount settings, ensure **Auto Mount** is **ON**
+
+3. **Apply to Server:**
+
+   - Go to your server → **Mounts** tab
+   - Click the **green plus (+)** icon next to the mount
+   - Restart server
+
+4. **Check Logs:**
+   - If still unmounted, check server console for errors
+   - Look for sync-related messages during startup
+
+**Why This Happens:**
+Servers created before the VPK sync mount was configured don't automatically recognize the mount even when it's assigned to the egg/node. You must manually activate it once by clicking the plus icon, then it stays mounted permanently.
+
 ### Sync Location Not Found
 
 **Error:** `Sync location not found: /tmp/cs2_ds`
@@ -455,6 +546,12 @@ A: Servers continue using existing files. Update manually if needed.
 
 **Q: How often should cron run?**
 A: Every 1-2 minutes is safe - SteamCMD only downloads when updates exist.
+
+**Q: Why does my server show "Unmounted" in the Mounts tab?**
+A: Most common for servers created before VPK sync. **Quick fix:** Use the [bulk mount script](#mount-shows-unmounted-status) to automatically mount on all servers via API, or manually click the **green plus (+)** icon in server → **Mounts** tab → Restart server. See [Mount Shows "Unmounted" Status](#mount-shows-unmounted-status) for detailed instructions.
+
+**Q: Do I need to reinstall servers to enable VPK sync?**
+A: No! Just configure the mount, assign it to the egg/node, and restart the server. VPK sync activates immediately.
 
 ## Related Documentation
 
