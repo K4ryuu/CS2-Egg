@@ -158,6 +158,8 @@ Run manually to verify configuration:
 
 ==> Pre-flight Checks
 
+✓ DONE  Configuration validated successfully
+✓ DONE  Acquired update lock
 ✓ DONE  Dependencies satisfied
 ℹ INFO  CS2 Directory: /srv/cs2-shared
 ℹ INFO  SteamCMD Directory: /root/steamcmd
@@ -166,31 +168,37 @@ Run manually to verify configuration:
 
 ✓ DONE  SteamCMD already installed
 
-==> Version Check
+==> CS2 Update
 
-ℹ INFO  Checking CS2 updates (current: 14589)...
-✓ DONE  CS2 is up to date (version: 14589)
+ℹ INFO  Current version: 20778640
+Checking for updates and downloading
+✓ DONE  CS2 is already up to date (version: 20778640)
+ℹ INFO  Installing Steam client libraries...
+ℹ INFO  Setting permissions...
+ℹ INFO  CS2 directory size: 56G
+
+==> Summary
+
+✓ DONE  CS2 update completed successfully
+ℹ INFO  Version: 20778640
+ℹ INFO  Location: /srv/cs2-shared
+ℹ INFO  Servers will sync new files on next restart
 ```
 
 **Expected output (update available):**
 
 ```
-==> Version Check
+==> CS2 Update
 
-ℹ INFO  Checking CS2 updates (current: 14589)...
-⚠ WARN  Update available! Current: 14589 → Required: 14590
-
-==> Updating CS2 to version 14590
-
-Downloading CS2 update
+ℹ INFO  Current version: 20778640
+Checking for updates and downloading
  Update state (0x5) downloading, progress: 45.67 (24821478192 / 54352914432)
  Update state (0x5) downloading, progress: 67.23 (36537648512 / 54352914432)
  Update state (0x5) downloading, progress: 89.41 (48592374192 / 54352914432)
-✓ DONE  Downloading CS2 update finished in 245s
+✓ DONE  CS2 updated successfully: 20778640 → 20778900
 ℹ INFO  Installing Steam client libraries...
 ℹ INFO  Setting permissions...
-✓ DONE  CS2 updated successfully to version 14590
-ℹ INFO  CS2 directory size: 55G
+ℹ INFO  CS2 directory size: 56G
 
 ==> Detecting Affected Servers
 
@@ -201,11 +209,20 @@ Downloading CS2 update
 
 ℹ INFO  Preparing to restart 12 server(s)...
 ✓ DONE  All servers restarted successfully (12/12)
+
+==> Summary
+
+✓ DONE  CS2 update completed successfully
+ℹ INFO  Version: 20778900
+ℹ INFO  Location: /srv/cs2-shared
+ℹ INFO  Servers will sync new files on next restart
 ```
 
-**Note:** During download/update operations, you'll see real-time progress with the last 3 lines of SteamCMD output. These lines automatically update as new output arrives, and clear when the operation completes.
+**Note:** During download/update operations, you'll see real-time progress with the last 3 lines of SteamCMD output. These lines update dynamically and clear when the operation completes.
 
 #### Setup Cron Job
+
+> **💡 Recommended:** Run the script manually once before adding to cron to verify configuration and watch the initial CS2 installation (~60GB download). Once successful, the cron job will handle everything automatically in the background.
 
 Add to crontab to run every 1-2 minutes:
 
@@ -339,7 +356,7 @@ Console output on successful sync:
 
 ```bash
 # On node, as root
-steamcmd +force_install_dir /srv/cs2-shared +login anonymous +app_update 730 +quit
+/root/update-cs2-centralized.sh
 ```
 
 ## Troubleshooting
