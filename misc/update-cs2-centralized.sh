@@ -39,11 +39,14 @@ SERVER_IMAGE="sples1/k4ryuu-cs2"
 # Set to "false" if you want servers to sync on next manual restart
 AUTO_RESTART_SERVERS="false"
 
+# Optional: Validate game files integrity during update (true/false)
+# Set to "false" for faster updates (recommended for cron)
+# Set to "true" to verify all files (useful for troubleshooting)
+VALIDATE_INSTALL="false"
+
 # ! ============================================================================
 # ! DO NOT EDIT BELOW THIS LINE UNLESS YOU KNOW WHAT YOU'RE DOING
 # ! ============================================================================
-
-VERSION_FILE="$CS2_DIR/version.txt"
 
 # ============================================================================
 # STYLING / COLORS
@@ -68,6 +71,84 @@ headline()    {
     echo -e "${BOLD}${BLUE}──────────────────────────────────────────────────────${RESET}" >&2
     echo -e "${BOLD}${BLUE} ${title}${RESET}" >&2
     echo -e "${BOLD}${BLUE}──────────────────────────────────────────────────────${RESET}\n" >&2
+}
+
+# ============================================================================
+# VALIDATION & SAFETY
+# ============================================================================
+
+validate_config() {
+    local errors=0
+
+    # Validate CS2_DIR path (must be absolute, no special chars except /-_)
+    if [[ ! "$CS2_DIR" =~ ^/[a-zA-Z0-9/_-]+$ ]]; then
+        log_error "Invalid CS2_DIR path: $CS2_DIR"
+        log_error "Path must be absolute and contain only alphanumeric, /, -, _ characters"
+        ((errors++))
+    fi
+
+    # Validate SteamCMD directory path
+    if [[ ! "$STEAMCMD_DIR" =~ ^/[a-zA-Z0-9/_-]+$ ]]; then
+        log_error "Invalid STEAMCMD_DIR path: $STEAMCMD_DIR"
+        log_error "Path must be absolute and contain only alphanumeric, /, -, _ characters"
+        ((errors++))
+    fi
+
+    # Validate APP_ID is numeric
+    if [[ ! "$APP_ID" =~ ^[0-9]+$ ]]; then
+        log_error "Invalid APP_ID: $APP_ID (must be numeric)"
+        ((errors++))
+    fi
+
+    # Validate Pterodactyl configuration if auto-restart is enabled
+    if [ "$AUTO_RESTART_SERVERS" = "true" ]; then
+        if [[ ! "$PTERODACTYL_API_URL" =~ ^https?://[a-zA-Z0-9.-]+(:[0-9]+)?(/.*)?$ ]]; then
+            log_error "Invalid PTERODACTYL_API_URL: $PTERODACTYL_API_URL"
+            log_error "Must be a valid HTTP/HTTPS URL"
+            ((errors++))
+        fi
+
+        if [ -z "$PTERODACTYL_API_TOKEN" ]; then
+            log_error "PTERODACTYL_API_TOKEN is required when AUTO_RESTART_SERVERS=true"
+            ((errors++))
+        fi
+
+        if [ -z "$SERVER_IMAGE" ]; then
+            log_error "SERVER_IMAGE is required when AUTO_RESTART_SERVERS=true"
+            ((errors++))
+        fi
+    fi
+
+    if [ $errors -gt 0 ]; then
+        log_error "Configuration validation failed with $errors error(s)"
+        exit 1
+    fi
+
+    log_ok "Configuration validated successfully"
+}
+
+acquire_lock() {
+    local lockfile="/var/lock/cs2-update.lock"
+
+    # Create lock directory if it doesn't exist
+    mkdir -p "$(dirname "$lockfile")" 2>/dev/null || true
+
+    # Try to acquire lock
+    exec 200>"$lockfile"
+    if ! flock -n 200; then
+        log_error "Another CS2 update instance is already running"
+        log_info "Likely cause: Cron job is currently executing (runs every 1-2 minutes)"
+        log_info "If stuck, remove lock file: $lockfile"
+        exit 1
+    fi
+
+    log_ok "Acquired update lock"
+}
+
+release_lock() {
+    local lockfile="/var/lock/cs2-update.lock"
+    flock -u 200 2>/dev/null || true
+    rm -f "$lockfile" 2>/dev/null || true
 }
 
 # ============================================================================
@@ -218,44 +299,42 @@ install_or_reinstall_steamcmd() {
 }
 
 get_local_version() {
-    if [ -f "$VERSION_FILE" ]; then
-        # Only read first line and trim whitespace to prevent argument list overflow
-        head -n1 "$VERSION_FILE" | tr -d '\n\r' | xargs
+    # Read buildid from SteamCMD appmanifest
+    local manifest="$CS2_DIR/steamapps/appmanifest_$APP_ID.acf"
+    if [ -f "$manifest" ]; then
+        grep -Po '^\s*"buildid"\s*"\K[^"]+' "$manifest" 2>/dev/null || echo "unknown"
     else
-        echo "0"
-    fi
-}
-
-check_update_available() {
-    local version=$(get_local_version)
-    log_info "Checking CS2 updates (current: ${BOLD}$version${RESET})..."
-
-    local response=$(curl -s "https://api.steampowered.com/ISteamApps/UpToDateCheck/v0001/?appid=$APP_ID&version=$version")
-    local up_to_date=$(echo "$response" | jq -r '.response.up_to_date' 2>/dev/null || echo "false")
-    local required_version=$(echo "$response" | jq -r '.response.required_version' 2>/dev/null || echo "unknown")
-
-    if [ "$up_to_date" = "true" ]; then
-        log_ok "CS2 is up to date (version: $version)"
-        return 1
-    else
-        log_warn "Update available! Current: $version → Required: ${BOLD}$required_version${RESET}"
-        echo "$required_version"
-        return 0
+        echo "unknown"
     fi
 }
 
 update_cs2() {
-    local version=$1
-    section "Updating CS2 to version $version"
+    section "CS2 Update"
+
+    local version_before=$(get_local_version)
+    log_info "Current version: ${BOLD}$version_before${RESET}"
+
     mkdir -p "$CS2_DIR"
 
-    if ! run_with_live_tail "Downloading CS2 update" \
-        "$STEAMCMD_DIR/steamcmd.sh" +force_install_dir "$CS2_DIR" +login anonymous +app_update "$APP_ID" validate +quit; then
+    # Build validate flag based on configuration
+    local validate_flag=""
+    if [ "$VALIDATE_INSTALL" = "true" ]; then
+        validate_flag="validate"
+    fi
+
+    if ! run_with_live_tail "Checking for updates and downloading" \
+        "$STEAMCMD_DIR/steamcmd.sh" +force_install_dir "$CS2_DIR" +login anonymous +app_update "$APP_ID" $validate_flag +quit; then
         log_error "CS2 update failed"
         return 1
     fi
 
-    echo "$version" > "$VERSION_FILE"
+    local version_after=$(get_local_version)
+
+    if [ "$version_before" = "$version_after" ]; then
+        log_ok "CS2 is already up to date (version: $version_after)"
+    else
+        log_ok "CS2 updated successfully: $version_before → ${BOLD}$version_after${RESET}"
+    fi
 
     log_info "Installing Steam client libraries..."
     mkdir -p "$CS2_DIR/.steam/sdk32" "$CS2_DIR/.steam/sdk64"
@@ -266,9 +345,11 @@ update_cs2() {
     chown -R pterodactyl:pterodactyl "$CS2_DIR" 2>/dev/null || true
     chmod -R 755 "$CS2_DIR"
 
-    log_ok "CS2 updated successfully to version $version"
     local size=$(du -sh "$CS2_DIR" 2>/dev/null | cut -f1)
     log_info "CS2 directory size: ${BOLD}$size${RESET}"
+
+    # Return 0 if update happened, 1 if already up to date
+    [ "$version_before" != "$version_after" ]
 }
 
 get_affected_servers() {
@@ -368,14 +449,29 @@ main() {
 
     section "Pre-flight Checks"
 
-    if ! command -v jq >/dev/null 2>&1; then
-        log_error "jq is required but not installed. Install with: apt-get install jq"
-        exit 1
-    fi
+    # Validate configuration
+    validate_config
 
+    # Acquire lock to prevent concurrent runs
+    acquire_lock
+    trap release_lock EXIT
+    trap 'release_lock; exit 130' SIGINT
+    trap 'release_lock; exit 143' SIGTERM
+    trap 'release_lock; exit 129' SIGHUP
+
+    # Check dependencies
     if ! command -v curl >/dev/null 2>&1; then
         log_error "curl is required but not installed. Install with: apt-get install curl"
         exit 1
+    fi
+
+    # jq is only required if auto-restart is enabled
+    if [ "$AUTO_RESTART_SERVERS" = "true" ]; then
+        if ! command -v jq >/dev/null 2>&1; then
+            log_error "jq is required for auto-restart feature. Install with: apt-get install jq"
+            log_error "Or disable auto-restart by setting AUTO_RESTART_SERVERS=false"
+            exit 1
+        fi
     fi
 
     log_ok "Dependencies satisfied"
@@ -384,26 +480,21 @@ main() {
 
     install_or_reinstall_steamcmd || exit 1
 
-    section "Version Check"
-
-    if ! new_version=$(check_update_available); then
-        log_ok "No update needed, CS2 is current"
-        exit 0
-    fi
-
-    if ! update_cs2 "$new_version"; then
-        log_error "Update failed"
-        exit 1
-    fi
-
-    if [ "$AUTO_RESTART_SERVERS" = "true" ]; then
-        if affected_servers=$(get_affected_servers); then
-            # Use array to handle many servers without argument list overflow
-            IFS=' ' read -r -a server_array <<< "$affected_servers"
-            restart_servers "${server_array[@]}"
+    # Update CS2 (SteamCMD checks and downloads if needed)
+    if update_cs2; then
+        # Update happened, restart servers if configured
+        if [ "$AUTO_RESTART_SERVERS" = "true" ]; then
+            if affected_servers=$(get_affected_servers); then
+                # Use array to handle many servers without argument list overflow
+                IFS=' ' read -r -a server_array <<< "$affected_servers"
+                restart_servers "${server_array[@]}"
+            fi
+        else
+            log_info "Auto-restart disabled, servers will sync on next restart"
         fi
     else
-        log_info "Auto-restart disabled, servers will sync on next restart"
+        # No update needed
+        log_info "Servers are already running latest version"
     fi
 
     section "Summary"

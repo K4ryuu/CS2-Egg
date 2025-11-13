@@ -65,11 +65,21 @@ php artisan cache:clear
 
 We provide an automated update script that handles everything: version checking, downloading, permissions, and optionally restarting servers.
 
+**Script Features:**
+
+- ✅ **Input validation** - Validates all configuration paths and URLs for security
+- ✅ **Lock file mechanism** - Prevents concurrent execution (safe for cron)
+- ✅ **Live progress** - Real-time output during SteamCMD operations
+- ✅ **SteamCMD native checks** - Automatic disk space and version validation
+- ✅ **Graceful degradation** - Continues even if optional features fail
+
 **Prerequisites for the update script:**
 
-- **Required:** `jq` must be installed for JSON parsing (version check + API communication)
+- **Required:** `curl` must be installed
+  - Install: `apt-get install curl` on Debian/Ubuntu
+- **Optional:** `jq` only required if you enable automatic server restarts (`AUTO_RESTART_SERVERS=true`)
   - Install: `apt-get install jq` on Debian/Ubuntu
-  - The script will exit with error if jq is not found
+  - Not needed for basic update functionality
 - **Auto-installed:** SteamCMD will be downloaded automatically if not present
 
 #### Download and Configure
@@ -112,6 +122,11 @@ SERVER_IMAGE="sples1/k4ryuu-cs2"
 
 # Optional: Enable automatic server restart (true/false)
 AUTO_RESTART_SERVERS="false"
+
+# Optional: Validate game files integrity during update (true/false)
+# Set to "false" for faster updates (recommended for cron)
+# Set to "true" to verify all files (useful for troubleshooting)
+VALIDATE_INSTALL="false"
 ```
 
 **For automatic server restarts**, add Pterodactyl API credentials:

@@ -1,3 +1,15 @@
+-- update - 2025.11.13
+
+- feat: Centralized update script input validation for paths, URLs, and API credentials (security hardening)
+- feat: Centralized update script lock file mechanism to prevent concurrent execution (cron-safe)
+- feat: Centralized update script optional validate flag for faster updates (disabled by default)
+- refactor: Centralized update script now uses SteamCMD native version checking (removed Steam API dependency)
+- upgrade: Centralized update script jq dependency now optional (only required for auto-restart feature)
+- fix: Centralized update script nested command substitution causing corrupted version files and duplicate logs
+- fix: Centralized update script argument list overflow from corrupted version file
+- fix: Centralized update script argument list overflow when restarting many servers
+- fix: Centralized update script signal trap now properly exits on interrupts with lock cleanup
+
 -- update - 2025.11.12
 
 - feat: Multi-framework support with independent boolean toggles per addon
@@ -19,9 +31,6 @@
 - fix: Version file operations and duplicate migration messages
 - fix: Multiple addons now coexist properly in gameinfo.gi SearchPaths
 - fix: VPK sync now excludes gameinfo.gi to preserve addon configurations
-- fix: Centralized update script argument list overflow from corrupted version file
-- fix: Centralized update script argument list overflow from too many server IDs
-- fix: Centralized update script nested command substitution causing log pollution and empty version file
 
 -- update - 2025.11.07
 
