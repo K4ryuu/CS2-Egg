@@ -34,7 +34,7 @@ The centralized update script can automatically restart **all servers together**
 ## Prerequisites
 
 - - **KitsuneLab CS2 Egg installed in Nests**
-- - **Pterodactyl Panel with [PR #4034](https://github.com/pterodactyl/panel/pull/4034) applied** (adds mount support)
+- - **Pterodactyl Panel with [PR #4034](https://github.com/pterodactyl/panel/pull/4034/files) applied** (adds mount support)
 - - **Root access to node** (for cron setup and permissions)
 - - **Sufficient storage** for one complete CS2 installation
 
@@ -46,7 +46,7 @@ Before proceeding, ensure the KitsuneLab CS2 Egg is imported into your Pterodact
 
 ### Step 2: Apply Pterodactyl Panel Modification
 
-Apply [PR #4034](https://github.com/pterodactyl/panel/pull/4034) to enable directory mounting:
+Apply [PR #4034](https://github.com/pterodactyl/panel/pull/4034/files) to enable directory mounting:
 
 ```bash
 cd /var/www/pterodactyl
