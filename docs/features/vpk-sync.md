@@ -344,12 +344,6 @@ Go to **Variables** tab and find **VPK Sync**:
 
 Save changes.
 
-**Assign mount to egg:**
-
-- Go to **Mounts** tab in the same egg settings
-- Enable the "CS2 Shared Files" mount
-- Save
-
 Now **all new servers** will automatically use VPK sync!
 
 ### Step 7: Deploy or Resize Servers
