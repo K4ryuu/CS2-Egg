@@ -278,25 +278,31 @@ run_with_spinner() {
 install_or_reinstall_steamcmd() {
     section "SteamCMD Setup"
 
-    if [ -f "$STEAMCMD_DIR/steamcmd.sh" ] && [ -f "$STEAMCMD_DIR/linux32/steamcmd" ]; then
-        log_ok "SteamCMD already installed at $STEAMCMD_DIR"
-        chmod +x "$STEAMCMD_DIR/steamcmd.sh" 2>/dev/null || true
-        chmod +x "$STEAMCMD_DIR/linux32/steamcmd" 2>/dev/null || true
-        return 0
+    # Check if SteamCMD is properly installed
+    if [ -f "$STEAMCMD_DIR/steamcmd.sh" ] && [ -x "$STEAMCMD_DIR/steamcmd.sh" ]; then
+        # Validate critical files exist
+        if [ -f "$STEAMCMD_DIR/linux32/steamclient.so" ] || [ -f "$STEAMCMD_DIR/linux64/steamclient.so" ]; then
+            log_ok "SteamCMD already installed at $STEAMCMD_DIR"
+            return 0
+        fi
     fi
 
     log_warn "SteamCMD not found or incomplete, installing..."
     rm -rf "$STEAMCMD_DIR"
     mkdir -p "$STEAMCMD_DIR"
 
-    if ! run_with_live_tail "Downloading SteamCMD" \
-        bash -c "cd '$STEAMCMD_DIR' && curl -sqL 'https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz' | tar zxf -"; then
+    if ! curl -sqL 'https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz' | tar -xz -C "$STEAMCMD_DIR" 2>/dev/null; then
         log_error "Failed to download SteamCMD"
         return 1
     fi
 
+    # Validate extraction
+    if [ ! -f "$STEAMCMD_DIR/steamcmd.sh" ]; then
+        log_error "SteamCMD extraction failed"
+        return 1
+    fi
+
     chmod +x "$STEAMCMD_DIR/steamcmd.sh"
-    chmod +x "$STEAMCMD_DIR/linux32/steamcmd" 2>/dev/null || true
     log_ok "SteamCMD installed successfully"
 }
 
@@ -325,7 +331,7 @@ update_cs2() {
     if ! run_with_live_tail "Checking for updates and downloading" \
         "$STEAMCMD_DIR/steamcmd.sh" +force_install_dir "$CS2_DIR" +login anonymous +app_update "$APP_ID" $validate_flag +quit; then
         log_error "CS2 update failed"
-        return 1
+        exit 1
     fi
 
     local version_after=$(get_local_version)
