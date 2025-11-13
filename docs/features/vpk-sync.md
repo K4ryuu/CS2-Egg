@@ -352,9 +352,7 @@ Now **all new servers** will automatically use VPK sync!
 
 **For existing servers:** Resize to trigger sync:
 
-1. Stop server
-2. Change allocation or trigger reinstall
-3. Start server - sync will run and reduce storage
+1. Just restart the server - VPK sync activates on startup.
 
 Console output on successful sync:
 
