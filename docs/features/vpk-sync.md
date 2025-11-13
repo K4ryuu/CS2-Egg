@@ -305,13 +305,22 @@ systemctl restart wings
 
 Navigate to: **Admin Panel** → **Mounts** → **Create New**
 
-**Configuration:**
+**Mount Configuration:**
 
 - **Name**: CS2 Shared Files
 - **Source**: `/srv/cs2-shared` (external path on node)
 - **Target**: `/tmp/cs2_ds` (internal path in container)
-- **Read Only**: - **ON** (prevents servers from modifying shared files)
-- **Auto Mount**: - **ON** (mounts automatically for assigned servers)
+- **Read Only**: **ON** (prevents servers from modifying shared files)
+- **Auto Mount**: **ON** (mounts automatically for assigned servers)
+
+**Assign to Nodes and Eggs:**
+
+After saving, you'll see **Eggs** and **Nodes** panels on the right side:
+
+- Click **Add Eggs** → Select **KitsuneLab CS2 Egg**
+- Click **Add Nodes** → Select all nodes where you want VPK sync enabled
+
+> **Important:** Only servers on assigned nodes with assigned eggs will have this mount available. Make sure to add all relevant nodes where CS2 servers will run.
 
 Save the mount.
 
