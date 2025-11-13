@@ -27,6 +27,19 @@
   </p>
 </div>
 
+## System Requirements
+
+**Supported Operating Systems** (for VPK Sync & Centralized Updates)
+
+| Operating System | Minimum Version | Supported Versions | Status |
+|-----------------|-----------------|-------------------|--------|
+| **Ubuntu** | 18.04 (Bionic) | 18.04, 20.04, 22.04, 24.04 | ✅ Tested |
+| **Debian** | 10 (Buster) | 10, 11, 12, 13 (Trixie) | ✅ Tested |
+
+The centralized update script automatically detects your OS version and installs appropriate dependencies.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 ## Supported Modding Frameworks
 
 **Multi-Framework Support** → Enable multiple frameworks simultaneously with independent boolean toggles. The egg automatically handles framework dependencies, load order, and gameinfo.gi configuration.
