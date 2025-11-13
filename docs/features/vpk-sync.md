@@ -374,7 +374,7 @@ Console output on successful sync:
 **Automatic:** Cron job handles everything. When CS2 updates:
 
 1. Cron detects update and downloads to `/srv/cs2-shared`
-2. Servers sync new files on next restart
+2. Servers automatically sync new files on next restart (no reinstall needed)
 3. No manual intervention needed
 
 **Manual trigger** (if needed, on the server node):
