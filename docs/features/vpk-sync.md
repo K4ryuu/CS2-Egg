@@ -265,10 +265,10 @@ Common error codes: 0x202 (disk space), 0x402 (network), 0x606 (invalid App ID)
 
 > **Recommended:** Run manually once to verify configuration before adding to cron.
 
-Add to crontab (runs every 2 minutes):
+Add to root crontab (runs every 2 minutes):
 
 ```bash
-crontab -e
+sudo crontab -e  # Or just 'crontab -e' if already root
 
 # With logging (recommended for monitoring)
 */2 * * * * /root/update-cs2-centralized.sh >> /var/log/cs2-update.log 2>&1
