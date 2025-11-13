@@ -30,25 +30,23 @@ headline()    {
 }
 
 usage() {
-    cat <<EOF
-${BOLD}KitsuneLab CS2 Docker Image Builder${RESET}
-
-${BOLD}Usage:${RESET}
-    ./build.sh [TAG] [options]
-
-${BOLD}Positional:${RESET}
-    TAG                 Docker tag to use (default: dev)
-
-${BOLD}Options:${RESET}
-    -t, --tag TAG       Explicitly set the tag (overrides positional)
-    -P, --publish       Push the image to registry after successful build
-    -h, --help          Show this help and exit
-
-${BOLD}Examples:${RESET}
-    ./build.sh                    # build :dev
-    ./build.sh release            # build :release
-    ./build.sh -t 1.2.3 -P        # build :1.2.3 and push
-EOF
+    echo -e "${BOLD}KitsuneLab CS2 Docker Image Builder${RESET}"
+    echo -e ""
+    echo -e "${BOLD}Usage:${RESET}"
+    echo -e "    ./build.sh [TAG] [options]"
+    echo -e ""
+    echo -e "${BOLD}Positional:${RESET}"
+    echo -e "    TAG                 Docker tag to use (default: dev)"
+    echo -e ""
+    echo -e "${BOLD}Options:${RESET}"
+    echo -e "    -t, --tag TAG       Explicitly set the tag (overrides positional)"
+    echo -e "    -P, --publish       Push the image to registry after successful build"
+    echo -e "    -h, --help          Show this help and exit"
+    echo -e ""
+    echo -e "${BOLD}Examples:${RESET}"
+    echo -e "    ./build.sh                    # build :dev"
+    echo -e "    ./build.sh release            # build :release"
+    echo -e "    ./build.sh -t 1.2.3 -P        # build :1.2.3 and push"
 }
 
 # ---------------------------------------------
