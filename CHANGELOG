@@ -6,6 +6,8 @@
 - feat: Smart Docker image cleanup in build script (only removes replaced images)
 - feat: Centralized gameinfo.gi management preserving all configured addons
 - feat: MetaMod load order enforcement (always first after LowViolence)
+- feat: SwiftlyS2 load order enforcement (always last before Game csgo for ModSharp compatibility)
+- feat: ModSharp + SwiftlyS2 compatibility via automatic load order management
 - feat: Added ALLOW_TOKENLESS hidden variable for RequireLoginForDedicatedServers patching
 - refactor: Code restructure with centralized updater functions (~320 lines eliminated)
 - refactor: Standardized logging and version management across all updaters
@@ -17,6 +19,9 @@
 - fix: Version file operations and duplicate migration messages
 - fix: Multiple addons now coexist properly in gameinfo.gi SearchPaths
 - fix: VPK sync now excludes gameinfo.gi to preserve addon configurations
+- fix: Centralized update script argument list overflow from corrupted version file
+- fix: Centralized update script argument list overflow from too many server IDs
+- fix: Centralized update script nested command substitution causing log pollution and empty version file
 
 -- update - 2025.11.07
 
