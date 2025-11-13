@@ -58,26 +58,16 @@ else
     BOLD=""; DIM=""; RED=""; GREEN=""; YELLOW=""; BLUE=""; MAGENTA=""; CYAN=""; GRAY=""; RESET=""
 fi
 
-symbol() {
-    case "$1" in
-        info)  echo "ℹ" ;;
-        ok)    echo "✓" ;;
-        warn)  echo "⚠" ;;
-        error) echo "✗" ;;
-        *)     echo "" ;;
-    esac
-}
-
-log_info()    { echo -e "$(symbol info) ${BOLD}${CYAN}INFO${RESET}  $*"; }
-log_ok()      { echo -e "$(symbol ok) ${BOLD}${GREEN}DONE${RESET}  $*"; }
-log_warn()    { echo -e "$(symbol warn) ${BOLD}${YELLOW}WARN${RESET}  $*"; }
-log_error()   { echo -e "$(symbol error) ${BOLD}${RED}ERROR${RESET} $*"; }
-section()     { echo -e "\n${BOLD}${MAGENTA}==>${RESET} ${BOLD}$*${RESET}\n"; }
+log_info()    { echo -e "ℹ ${BOLD}${CYAN}INFO${RESET}  $*" >&2; }
+log_ok()      { echo -e "✓ ${BOLD}${GREEN}DONE${RESET}  $*" >&2; }
+log_warn()    { echo -e "⚠ ${BOLD}${YELLOW}WARN${RESET}  $*" >&2; }
+log_error()   { echo -e "✗ ${BOLD}${RED}ERROR${RESET} $*" >&2; }
+section()     { echo -e "\n${BOLD}${MAGENTA}==>${RESET} ${BOLD}$*${RESET}\n" >&2; }
 headline()    {
     local title="$1"
-    echo -e "${BOLD}${BLUE}──────────────────────────────────────────────────────${RESET}"
-    echo -e "${BOLD}${BLUE} ${title}${RESET}"
-    echo -e "${BOLD}${BLUE}──────────────────────────────────────────────────────${RESET}\n"
+    echo -e "${BOLD}${BLUE}──────────────────────────────────────────────────────${RESET}" >&2
+    echo -e "${BOLD}${BLUE} ${title}${RESET}" >&2
+    echo -e "${BOLD}${BLUE}──────────────────────────────────────────────────────${RESET}\n" >&2
 }
 
 # ============================================================================
@@ -91,7 +81,7 @@ run_with_live_tail() {
     local start_ts=$(date +%s)
     local log_file="/tmp/cs2-update.$$.$RANDOM.log"
 
-    echo -e "${BOLD}${MAGENTA}${label}${RESET}"
+    echo -e "${BOLD}${MAGENTA}${label}${RESET}" >&2
 
     # Run command in background
     "${cmd[@]}" >"$log_file" 2>&1 &
@@ -117,14 +107,14 @@ run_with_live_tail() {
             while IFS= read -r line; do
                 tput el 2>/dev/null || true
                 # Truncate long lines to 100 chars
-                echo -e "${DIM}${line:0:100}${RESET}"
+                echo -e "${DIM}${line:0:100}${RESET}" >&2
                 ((displayed_lines++))
             done <<< "$lines"
 
             # Pad with empty lines if we have fewer than display_lines
             while [ $displayed_lines -lt $display_lines ]; do
                 tput el 2>/dev/null || true
-                echo ""
+                echo "" >&2
                 ((displayed_lines++))
             done
 
@@ -144,7 +134,7 @@ run_with_live_tail() {
         tput cuu $displayed_lines 2>/dev/null || true
         for i in $(seq 1 $displayed_lines); do
             tput el 2>/dev/null || true
-            echo ""
+            echo "" >&2
         done
         tput cuu $displayed_lines 2>/dev/null || true
     fi
@@ -174,9 +164,9 @@ run_with_spinner() {
     "${cmd[@]}" >"$log_file" 2>&1 &
     local pid=$!
 
-    printf "${BOLD}${MAGENTA}%s${RESET}\n" "$label"
+    printf "${BOLD}${MAGENTA}%s${RESET}\n" "$label" >&2
     while kill -0 $pid 2>/dev/null; do
-        printf "\r${CYAN}%s${RESET} ${DIM}%s${RESET}" "${spin[$i]}" "$label"
+        printf "\r${CYAN}%s${RESET} ${DIM}%s${RESET}" "${spin[$i]}" "$label" >&2
         i=$(((i+1)%${#spin[@]}))
         sleep 0.12
     done
@@ -186,7 +176,7 @@ run_with_spinner() {
     local end_ts=$(date +%s)
     local dur=$((end_ts-start_ts))
 
-    printf "\r"
+    printf "\r" >&2
 
     if [ $ec -eq 0 ]; then
         log_ok "${label} finished in ${dur}s"
@@ -229,7 +219,8 @@ install_or_reinstall_steamcmd() {
 
 get_local_version() {
     if [ -f "$VERSION_FILE" ]; then
-        cat "$VERSION_FILE"
+        # Only read first line and trim whitespace to prevent argument list overflow
+        head -n1 "$VERSION_FILE" | tr -d '\n\r' | xargs
     else
         echo "0"
     fi
@@ -407,7 +398,9 @@ main() {
 
     if [ "$AUTO_RESTART_SERVERS" = "true" ]; then
         if affected_servers=$(get_affected_servers); then
-            restart_servers $affected_servers
+            # Use array to handle many servers without argument list overflow
+            IFS=' ' read -r -a server_array <<< "$affected_servers"
+            restart_servers "${server_array[@]}"
         fi
     else
         log_info "Auto-restart disabled, servers will sync on next restart"
