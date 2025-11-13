@@ -1,6 +1,5 @@
 #!/bin/bash
 source /utils/logging.sh
-source /utils/version.sh
 source /utils/updater_common.sh
 
 # Directories

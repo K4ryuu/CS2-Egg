@@ -3,7 +3,6 @@
 # Handles .NET 9 runtime and ModSharp installation/updates
 
 source /utils/logging.sh
-source /utils/version.sh
 source /utils/updater_common.sh
 
 # Configuration
