@@ -657,9 +657,6 @@ main() {
         else
             log_info "Auto-restart disabled, servers will sync on next restart"
         fi
-    else
-        # No update needed
-        log_info "Servers are already running latest version"
     fi
 
     section "Summary"
