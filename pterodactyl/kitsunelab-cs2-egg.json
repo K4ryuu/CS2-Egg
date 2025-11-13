@@ -190,16 +190,6 @@
       "field_type": "text"
     },
     {
-      "name": "Auto Update",
-      "description": "Automatically check for updates and restart when CS2 updates are detected. Configure timing, messages, and API credentials in /egg/configs/auto-restart.json",
-      "env_variable": "AUTO_UPDATE",
-      "default_value": "0",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|boolean",
-      "field_type": "text"
-    },
-    {
       "name": "VPK Sync",
       "description": "Host directory path containing centralized CS2 game files for syncing. Enables VPK symlinking for massive storage savings. Requires Pterodactyl mount configuration (documentation on GitHub). Leave empty to disable.",
       "env_variable": "SYNC_LOCATION",

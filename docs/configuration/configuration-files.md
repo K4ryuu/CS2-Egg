@@ -15,7 +15,7 @@ Files are automatically created on first startup with default values and detaile
 
 ### How It Works
 
-1. **Enable features** via Pterodactyl egg variables (e.g., `AUTO_UPDATE=1`)
+1. **Enable features** via Pterodactyl egg variables (e.g., `ENABLE_FILTER=1`)
 2. **Configure details** via JSON files (e.g., API tokens, intervals, patterns)
 3. **Edit via FTP** - All configs are accessible through SFTP/FTP
 4. **Restart to apply** - Changes take effect on server restart

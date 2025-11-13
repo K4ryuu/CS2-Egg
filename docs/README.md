@@ -10,7 +10,7 @@ New to this egg? Start here:
 
 2. **[Quick Start](getting-started/quickstart.md)** - Get your server running
 
-3. **[Updating Guide](getting-started/update.md)** - Keep everything up to date
+3. **[Updating Guide](getting-started/updating.md)** - Keep everything up to date
 
 ## Table of Contents
 
@@ -20,7 +20,7 @@ New to this egg? Start here:
 
 - [Quick Start](getting-started/quickstart.md) - Get your server running quickly
 
-- [Updating](getting-started/update.md) - Update the egg, Docker image, and server
+- [Updating](getting-started/updating.md) - Update the egg, Docker image, and server
 
 ### Features
 
