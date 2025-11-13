@@ -135,6 +135,7 @@ UPDATE_CHECK_INTERVAL="600"
 
 - Script automatically checks GitHub for updates every 10 minutes (configurable via `UPDATE_CHECK_INTERVAL`)
 - Downloads, validates syntax, creates backup, and atomically replaces itself
+- **Preserves your configuration** - all config values (paths, settings) are automatically transferred to new version
 - Keeps last 3 versions in `.script-backups/` directory for rollback
 - Post-update health check automatically rolls back if new version fails
 - Set `AUTO_UPDATE_SCRIPT="false"` to disable if you maintain local modifications

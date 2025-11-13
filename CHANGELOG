@@ -1,6 +1,7 @@
 -- update - 2025.11.13
 
 - feat: Centralized update script automatic self-update from GitHub with validation and rollback (enabled by default)
+- feat: Centralized update script preserves user configuration during self-update (paths, settings automatically transferred)
 - feat: Centralized update script input validation for paths and configurations (security hardening)
 - feat: Centralized update script lock file mechanism to prevent concurrent execution (cron-safe)
 - feat: Centralized update script optional validate flag for faster updates (disabled by default)

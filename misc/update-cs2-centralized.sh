@@ -314,8 +314,6 @@ update_cs2() {
     section "CS2 Update"
 
     local version_before=$(get_local_version)
-    log_info "Current version: ${BOLD}$version_before${RESET}"
-
     mkdir -p "$CS2_DIR"
 
     # Build validate flag based on configuration
@@ -335,7 +333,11 @@ update_cs2() {
     if [ "$version_before" = "$version_after" ]; then
         log_ok "CS2 is already up to date (version: $version_after)"
     else
-        log_ok "CS2 updated successfully: $version_before → ${BOLD}$version_after${RESET}"
+        if [ "$version_before" = "unknown" ]; then
+            log_ok "CS2 installed successfully (version: ${BOLD}$version_after${RESET})"
+        else
+            log_ok "CS2 updated successfully: $version_before → ${BOLD}$version_after${RESET}"
+        fi
     fi
 
     log_info "Installing Steam client libraries..."
@@ -465,6 +467,41 @@ create_versioned_backup() {
     fi
 }
 
+preserve_user_config() {
+    local new_script="$1"
+    local current_script="$0"
+
+    # Config variables to preserve
+    local config_vars=(
+        "CS2_DIR"
+        "STEAMCMD_DIR"
+        "SERVER_IMAGE"
+        "AUTO_RESTART_SERVERS"
+        "VALIDATE_INSTALL"
+        "AUTO_UPDATE_SCRIPT"
+        "UPDATE_CHECK_INTERVAL"
+    )
+
+    log_info "Preserving user configuration..."
+
+    # Extract and apply each config value
+    for var in "${config_vars[@]}"; do
+        # Extract current value from running script (handle quoted values)
+        local current_value=$(grep "^${var}=" "$current_script" | head -n1 | cut -d'=' -f2-)
+
+        if [ -n "$current_value" ]; then
+            # Escape special characters for sed
+            local escaped_value=$(echo "$current_value" | sed 's/[\/&]/\\&/g')
+
+            # Replace in new script (match pattern: VAR="value" or VAR='value' or VAR=value)
+            sed -i.bak "s/^${var}=.*/${var}=${escaped_value}/" "$new_script"
+        fi
+    done
+
+    rm -f "$new_script.bak" 2>/dev/null || true
+    log_ok "Configuration preserved"
+}
+
 apply_update() {
     local new_script="$1"
 
@@ -474,6 +511,9 @@ apply_update() {
     log_info "║ Backup directory: ${UPDATE_BACKUP_DIR##*/}"
     log_info "║ Restarting with updated version..."
     log_info "╚════════════════════════════════════════════════════════════╝"
+
+    # Preserve user configuration before applying update
+    preserve_user_config "$new_script"
 
     # Atomic replace
     chmod +x "$new_script"
@@ -608,7 +648,9 @@ main() {
     install_or_reinstall_steamcmd || exit 1
 
     # Update CS2 (SteamCMD checks and downloads if needed)
+    local update_occurred=false
     if update_cs2; then
+        update_occurred=true
         # Update happened, restart servers if configured
         if [ "$AUTO_RESTART_SERVERS" = "true" ]; then
             restart_docker_containers
@@ -624,7 +666,16 @@ main() {
     log_ok "CS2 update completed successfully"
     log_info "Version: ${BOLD}$(get_local_version)${RESET}"
     log_info "Location: ${BOLD}$CS2_DIR${RESET}"
-    log_info "Servers will sync new files on next restart"
+
+    if [ "$update_occurred" = "true" ]; then
+        if [ "$AUTO_RESTART_SERVERS" = "true" ]; then
+            log_info "Servers restarted and synced with latest version"
+        else
+            log_info "Servers will sync new files on next restart"
+        fi
+    else
+        log_info "No update available, servers already running latest version"
+    fi
     echo ""
 }
 
