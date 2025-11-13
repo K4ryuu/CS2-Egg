@@ -33,9 +33,33 @@ AUTO_RESTART_SERVERS="false"
 # Set to "true" to verify all files (useful for troubleshooting)
 VALIDATE_INSTALL="false"
 
+# Optional: Enable automatic script self-update (true/false)
+# Script checks GitHub for updates and auto-replaces itself
+# Keeps last 3 versions as backup, validates before applying
+AUTO_UPDATE_SCRIPT="true"
+
+# Optional: Interval between update checks in seconds (default: 600 = 10 minutes)
+# Script will only check for updates if this interval has elapsed
+UPDATE_CHECK_INTERVAL="600"
+
 # ! ============================================================================
 # ! DO NOT EDIT BELOW THIS LINE UNLESS YOU KNOW WHAT YOU'RE DOING
 # ! ============================================================================
+
+# ============================================================================
+# INTERNAL CONSTANTS
+# ============================================================================
+
+# Self-update configuration (internal)
+GITHUB_REPO="K4ryuu/CS2-Egg"
+GITHUB_BRANCH="dev"
+SCRIPT_FILENAME="update-cs2-centralized.sh"
+REMOTE_SCRIPT_URL="https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}/misc/${SCRIPT_FILENAME}"
+
+# Update tracking files
+UPDATE_CHECK_TIMESTAMP_FILE="/var/cache/cs2-update-script-check"
+UPDATE_BACKUP_DIR="$(dirname "$0")/.script-backups"
+UPDATE_KEEP_BACKUPS=3
 
 # ============================================================================
 # STYLING / COLORS
@@ -370,6 +394,186 @@ restart_docker_containers() {
     fi
 }
 
+# ============================================================================
+# SELF-UPDATE FUNCTIONS
+# ============================================================================
+
+download_and_validate_update() {
+    local temp_script="/tmp/$(basename "$0").new.$$"
+
+    # Download with comprehensive options
+    if ! curl \
+        --max-time 30 \
+        --connect-timeout 10 \
+        --retry 2 \
+        --retry-delay 5 \
+        --fail \
+        --silent \
+        --show-error \
+        --location \
+        -o "$temp_script" \
+        "$REMOTE_SCRIPT_URL" 2>/dev/null; then
+        log_warn "Failed to download update from GitHub"
+        return 1
+    fi
+
+    # Validate non-empty
+    if [ ! -s "$temp_script" ]; then
+        log_error "Downloaded file is empty"
+        rm -f "$temp_script"
+        return 1
+    fi
+
+    # Validate shebang
+    if ! head -n1 "$temp_script" | grep -q '^#!/bin/bash'; then
+        log_error "Invalid script format (missing shebang)"
+        rm -f "$temp_script"
+        return 1
+    fi
+
+    # Validate bash syntax
+    if ! bash -n "$temp_script" 2>/dev/null; then
+        log_error "Downloaded script has syntax errors"
+        rm -f "$temp_script"
+        return 1
+    fi
+
+    # Check minimum size (script should be reasonably large)
+    local file_size=$(stat -f%z "$temp_script" 2>/dev/null || stat -c%s "$temp_script" 2>/dev/null)
+    if [ "$file_size" -lt 1000 ]; then
+        log_error "Downloaded file suspiciously small (${file_size} bytes)"
+        rm -f "$temp_script"
+        return 1
+    fi
+
+    echo "$temp_script"
+}
+
+create_versioned_backup() {
+    mkdir -p "$UPDATE_BACKUP_DIR"
+
+    local timestamp=$(date +%Y%m%d-%H%M%S)
+    local backup_file="$UPDATE_BACKUP_DIR/$(basename "$0").$timestamp"
+
+    cp "$0" "$backup_file"
+    log_info "Backup created: ${BOLD}$(basename "$backup_file")${RESET}"
+
+    # Cleanup old backups
+    local backup_count=$(ls -1 "$UPDATE_BACKUP_DIR" 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$backup_count" -gt "$UPDATE_KEEP_BACKUPS" ]; then
+        ls -t "$UPDATE_BACKUP_DIR"/* | tail -n +$((UPDATE_KEEP_BACKUPS + 1)) | xargs rm -f 2>/dev/null
+    fi
+}
+
+apply_update() {
+    local new_script="$1"
+
+    log_info "╔════════════════════════════════════════════════════════════╗"
+    log_info "║              APPLYING SCRIPT UPDATE                         ║"
+    log_info "╠════════════════════════════════════════════════════════════╣"
+    log_info "║ Backup directory: ${UPDATE_BACKUP_DIR##*/}"
+    log_info "║ Restarting with updated version..."
+    log_info "╚════════════════════════════════════════════════════════════╝"
+
+    # Atomic replace
+    chmod +x "$new_script"
+    mv "$new_script" "$0"
+
+    # Mark for health check
+    touch "$0.updated"
+
+    # Update timestamp
+    echo "$(date +%s)" > "$UPDATE_CHECK_TIMESTAMP_FILE"
+
+    # Exec restart (preserves PID, lock file)
+    exec "$0" "$@"
+}
+
+check_and_apply_updates() {
+    # Skip if disabled
+    [ "$AUTO_UPDATE_SCRIPT" != "true" ] && return 0
+
+    # Rate limiting
+    if [ -f "$UPDATE_CHECK_TIMESTAMP_FILE" ]; then
+        local last_check=$(cat "$UPDATE_CHECK_TIMESTAMP_FILE")
+        local now=$(date +%s)
+        local elapsed=$((now - last_check))
+
+        if [ "$elapsed" -lt "$UPDATE_CHECK_INTERVAL" ]; then
+            return 0
+        fi
+    fi
+
+    section "Script Update Check"
+    log_info "Checking for script updates..."
+
+    # Download and validate
+    local temp_script
+    if ! temp_script=$(download_and_validate_update); then
+        # Update timestamp even on failure to respect rate limit
+        echo "$(date +%s)" > "$UPDATE_CHECK_TIMESTAMP_FILE"
+        log_info "Continuing with current version"
+        return 0
+    fi
+
+    # Compare hashes
+    local current_hash=$(sha256sum "$0" | cut -d' ' -f1)
+    local new_hash=$(sha256sum "$temp_script" | cut -d' ' -f1)
+
+    if [ "$current_hash" = "$new_hash" ]; then
+        log_ok "Script is up to date"
+        rm -f "$temp_script"
+        echo "$(date +%s)" > "$UPDATE_CHECK_TIMESTAMP_FILE"
+        return 0
+    fi
+
+    # Update available
+    log_info "New script version available, updating..."
+
+    # Apply update
+    create_versioned_backup
+    apply_update "$temp_script"
+
+    # If we reach here, exec failed (shouldn't happen)
+    log_error "Failed to restart with new version"
+    return 1
+}
+
+check_update_health() {
+    if [ -f "$0.updated" ]; then
+        section "Post-Update Health Check"
+        log_info "Performing health check after update..."
+
+        # Basic health checks
+        if ! command -v sha256sum >/dev/null 2>&1; then
+            log_error "Health check failed: required command 'sha256sum' not found"
+            rollback_from_failed_update "$@"
+            return 1
+        fi
+
+        rm "$0.updated"
+        log_ok "Health check passed, update successful"
+    fi
+}
+
+rollback_from_failed_update() {
+    log_error "Rolling back to previous version..."
+
+    local latest_backup=$(ls -t "$UPDATE_BACKUP_DIR"/* 2>/dev/null | head -n1)
+
+    if [ -n "$latest_backup" ]; then
+        cp "$latest_backup" "$0"
+        chmod +x "$0"
+        rm -f "$0.updated"
+        log_info "Rollback complete, restarting..."
+        exec "$0" "$@"
+    else
+        log_error "No backup found for rollback, manual intervention required"
+        log_error "Script location: $0"
+        exit 1
+    fi
+}
+
 main() {
     headline "KitsuneLab CS2 Centralized Update"
 
@@ -398,6 +602,9 @@ main() {
     log_info "CS2 Directory: ${BOLD}$CS2_DIR${RESET}"
     log_info "SteamCMD Directory: ${BOLD}$STEAMCMD_DIR${RESET}"
 
+    # Check and apply script updates (with rate limiting)
+    check_and_apply_updates
+
     install_or_reinstall_steamcmd || exit 1
 
     # Update CS2 (SteamCMD checks and downloads if needed)
@@ -421,4 +628,8 @@ main() {
     echo ""
 }
 
+# Check for post-update health (auto-rollback if needed)
+check_update_health "$@"
+
+# Run main program
 main "$@"

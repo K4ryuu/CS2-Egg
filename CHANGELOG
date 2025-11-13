@@ -1,10 +1,13 @@
 -- update - 2025.11.13
 
+- feat: Centralized update script automatic self-update from GitHub with validation and rollback (enabled by default)
 - feat: Centralized update script input validation for paths and configurations (security hardening)
 - feat: Centralized update script lock file mechanism to prevent concurrent execution (cron-safe)
 - feat: Centralized update script optional validate flag for faster updates (disabled by default)
+- feat: Centralized update script versioned backup system (keeps last 3 versions for rollback)
 - refactor: Centralized update script now uses SteamCMD native version checking (removed Steam API dependency)
 - refactor: Centralized update script now uses Docker native commands for server restarts (removed Pterodactyl API dependency)
+- refactor: Centralized update script now finds all containers matching image name regardless of tag/branch
 - remove: Centralized update script no longer requires curl, jq, or Pterodactyl API credentials (simpler setup)
 - fix: Centralized update script nested command substitution causing corrupted version files and duplicate logs
 - fix: Centralized update script argument list overflow from corrupted version file

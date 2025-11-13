@@ -120,7 +120,24 @@ AUTO_RESTART_SERVERS="false"
 # Set to "false" for faster updates (recommended for cron)
 # Set to "true" to verify all files (useful for troubleshooting)
 VALIDATE_INSTALL="false"
+
+# Optional: Enable automatic script self-update (true/false)
+# Script checks GitHub for updates and auto-replaces itself
+# Keeps last 3 versions as backup, validates before applying
+AUTO_UPDATE_SCRIPT="true"
+
+# Optional: Interval between update checks in seconds (default: 600 = 10 minutes)
+# Script will only check for updates if this interval has elapsed
+UPDATE_CHECK_INTERVAL="600"
 ```
+
+**Script Self-Update** (enabled by default):
+
+- Script automatically checks GitHub for updates every 10 minutes (configurable via `UPDATE_CHECK_INTERVAL`)
+- Downloads, validates syntax, creates backup, and atomically replaces itself
+- Keeps last 3 versions in `.script-backups/` directory for rollback
+- Post-update health check automatically rolls back if new version fails
+- Set `AUTO_UPDATE_SCRIPT="false"` to disable if you maintain local modifications
 
 **For automatic server restarts**, set `AUTO_RESTART_SERVERS="true"`:
 
