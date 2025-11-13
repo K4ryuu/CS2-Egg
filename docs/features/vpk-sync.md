@@ -20,6 +20,8 @@ VPK Sync allows multiple CS2 servers to share game files from a single centraliz
 3. Sync script symlinks .vpk files (~52GB) and syncs other files
 4. Each server uses shared files, maintains separate configs
 
+> **No reinstall required** - Once configured, just restart servers to activate VPK sync and instantly free up storage space.
+
 **Update Management Advantage:**
 
 The centralized update script can automatically restart **all servers together** after downloading the update once, which is far more efficient than per-server updates.
@@ -346,13 +348,17 @@ Save changes.
 
 Now **all new servers** will automatically use VPK sync!
 
-### Step 7: Deploy or Resize Servers
+### Step 7: Enable VPK Sync on Servers
 
 **For new servers:** Create as normal - VPK sync activates automatically on first start.
 
-**For existing servers:** Resize to trigger sync:
+**For existing servers:**
 
-1. Just restart the server - VPK sync activates on startup.
+> **No reinstall required!** Just restart the server - VPK sync activates immediately on startup and begins freeing up storage space.
+
+1. **Restart the server** (no reinstall/resize needed)
+2. VPK sync activates automatically during startup
+3. Storage space is freed immediately after sync completes
 
 Console output on successful sync:
 
