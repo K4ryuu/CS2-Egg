@@ -1,8 +1,8 @@
-# 📝 Configuration Files
+# Configuration Files
 
 The KitsuneLab CS2 Egg uses JSON configuration files for easy, persistent customization.
 
-## 📁 Location
+## Location
 
 All configuration files are stored in:
 ```
@@ -11,7 +11,7 @@ All configuration files are stored in:
 
 Files are automatically created on first startup with default values and detailed descriptions.
 
-## 🎯 Configuration System
+## Configuration System
 
 ### How It Works
 
@@ -22,80 +22,13 @@ Files are automatically created on first startup with default values and detaile
 
 ### Benefits
 
-- ✅ **FTP Accessible** - Edit without panel access
-- ✅ **Well Documented** - Each file includes `_description` with examples
-- ✅ **Persistent** - Survives server restarts and updates
-- ✅ **Type Safe** - JSON structure prevents configuration errors
-- ✅ **Version Controlled** - Easy to backup and restore
+- - **FTP Accessible** - Edit without panel access
+- - **Well Documented** - Each file includes `_description` with examples
+- - **Persistent** - Survives server restarts and updates
+- - **Type Safe** - JSON structure prevents configuration errors
+- - **Version Controlled** - Easy to backup and restore
 
-## 📄 Configuration Files
-
-### `auto-restart.json`
-
-**Purpose:** Configure automatic server restart when CS2 updates are detected
-
-**Enable:** Set `AUTO_UPDATE=1` in Pterodactyl egg
-
-```json
-{
-  "check_interval": 300,
-  "countdown_time": 300,
-  "pterodactyl_url": "https://panel.domain.com",
-  "pterodactyl_api_token": "",
-  "steam_api_key": "",
-  "commands": {
-    "300": "say Server updating in 5 minutes!",
-    "60": "say Server updating in 1 minute!",
-    "30": "say Server updating in 30 seconds!",
-    "10": "say Server updating in 10 seconds!",
-    "3": "say 3...",
-    "2": "say 2...",
-    "1": "say 1... Restarting now!"
-  }
-}
-```
-
-**Key Settings:**
-- `check_interval` - Seconds between update checks (min: 60)
-- `countdown_time` - Warning time before restart (seconds)
-- `pterodactyl_url` - Your Pterodactyl panel URL
-- `pterodactyl_api_token` - API key from Account Settings
-- `commands` - Console commands at specific countdown times
-
-[Full Auto-Restart Guide →](../features/auto-restart.md)
-
----
-
-### `webhook.json`
-
-**Purpose:** Discord webhook notifications for server events
-
-**Enable:** Automatically enabled when `url` field is non-empty
-
-```json
-{
-  "url": "",
-  "notifications": {
-    "update_detected": true,
-    "restart_initiated": true,
-    "restart_completed": false
-  },
-  "embed": {
-    "color": 16753920,
-    "username": "CS2 Auto Restart",
-    "avatar_url": "https://kitsune-lab.com/storage/images/server.png"
-  }
-}
-```
-
-**Key Settings:**
-- `url` - Discord webhook URL
-- `notifications` - Which events to send (true/false)
-- `embed.color` - Decimal color code (16753920 = orange)
-- `embed.username` - Bot name in Discord
-- `embed.avatar_url` - Bot avatar image
-
----
+## Configuration Files
 
 ### `console-filter.json`
 
@@ -206,7 +139,7 @@ Cleanup runs every hour automatically.
 
 ---
 
-## 🔧 Accessing Configuration Files
+## Accessing Configuration Files
 
 ### Via FTP/SFTP
 
@@ -227,13 +160,13 @@ Cleanup runs every hour automatically.
 
 ```bash
 # View config
-cat egg/configs/auto-restart.json
+cat egg/configs/console-filter.json
 
 # Edit with nano
-nano egg/configs/webhook.json
+nano egg/configs/console-filter.json
 ```
 
-## ⚙️ First-Time Setup
+## First-Time Setup
 
 On first startup:
 
@@ -243,16 +176,15 @@ On first startup:
 4. All features are disabled by default
 5. Edit files to configure and enable features
 
-## 🔄 Configuration Workflow
+## Configuration Workflow
 
 ### Step 1: Enable Feature
 
 In Pterodactyl egg variables, set to `1`:
-- `AUTO_UPDATE` - Auto-restart on CS2 updates
 - `ENABLE_FILTER` - Console filter
 - `CLEANUP_ENABLED` - Junk cleaner
 
-**Note:** Webhook notifications are automatically enabled when you add a webhook URL to `webhook.json`.
+**Note:** For automatic CS2 updates and server restarts, see the [VPK Sync & Centralized Updates](../features/vpk-sync.md) guide.
 
 ### Step 2: Configure Details
 
@@ -266,29 +198,7 @@ Edit corresponding JSON file in `/egg/configs/` via FTP:
 
 Changes apply on next server start.
 
-## 📋 Examples
-
-### Enable Auto-Restart with API
-
-1. Set `AUTO_UPDATE=1` in egg
-2. Edit `egg/configs/auto-restart.json`:
-
-```json
-{
-  "check_interval": 300,
-  "countdown_time": 300,
-  "pterodactyl_url": "https://panel.yourdomain.com",
-  "pterodactyl_api_token": "ptlc_YOUR_API_TOKEN_HERE",
-  "steam_api_key": "",
-  "commands": {
-    "300": "say ⚠️ Server updating in 5 minutes!",
-    "60": "say ⏰ 1 minute warning!",
-    "10": "say 🔴 10 seconds!"
-  }
-}
-```
-
-3. Restart server
+## Examples
 
 ### Enable Console Filter
 
@@ -328,7 +238,7 @@ Changes apply on next server start.
 2. Restart server
 3. Logs appear in `/egg/logs/YYYY-MM-DD.log`
 
-## 🔍 Troubleshooting
+## Troubleshooting
 
 ### Config Not Loading
 
@@ -351,7 +261,7 @@ Changes apply on next server start.
 Delete config file and restart server:
 
 ```bash
-rm /home/container/egg/configs/auto-restart.json
+rm /home/container/egg/configs/console-filter.json
 # Restart - default config recreated
 ```
 
@@ -362,7 +272,7 @@ rm -rf /home/container/egg/configs/
 # Restart - all defaults recreated
 ```
 
-## 📦 Backup and Restore
+## Backup and Restore
 
 ### Backup
 
@@ -391,14 +301,14 @@ tar -xzf egg-backup.tar.gz
 # Restart server
 ```
 
-## 🔗 Related Documentation
+## Related Documentation
 
-- [Auto-Restart Feature](../features/auto-restart.md)
+- [VPK Sync & Centralized Updates](../features/vpk-sync.md)
 - [Auto-Updaters](../features/auto-updaters.md)
 - [VPK Sync](../features/vpk-sync.md)
 - [Quick Start](../getting-started/quickstart.md)
 
-## 💡 Support
+## Support
 
 Need help with configuration?
 

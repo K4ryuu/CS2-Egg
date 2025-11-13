@@ -42,129 +42,11 @@ init_configs() {
 
     mkdir -p "$CONFIG_DIR"
 
-    create_auto_restart_config
-    create_webhook_config
     create_console_filter_config
     create_cleanup_config
     create_logging_config
 
     log_message "Configuration initialized" "success"
-}
-
-create_auto_restart_config() {
-    local config_file="$CONFIG_DIR/auto-restart.json"
-    local old_values=""
-
-  # Migrate if needed
-    if [ -f "$config_file" ]; then
-        old_values=$(migrate_config "$config_file" "auto-restart")
-    fi
-
-    if [ ! -f "$config_file" ]; then
-        log_message "Creating default auto-restart config..." "debug"
-        cat > "$config_file" << 'EOF'
-{
-  "version": "1.0.0",
-  "_description": [
-    "Auto-Restart Configuration",
-    "",
-    "This configuration controls the automatic server restart behavior when CS2 updates are detected.",
-    "",
-    "Settings:",
-    "  - check_interval: How often to check for updates (in seconds, minimum 60)",
-    "  - countdown_time: How long to wait before restarting after update detected (in seconds)",
-    "  - commands: Console commands to execute at specific countdown intervals",
-    "",
-    "API Configuration:",
-    "  - pterodactyl_url: Your Pterodactyl panel URL (e.g., https://panel.domain.com)",
-    "  - pterodactyl_api_token: Your Pterodactyl API key from Account Settings > API Credentials",
-    "  - steam_api_key: Your Steam Web API key from https://steamcommunity.com/dev/apikey",
-    "",
-  "Enable this feature by setting AUTO_UPDATE=1 in the Pterodactyl egg.",
-    "",
-    "Config location: /home/container/egg/configs/auto-restart.json"
-  ],
-  "check_interval": 300,
-  "countdown_time": 300,
-  "pterodactyl_url": "https://panel.domain.com",
-  "pterodactyl_api_token": "",
-  "steam_api_key": "",
-  "commands": {
-    "300": "say Attention: The server will update in 5 minutes. Please prepare to save your progress.",
-    "60": "say Heads up: The server will update in 1 minute. Save your progress now.",
-    "30": "say Warning: The server update is happening in 30 seconds. Get ready!",
-    "10": "say Final notice: The server will update in 10 seconds. Please stand by.",
-    "3": "say Final countdown: Update in 3 seconds. Hold tight!",
-    "2": "say Final countdown: Update in 2 seconds. Almost there!",
-    "1": "say Final countdown: Update in 1 second. Restarting now!"
-  }
-}
-EOF
-        
-  # Merge old values if migration happened
-        if [ -n "$old_values" ] && [ "$old_values" != "null" ]; then
-            log_message "Merging previous settings..." "debug"
-            local temp_file="${config_file}.tmp"
-            jq --argjson old "$old_values" '. + $old | .version = "'"$CONFIG_VERSION"'"' "$config_file" > "$temp_file"
-            mv "$temp_file" "$config_file"
-        fi
-    fi
-}
-
-create_webhook_config() {
-    local config_file="$CONFIG_DIR/webhook.json"
-    local old_values=""
-
-  # Migrate if needed
-    if [ -f "$config_file" ]; then
-        old_values=$(migrate_config "$config_file" "webhook")
-    fi
-
-    if [ ! -f "$config_file" ]; then
-        log_message "Creating default webhook config..." "debug"
-        cat > "$config_file" << 'EOF'
-{
-  "version": "1.0.0",
-  "_description": [
-    "Webhook Configuration",
-    "",
-    "Configure Discord webhook notifications for server events.",
-    "",
-    "Settings:",
-    "  - url: Your Discord webhook URL (get from Server Settings > Integrations > Webhooks)",
-    "  - notifications.update_detected: Send notification when CS2 update is found",
-    "  - notifications.restart_initiated: Send notification when countdown starts",
-    "  - notifications.restart_completed: Send notification when server is back online",
-    "  - embed.color: Decimal color code for Discord embed (default: 16753920 = orange)",
-    "  - embed.username: Bot username shown in Discord",
-    "  - embed.avatar_url: Bot avatar image URL",
-    "",
-  "This feature is enabled automatically when webhook.json contains a non-empty 'url'.",
-    "",
-    "Config location: /home/container/egg/configs/webhook.json"
-  ],
-  "url": "",
-  "notifications": {
-    "update_detected": true,
-    "restart_initiated": true,
-    "restart_completed": false
-  },
-  "embed": {
-    "color": 16753920,
-    "username": "CS2 Auto Restart",
-    "avatar_url": "https://kitsune-lab.com/storage/images/server.png"
-  }
-}
-EOF
-        
-  # Merge old values if migration happened
-        if [ -n "$old_values" ] && [ "$old_values" != "null" ]; then
-            log_message "Merging previous settings..." "debug"
-            local temp_file="${config_file}.tmp"
-            jq --argjson old "$old_values" '. + $old | .version = "'"$CONFIG_VERSION"'"' "$config_file" > "$temp_file"
-            mv "$temp_file" "$config_file"
-        fi
-    fi
 }
 
 create_console_filter_config() {
@@ -370,35 +252,6 @@ get_config_value() {
 }
 
 load_configs() {
-  # Load auto-restart config if enabled (AUTO_UPDATE preferred, fallback to UPDATE_AUTO_RESTART)
-  if [ "${AUTO_UPDATE:-${UPDATE_AUTO_RESTART:-0}}" -eq 1 ]; then
-        export RESTART_CHECK_INTERVAL=$(get_config_value "auto-restart.json" ".check_interval" "300")
-        export RESTART_COUNTDOWN_TIME=$(get_config_value "auto-restart.json" ".countdown_time" "300")
-        export UPDATE_COUNTDOWN_TIME="$RESTART_COUNTDOWN_TIME"
-        export PTERODACTYL_URL=$(get_config_value "auto-restart.json" ".pterodactyl_url" "${PTERODACTYL_URL:-https://panel.domain.com}")
-        export PTERODACTYL_API_TOKEN=$(get_config_value "auto-restart.json" ".pterodactyl_api_token" "${PTERODACTYL_API_TOKEN:-}")
-        export STEAM_API_KEY=$(get_config_value "auto-restart.json" ".steam_api_key" "${STEAM_API_KEY:-}")
-
-        # Load commands from config as JSON string
-        local commands_json=$(jq -c '.commands' "$CONFIG_DIR/auto-restart.json" 2>/dev/null)
-        if [ -n "$commands_json" ] && [ "$commands_json" != "null" ]; then
-            export UPDATE_COMMANDS="$commands_json"
-        fi
-    fi
-
-  # Load webhook config automatically if URL is present
-  local _wh_url
-  _wh_url=$(get_config_value "webhook.json" ".url" "")
-  if [ -n "${_wh_url}" ]; then
-    export DISCORD_WEBHOOK_URL="${_wh_url}"
-    export WEBHOOK_NOTIFY_UPDATE=$(get_config_value "webhook.json" ".notifications.update_detected" "true")
-    export WEBHOOK_NOTIFY_RESTART=$(get_config_value "webhook.json" ".notifications.restart_initiated" "true")
-    export WEBHOOK_NOTIFY_COMPLETE=$(get_config_value "webhook.json" ".notifications.restart_completed" "false")
-    export WEBHOOK_COLOR=$(get_config_value "webhook.json" ".embed.color" "16753920")
-    export WEBHOOK_USERNAME=$(get_config_value "webhook.json" ".embed.username" "CS2 Auto Restart")
-    export WEBHOOK_AVATAR=$(get_config_value "webhook.json" ".embed.avatar_url" "https://kitsune-lab.com/storage/images/server.png")
-  fi
-
     # Load console filter config if enabled via environment variable
     if [ "${ENABLE_FILTER:-0}" -eq 1 ]; then
         export FILTER_PREVIEW_MODE=$(get_config_value "console-filter.json" ".preview_mode" "false")

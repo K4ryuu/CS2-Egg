@@ -1,18 +1,29 @@
 -- update - 2025.11.13
 
-- feat: Centralized update script automatic self-update from GitHub with validation and rollback (enabled by default)
-- feat: Centralized update script preserves user configuration during self-update (paths, settings automatically transferred)
-- feat: Centralized update script input validation for paths and configurations (security hardening)
-- feat: Centralized update script lock file mechanism to prevent concurrent execution (cron-safe)
-- feat: Centralized update script optional validate flag for faster updates (disabled by default)
-- feat: Centralized update script versioned backup system (keeps last 3 versions for rollback)
-- refactor: Centralized update script now uses SteamCMD native version checking (removed Steam API dependency)
-- refactor: Centralized update script now uses Docker native commands for server restarts (removed Pterodactyl API dependency)
-- refactor: Centralized update script now finds all containers matching image name regardless of tag/branch
-- remove: Centralized update script no longer requires curl, jq, or Pterodactyl API credentials (simpler setup)
-- fix: Centralized update script nested command substitution causing corrupted version files and duplicate logs
-- fix: Centralized update script argument list overflow from corrupted version file
-- fix: Centralized update script argument list overflow when restarting many servers
+- feat(centralized): Automatic self-update from GitHub with validation and rollback (enabled by default)
+- feat(centralized): Preserves user configuration during self-update (paths, settings auto-transferred)
+- feat(centralized): Input validation for paths and configurations (security hardening)
+- feat(centralized): Lock file mechanism to prevent concurrent execution (cron-safe)
+- feat(centralized): Optional validate flag for faster updates (disabled by default)
+- feat(centralized): Versioned backup system (keeps last 3 versions for rollback)
+- feat(centralized): Automatic SteamCMD dependency installation (i386 + 32-bit libraries)
+- feat(centralized): Multi-distro support with fallback logic (Ubuntu 18.04+, Debian 10+)
+- feat(centralized): Intelligent SteamCMD error detection with contextual help (0x202 and more later)
+- feat(centralized): Health check system validates prerequisites before installation
+- feat(centralized): Spinner animation for blocking operations (package install, container restarts)
+- feat(centralized): Version-based update detection (replaces hash comparison for config independence)
+- refactor(centralized): Uses SteamCMD native version checking (removed Steam API dependency)
+- refactor(centralized): Uses Docker native commands for server restarts (removed Pterodactyl API)
+- refactor(centralized): Finds all containers matching image name regardless of tag/branch
+- refactor(centralized): Comprehensive error handling with detailed output on failures
+- optimise(centralized): Reduced verbose logging (replaced repetitive messages with comments)
+- remove(centralized): No longer requires curl, jq, or Pterodactyl API credentials (simpler setup)
+- fix(centralized): Nested command substitution causing corrupted version files and duplicate logs
+- fix(centralized): Argument list overflow from corrupted version file
+- fix(centralized): Argument list overflow when restarting many servers
+- fix(centralized): Dependency installation return logic causing premature exit on success
+- fix(centralized): apt-get update failures silently ignored after i386 architecture addition
+- fix(centralized): Hash comparison falsely detecting updates due to user config differences
 
 -- update - 2025.11.12
 

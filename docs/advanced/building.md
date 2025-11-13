@@ -92,7 +92,7 @@ docker push your-registry.com/your-image:tag
 
 After building and pushing your image:
 
-**💡 Recommendation:** Use Docker Hub with a **private repository** to protect your customizations.
+**Recommendation:** Use Docker Hub with a **private repository** to protect your customizations.
 
 ### Configure the Egg
 
@@ -195,7 +195,7 @@ Image: sples1/k4ryuu-cs2:latest
 🔷 INFO  Tag:        latest
 Building image
 ⠋ Building image
-✅ DONE  Building image finished in 45s
+[✓] DONE  Building image finished in 45s
 🔷 INFO  Image size: 1.23 GB
 
 
@@ -209,7 +209,7 @@ To push to Docker Hub, run:
 - Animated spinner during build
 - Build time tracking
 - Automatic image size calculation
-- Color-coded status messages (✅ success, ❌ error, ⚠️ warning)
+- Color-coded status messages ([SUCCESS], [ERROR], [WARNING])
 - Optional auto-publish with `--publish` flag
 
 ## Multi-Architecture Builds

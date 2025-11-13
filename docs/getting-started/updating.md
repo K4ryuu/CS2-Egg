@@ -13,10 +13,10 @@ When a new version of the egg is released:
 3. Click on the KitsuneLab CS2 Egg
 4. Either:
    - **Option A**: Click **Import Egg** and upload the new JSON
-     - ⚠️ **Warning**: This resets ALL variables to default values
+     - **Warning**: This resets ALL variables to default values
      - You must reconfigure: VPK Sync path and else that are default values.
    - **Option B**: Manually update changed variables in the **Variables** tab
-     - ✅ Preserves your existing configuration
+     - - Preserves your existing configuration
      - Only update variables mentioned in changelog
 
 ### Recommended Approach
@@ -83,10 +83,10 @@ The server automatically updates on startup by default. To disable:
 
 | Variable           | Framework          | Auto-Updates |
 | ------------------ | ------------------ | ------------ |
-| `INSTALL_METAMOD`  | MetaMod:Source     | ✅           |
-| `INSTALL_CSS`      | CounterStrikeSharp | ✅           |
-| `INSTALL_SWIFTLY`  | SwiftlyS2          | ✅           |
-| `INSTALL_MODSHARP` | ModSharp           | ✅           |
+| `INSTALL_METAMOD`  | MetaMod:Source     | -           |
+| `INSTALL_CSS`      | CounterStrikeSharp | -           |
+| `INSTALL_SWIFTLY`  | SwiftlyS2          | -           |
+| `INSTALL_MODSHARP` | ModSharp           | -           |
 
 **Configuration:**
 
@@ -108,21 +108,9 @@ See [Auto-Updaters Documentation](../features/auto-updaters.md) for full details
 
 The egg can automatically restart your server when a new CS2 update is detected.
 
-See the [Auto-Restart Guide](../features/auto-restart.md) for full setup instructions.
+See the [VPK Sync & Centralized Updates Guide](../features/vpk-sync.md) for automatic updates and server restarts.
 
-> **💡 Tip for Multiple Servers:** If you run multiple CS2 servers, use [VPK Sync](../features/vpk-sync.md) with the centralized update script instead. It downloads once and restarts all servers together, saving bandwidth and time compared to per-server auto-restart.
-
-### Webhook Notifications
-
-You can configure Discord webhooks to receive notifications about scheduled updates. The webhook feature sends formatted embeds with update information and countdown timers.
-
-**Configuration:**
-
-1. Create a webhook in your Discord server
-2. Add the webhook URL to the **Auto Restart - Discord Webhook** variable
-3. Server will send notifications when updates are detected
-
-**Note:** This is an optional feature for monitoring purposes.
+> ****TIP** Tip for Multiple Servers:** If you run multiple CS2 servers, use [VPK Sync](../features/vpk-sync.md) with the centralized update script instead. It downloads once and restarts all servers together, saving bandwidth and time compared to per-server auto-restart.
 
 ## Checking Versions
 

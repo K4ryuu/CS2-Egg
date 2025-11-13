@@ -1,8 +1,8 @@
-# 📚 KitsuneLab CS2 Egg Documentation
+# KitsuneLab CS2 Egg Documentation
 
 Welcome to the official documentation for the KitsuneLab CS2 Pterodactyl Egg! This comprehensive guide will help you install, configure, and use all features.
 
-## 🚀 Quick Start
+## Quick Start
 
 New to this egg? Start here:
 
@@ -12,57 +12,53 @@ New to this egg? Start here:
 
 3. **[Updating Guide](getting-started/update.md)** - Keep everything up to date
 
-## 📖 Table of Contents
+## Table of Contents
 
 ### Getting Started
 
-- [📥 Installation](getting-started/installation.md) - How to install and apply the egg
+- [Installation](getting-started/installation.md) - How to install and apply the egg
 
-- [⚡ Quick Start](getting-started/quickstart.md) - Get your server running quickly
+- [Quick Start](getting-started/quickstart.md) - Get your server running quickly
 
-- [🔄 Updating](getting-started/update.md) - Update the egg, Docker image, and server
+- [Updating](getting-started/update.md) - Update the egg, Docker image, and server
 
 ### Features
 
-- [🔄 Auto-Restart](features/auto-restart.md) - Automatically restart when CS2 updates
+- [VPK Sync & Centralized Updates](features/vpk-sync.md) - 80% storage savings + automatic CS2 updates
 
-- [🔧 Auto-Updaters](features/auto-updaters.md) - Multi-framework support with independent toggles
-
-- [💾 VPK Sync](features/vpk-sync.md) - Massive storage savings with centralized game files
+- [Auto-Updaters](features/auto-updaters.md) - Multi-framework support with independent toggles
 
 ### Configuration
 
-- [📝 Configuration Files](configuration/configuration-files.md) - JSON-based configuration system
+- [Configuration Files](configuration/configuration-files.md) - JSON-based configuration system
 
 ### Advanced
 
-- [🔨 Building from Source](advanced/building.md) - Build your own Docker image
+- [Building from Source](advanced/building.md) - Build your own Docker image
 
-- [🔧 Troubleshooting](advanced/troubleshooting.md) - Common issues and solutions
+- [Troubleshooting](advanced/troubleshooting.md) - Common issues and solutions
 
-## ✨ Key Features
+## Key Features
 
 This egg includes many powerful features:
 
-- **🔄 Auto-Restart** - Detect CS2 updates and restart automatically
+- **Auto-Restart** - Detect CS2 updates and restart automatically
 
-- **🔧 Auto-Updaters** - Keep MetaMod, CounterStrikeSharp, Swiftly, and ModSharp updated
+- **Auto-Updaters** - Keep MetaMod, CounterStrikeSharp, Swiftly, and ModSharp updated
 
-- **💾 VPK Sync** - Save ~52GB per server with centralized files
+- **VPK Sync** - Save ~52GB per server with centralized files
 
-- **🧹 Junk Cleaner** - Automatic cleanup configured via JSON
+- **Junk Cleaner** - Automatic cleanup configured via JSON
 
-- **🎨 Colored Logs** - Enhanced console output with rotation
+- **Colored Logs** - Enhanced console output with rotation
 
-- **🚫 Console Filter** - Pattern-based message filtering
+- **Console Filter** - Pattern-based message filtering
 
-- **🔔 Webhooks** - Optional Discord notifications for events
+- **Tokenless Servers** - Run servers without GSLT token requirement
 
-- **🔓 Tokenless Servers** - Run servers without GSLT token requirement
+- **Flexible** - Works with Pterodactyl or standalone Docker
 
-- **⚙️ Flexible** - Works with Pterodactyl or standalone Docker
-
-## 🎯 Common Tasks
+## Common Tasks
 
 ### Install a New Server
 
@@ -78,15 +74,15 @@ This egg includes many powerful features:
 
 ### Enable Auto-Restart
 
-1. Get a Pterodactyl API token
+1. Set up VPK Sync for centralized CS2 files
 
-2. Set environment variables
+2. Configure the centralized update script
 
-3. Enable the feature
+3. Add to cron for automatic checks
 
-4. Server restarts automatically on CS2 updates!
+4. Servers restart automatically on CS2 updates!
 
-[Auto-Restart Setup Guide →](features/auto-restart.md)
+[VPK Sync & Centralized Updates Guide →](features/vpk-sync.md)
 
 ### Build Custom Image
 
@@ -99,7 +95,7 @@ docker push your-registry/your-image:my-tag
 
 [Building Guide →](advanced/building.md)
 
-## 🔗 Quick Links
+## Quick Links
 
 - **[Download Egg (Stable)](https://github.com/K4ryuu/CS2-Egg/blob/main/pterodactyl/kitsunelab-cs2-egg.json)**
 
@@ -113,7 +109,7 @@ docker push your-registry/your-image:my-tag
 
 - **[View Changelog](../CHANGELOG)**
 
-## 💡 Need Help?
+## Need Help?
 
 If you need assistance:
 
@@ -125,7 +121,7 @@ If you need assistance:
 
 4. Create a [new issue](https://github.com/K4ryuu/CS2-Egg/issues/new) if needed
 
-## 🤝 Contributing
+## Contributing
 
 Want to help improve this project?
 
@@ -137,11 +133,11 @@ Want to help improve this project?
 
 - Share your experience
 
-## 📝 License
+## License
 
 This project is licensed under the GPL-3.0 License - see the [LICENSE.md](../LICENSE.md) file for details.
 
-## 🙏 Credits
+## Credits
 
 - **[1zc](https://github.com/1zc)** - Original [CS2-Pterodactyl](https://github.com/1zc/CS2-Pterodactyl) base image
 
@@ -152,7 +148,7 @@ This project is licensed under the GPL-3.0 License - see the [LICENSE.md](../LIC
 ---
 
 <div align="center">
-  <p>Made with ❤️ by <a href="https://github.com/K4ryuu">K4ryuu</a> @ <a href="https://kitsune-lab.com">KitsuneLab</a></p>
+  <p>Made with ♥ by <a href="https://github.com/K4ryuu">K4ryuu</a> @ <a href="https://kitsune-lab.com">KitsuneLab</a></p>
   <p>
     <a href="https://github.com/K4ryuu/CS2-Egg">⭐ Star on GitHub</a>
   </p>

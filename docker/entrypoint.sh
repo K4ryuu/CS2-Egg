@@ -117,17 +117,6 @@ update_addons
 # Set up console filter
 setup_message_filter
 
-if [ "${AUTO_UPDATE:-${UPDATE_AUTO_RESTART:-0}}" -eq 1 ]; then
-    # Try to set up cron-based checking first
-    if setup_version_check_cron; then
-        log_message "Version checking: cron-based" "debug"
-    else
-    # Fall back to script-based checking if cron doesn't work
-        log_message "Version checking: script-based" "debug"
-        version_check_loop &
-    fi
-fi
-
 # Build the actual startup command from template
 MODIFIED_STARTUP=$(eval echo $(echo ${STARTUP} | sed -e 's/{{/${/g' -e 's/}}/}/g'))
 
