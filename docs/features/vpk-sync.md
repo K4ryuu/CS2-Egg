@@ -46,7 +46,7 @@ Before proceeding, ensure the KitsuneLab CS2 Egg is imported into your Pterodact
 
 ### Step 2: Apply Pterodactyl Panel Modification
 
-Apply [PR #4034](https://github.com/pterodactyl/panel/pull/4034/files) to enable directory mounting:
+Apply [PR #4034](https://github.com/pterodactyl/panel/pull/4034/files) to enable directory auto mounting:
 
 ```bash
 cd /var/www/pterodactyl
