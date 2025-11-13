@@ -157,7 +157,7 @@ check_deprecated_variables() {
         log_message "Internal auto-restart has been replaced by the centralized update script." "warning"
         log_message "For automatic CS2 updates and server restarts:" "warning"
         log_message "  → Use: misc/update-cs2-centralized.sh" "warning"
-        log_message "  → Documentation: https://github.com/K4ryuu/CS2-Egg/blob/main/docs/features/vpk-sync.md" "warning"
+        log_message "  → Documentation: https://github.com/K4ryuu/CS2-Egg/blob/dev/docs/features/vpk-sync.md" "warning"
         found_deprecated=true
     fi
 }
