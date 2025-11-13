@@ -40,8 +40,10 @@ sync_files() {
 
     # Make sure the source directory actually exists
     if [ ! -d "$src_dir" ]; then
-        log_message "Sync location not found: $src_dir" "warning"
-        return 0
+        log_message "Sync location not found: $src_dir" "error"
+        log_message "SYNC_LOCATION directory not found: $src_dir" "error"
+        log_message "Make sure SYNC_LOCATION matches the path where your files are actually mounted to (TARGET)." "error"
+        exit 1
     fi
 
     log_message "Syncing VPK files..." "info"
