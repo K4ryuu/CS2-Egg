@@ -19,18 +19,7 @@ CS2_DIR="/srv/cs2-shared"
 # Required: SteamCMD installation directory
 STEAMCMD_DIR="/root/steamcmd"
 
-# Optional: Pterodactyl Panel URL (for automatic server restart)
-# Example: "https://panel.yourdomain.com"
-# Leave empty to disable automatic restarts
-PTERODACTYL_API_URL=""
-
-# Optional: Pterodactyl Application API Token
-# Get from: Admin Panel → Application API → Create New
-# Required permissions: servers.read, servers.power
-# Leave empty to disable automatic restarts
-PTERODACTYL_API_TOKEN=""
-
-# Optional: Docker image filter for server detection
+# Optional: Docker image for server detection (for automatic server restart)
 # Servers using this image will be automatically restarted after update
 # Examples: "sples1/k4ryuu-cs2", "sples1/k4ryuu-cs2:latest"
 SERVER_IMAGE="sples1/k4ryuu-cs2"
@@ -100,19 +89,8 @@ validate_config() {
         ((errors++))
     fi
 
-    # Validate Pterodactyl configuration if auto-restart is enabled
+    # Validate Docker configuration if auto-restart is enabled
     if [ "$AUTO_RESTART_SERVERS" = "true" ]; then
-        if [[ ! "$PTERODACTYL_API_URL" =~ ^https?://[a-zA-Z0-9.-]+(:[0-9]+)?(/.*)?$ ]]; then
-            log_error "Invalid PTERODACTYL_API_URL: $PTERODACTYL_API_URL"
-            log_error "Must be a valid HTTP/HTTPS URL"
-            ((errors++))
-        fi
-
-        if [ -z "$PTERODACTYL_API_TOKEN" ]; then
-            log_error "PTERODACTYL_API_TOKEN is required when AUTO_RESTART_SERVERS=true"
-            ((errors++))
-        fi
-
         if [ -z "$SERVER_IMAGE" ]; then
             log_error "SERVER_IMAGE is required when AUTO_RESTART_SERVERS=true"
             ((errors++))
@@ -352,95 +330,43 @@ update_cs2() {
     [ "$version_before" != "$version_after" ]
 }
 
-get_affected_servers() {
-    if [ -z "$PTERODACTYL_API_URL" ] || [ -z "$PTERODACTYL_API_TOKEN" ]; then
-        log_warn "Pterodactyl API not configured, skipping server detection"
-        return 1
-    fi
+restart_docker_containers() {
+    section "Detecting and Restarting Servers"
 
-    section "Detecting Affected Servers"
-    log_info "Fetching servers from Pterodactyl API..."
+    # Find containers using the specified image (all tags/branches)
+    local containers=$(docker ps --format "{{.Names}}\t{{.Image}}" | grep "$SERVER_IMAGE" | cut -f1)
 
-    local page=1
-    local servers=()
-
-    while true; do
-        local response=$(curl -s \
-            -H "Authorization: Bearer $PTERODACTYL_API_TOKEN" \
-            -H "Content-Type: application/json" \
-            -H "Accept: Application/vnd.pterodactyl.v1+json" \
-            "$PTERODACTYL_API_URL/api/application/servers?page=$page")
-
-        if [ -z "$response" ]; then
-            log_error "Failed to fetch servers from API"
-            return 1
-        fi
-
-        local page_servers=$(echo "$response" | jq -r '.data[] | select(.attributes.container.image | contains("'"${SERVER_IMAGE:-k4ryuu-cs2}"'")) | .attributes.identifier' 2>/dev/null || echo "")
-
-        if [ -n "$page_servers" ]; then
-            servers+=($page_servers)
-        fi
-
-        local next_page=$(echo "$response" | jq -r '.meta.pagination.links.next // empty' 2>/dev/null)
-        if [ -z "$next_page" ]; then
-            break
-        fi
-
-        ((page++))
-    done
-
-    if [ ${#servers[@]} -eq 0 ]; then
-        log_warn "No servers found using image matching: ${SERVER_IMAGE:-k4ryuu-cs2}"
-        return 1
-    fi
-
-    log_ok "Found ${BOLD}${#servers[@]}${RESET} server(s) using CS2 image"
-    echo "${servers[@]}"
-}
-
-restart_servers() {
-    local servers=("$@")
-
-    if [ ${#servers[@]} -eq 0 ]; then
-        log_warn "No servers to restart"
+    if [ -z "$containers" ]; then
+        log_info "No containers found using image: ${BOLD}$SERVER_IMAGE${RESET}*"
         return 0
     fi
 
-    section "Restarting Servers"
-    log_info "Preparing to restart ${#servers[@]} server(s)..."
+    local count=$(echo "$containers" | wc -l | tr -d ' ')
+    log_info "Found ${BOLD}$count${RESET} container(s) using image: ${BOLD}$SERVER_IMAGE${RESET}*"
 
     local success=0
     local failed=0
 
-    for server_id in "${servers[@]}"; do
-        log_info "Restarting server: ${BOLD}$server_id${RESET}..."
+    while IFS= read -r container; do
+        log_info "Restarting container: ${BOLD}$container${RESET}..."
 
-        local response=$(curl -s -w "\n%{http_code}" \
-            -X POST \
-            -H "Authorization: Bearer $PTERODACTYL_API_TOKEN" \
-            -H "Content-Type: application/json" \
-            -H "Accept: Application/vnd.pterodactyl.v1+json" \
-            "$PTERODACTYL_API_URL/api/application/servers/$server_id/power" \
-            -d '{"signal":"restart"}')
-
-        local http_code=$(echo "$response" | tail -n1)
-
-        if [ "$http_code" = "204" ] || [ "$http_code" = "200" ]; then
-            log_ok "Server $server_id restarted successfully"
+        if docker restart "$container" >/dev/null 2>&1; then
+            log_ok "Container $container restarted successfully"
             ((success++))
         else
-            log_error "Failed to restart server $server_id (HTTP $http_code)"
+            log_error "Failed to restart container: $container"
             ((failed++))
         fi
 
-        sleep 1
-    done
+        sleep 0.5
+    done <<< "$containers"
 
-    if [ $failed -eq 0 ]; then
-        log_ok "All servers restarted successfully ($success/$((success+failed)))"
+    if [ $failed -gt 0 ]; then
+        log_warn "Restarted $success/$count container(s) successfully ($failed failed)"
+        return 1
     else
-        log_warn "Some servers failed to restart (success: $success, failed: $failed)"
+        log_ok "All containers restarted successfully (${BOLD}$success/$count${RESET})"
+        return 0
     fi
 }
 
@@ -460,16 +386,10 @@ main() {
     trap 'release_lock; exit 129' SIGHUP
 
     # Check dependencies
-    if ! command -v curl >/dev/null 2>&1; then
-        log_error "curl is required but not installed. Install with: apt-get install curl"
-        exit 1
-    fi
-
-    # jq is only required if auto-restart is enabled
     if [ "$AUTO_RESTART_SERVERS" = "true" ]; then
-        if ! command -v jq >/dev/null 2>&1; then
-            log_error "jq is required for auto-restart feature. Install with: apt-get install jq"
-            log_error "Or disable auto-restart by setting AUTO_RESTART_SERVERS=false"
+        if ! command -v docker >/dev/null 2>&1; then
+            log_error "Docker is required for auto-restart feature but not installed"
+            log_error "Install Docker or disable auto-restart by setting AUTO_RESTART_SERVERS=false"
             exit 1
         fi
     fi
@@ -484,11 +404,7 @@ main() {
     if update_cs2; then
         # Update happened, restart servers if configured
         if [ "$AUTO_RESTART_SERVERS" = "true" ]; then
-            if affected_servers=$(get_affected_servers); then
-                # Use array to handle many servers without argument list overflow
-                IFS=' ' read -r -a server_array <<< "$affected_servers"
-                restart_servers "${server_array[@]}"
-            fi
+            restart_docker_containers
         else
             log_info "Auto-restart disabled, servers will sync on next restart"
         fi

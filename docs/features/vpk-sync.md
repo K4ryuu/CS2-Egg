@@ -75,11 +75,8 @@ We provide an automated update script that handles everything: version checking,
 
 **Prerequisites for the update script:**
 
-- **Required:** `curl` must be installed
-  - Install: `apt-get install curl` on Debian/Ubuntu
-- **Optional:** `jq` only required if you enable automatic server restarts (`AUTO_RESTART_SERVERS=true`)
-  - Install: `apt-get install jq` on Debian/Ubuntu
-  - Not needed for basic update functionality
+- **Required for auto-restart:** `docker` must be installed if you enable automatic server restarts (`AUTO_RESTART_SERVERS=true`)
+  - Docker is typically already installed on Pterodactyl nodes
 - **Auto-installed:** SteamCMD will be downloaded automatically if not present
 
 #### Download and Configure
@@ -111,13 +108,9 @@ CS2_DIR="/srv/cs2-shared"
 # Required: SteamCMD installation directory
 STEAMCMD_DIR="/root/steamcmd"
 
-# Optional: Pterodactyl Panel URL (for automatic server restart)
-PTERODACTYL_API_URL=""
-
-# Optional: Pterodactyl Application API Token
-PTERODACTYL_API_TOKEN=""
-
-# Optional: Docker image filter for server detection
+# Optional: Docker image for server detection (for automatic server restart)
+# Servers using this image (any tag/branch) will be automatically restarted after update
+# Example: "sples1/k4ryuu-cs2" matches :latest, :dev, :staging, etc.
 SERVER_IMAGE="sples1/k4ryuu-cs2"
 
 # Optional: Enable automatic server restart (true/false)
@@ -129,17 +122,12 @@ AUTO_RESTART_SERVERS="false"
 VALIDATE_INSTALL="false"
 ```
 
-**For automatic server restarts**, add Pterodactyl API credentials:
+**For automatic server restarts**, set `AUTO_RESTART_SERVERS="true"`:
 
-1. Admin Panel → Application API → Create New
-2. **Permissions needed:** Full read-write access to **Servers** resource (that adds both `servers.read` and `servers.write` permissions)
-3. Copy token and URL to script:
-
-```bash
-PTERODACTYL_API_URL="https://panel.yourdomain.com"
-PTERODACTYL_API_TOKEN="ptla_YOUR_API_TOKEN_HERE"
-AUTO_RESTART_SERVERS="true"
-```
+- Script uses Docker to detect and restart containers matching the specified `SERVER_IMAGE` (all tags/branches)
+- Example: `SERVER_IMAGE="sples1/k4ryuu-cs2"` restarts containers using `:latest`, `:dev`, `:staging`, etc.
+- No API credentials needed - uses native Docker commands
+- Requires Docker installed (already present on Pterodactyl nodes)
 
 #### Test the Script
 
@@ -200,15 +188,15 @@ Checking for updates and downloading
 ℹ INFO  Setting permissions...
 ℹ INFO  CS2 directory size: 56G
 
-==> Detecting Affected Servers
+==> Detecting and Restarting Servers
 
-ℹ INFO  Fetching servers from Pterodactyl API...
-✓ DONE  Found 12 server(s) using CS2 image
-
-==> Restarting Servers
-
-ℹ INFO  Preparing to restart 12 server(s)...
-✓ DONE  All servers restarted successfully (12/12)
+ℹ INFO  Found 12 container(s) using image: sples1/k4ryuu-cs2*
+ℹ INFO  Restarting container: ptero-a1b2c3d4...
+✓ DONE  Container ptero-a1b2c3d4 restarted successfully
+ℹ INFO  Restarting container: ptero-e5f6g7h8...
+✓ DONE  Container ptero-e5f6g7h8 restarted successfully
+[...10 more containers...]
+✓ DONE  All containers restarted successfully (12/12)
 
 ==> Summary
 
