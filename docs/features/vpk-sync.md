@@ -208,6 +208,7 @@ Checking for updates and downloading
 [INFO]  Location: /srv/cs2-shared
 [INFO]  Servers will sync new files on next restart
 ```
+
 </details>
 
 <details>
@@ -242,6 +243,7 @@ Checking for updates and downloading
 [INFO]  Location: /srv/cs2-shared
 [INFO]  Servers will sync new files on next restart
 ```
+
 </details>
 
 **Error Detection:**
@@ -312,6 +314,8 @@ Navigate to: **Admin Panel** → **Mounts** → **Create New**
 - **Target**: `/tmp/cs2_ds` (internal path in container)
 - **Read Only**: **ON** (prevents servers from modifying shared files)
 - **Auto Mount**: **ON** (mounts automatically for assigned servers)
+- **Mount on Install**: **OFF** (k4ryuu egg has no intall part, and might result in unmounting after install, which we dont want)
+- **User Mountable**: We can block the users from changing this mount, so leave it **OFF**
 
 **Assign to Nodes and Eggs:**
 
@@ -434,7 +438,7 @@ crontab -l  # Verify entry
 ## Storage Savings
 
 | Servers | Without Sync | With Sync | Savings      |
-|---------|--------------|-----------|--------------|
+| ------- | ------------ | --------- | ------------ |
 | 1       | 55GB         | 55GB      | 0GB (0%)     |
 | 5       | 275GB        | 70GB      | 205GB (75%)  |
 | 10      | 550GB        | 85GB      | 465GB (85%)  |
