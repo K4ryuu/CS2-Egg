@@ -3,7 +3,6 @@
 # Downloads and installs SwiftlyS2 from GitHub releases
 
 source /utils/logging.sh
-source /utils/version.sh
 source /utils/updater_common.sh
 
 # Update Swiftly

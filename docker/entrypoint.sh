@@ -7,7 +7,6 @@ source /scripts/sync.sh
 source /scripts/cleanup.sh
 source /scripts/update.sh
 source /scripts/filter.sh
-source /scripts/setup-cron.sh
 source /scripts/update_helper.sh
 
 # Enhanced error handling

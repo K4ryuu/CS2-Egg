@@ -3,7 +3,6 @@
 # Downloads and installs MetaMod from AlliedMods
 
 source /utils/logging.sh
-source /utils/version.sh
 source /utils/updater_common.sh
 
 update_metamod() {
