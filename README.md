@@ -7,6 +7,10 @@
 ![Docker Image Size](https://img.shields.io/docker/image-size/sples1/k4ryuu-cs2/latest?style=for-the-badge&logo=docker&logoColor=white)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/Dwq8hncnxX)
 
+<div align="center">
+  <strong>⭐ Star this repo if you find it useful!</strong>
+</div>
+
 <!-- PROJECT LOGO -->
 <br />
 <div align="center">
