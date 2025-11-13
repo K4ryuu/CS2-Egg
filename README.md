@@ -22,6 +22,8 @@
     ·
     <a href="https://github.com/K4ryuu/CS2-Egg/issues/new?assignees=KitsuneLab-Development&labels=enhancement&projects=&template=feature_request.md&title=%5BREQ%5D">Request Feature</a>
     ·
+    <a href="https://discord.gg/Dwq8hncnxX">Discord</a>
+    ·
     <a href="docs/README.md">Documentation</a>
   </p>
 </div>
