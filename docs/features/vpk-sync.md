@@ -323,9 +323,11 @@ Navigate to: **Admin Panel** → **Nests** → **Your Nest** → **Eggs** → **
 
 Go to **Variables** tab and find **VPK Sync**:
 
-- **Default Value**: `/tmp/cs2_ds` (the internal mount target from Step 5)
+- **Default Value**: `/tmp/cs2_ds` (must match the mount **Target** path from Step 5)
 - **User Editable**: You can leave this on if you want per-server control
 - **User Viewable**: No
+
+> **Important:** The SYNC_LOCATION value must match the mount's **Target** path (internal container path), not the Source path. The container accesses files through the Target path where they are mounted.
 
 Save changes.
 
