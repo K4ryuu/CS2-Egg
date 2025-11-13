@@ -176,7 +176,6 @@ Run manually to verify configuration:
 
 ==> CS2 Update
 
-ℹ INFO  Current version: 20778640
 Checking for updates and downloading
 ✓ DONE  CS2 is already up to date (version: 20778640)
 ℹ INFO  Installing Steam client libraries...
@@ -196,7 +195,6 @@ Checking for updates and downloading
 ```
 ==> CS2 Update
 
-ℹ INFO  Current version: 20778640
 Checking for updates and downloading
  Update state (0x5) downloading, progress: 45.67 (24821478192 / 54352914432)
  Update state (0x5) downloading, progress: 67.23 (36537648512 / 54352914432)
@@ -376,10 +374,6 @@ Console output on successful sync:
 > - ✅ **Steam libraries** - Copies SDK files automatically
 > - ✅ **Directory creation** - Creates required directories if missing
 >
-> **Not Auto-Fixed:**
->
-> - ❌ **jq missing** - Must be installed manually: `apt-get install jq`
->
 > If you encounter issues, the script likely fixed them automatically on the next run.
 
 ### Sync Location Not Found
@@ -406,19 +400,6 @@ Console output on successful sync:
 ```bash
 chown -R pterodactyl:pterodactyl /srv/cs2-shared
 chmod -R 755 /srv/cs2-shared
-```
-
-### SteamCMD Missing
-
-**Note:** The update script automatically downloads and installs SteamCMD if it's missing or incomplete.
-
-**Manual installation (if needed):**
-
-```bash
-mkdir -p /root/steamcmd
-cd /root/steamcmd
-curl -sqL "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz" | tar zxf -
-chmod +x steamcmd.sh
 ```
 
 ### Cron Job Not Running
