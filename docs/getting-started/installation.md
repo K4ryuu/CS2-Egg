@@ -14,7 +14,7 @@ This guide will walk you through installing and configuring the KitsuneLab CS2 E
 
 Choose the version you want to install:
 
-- **Stable (Recommended)**: [Download from main branch](https://raw.githubusercontent.com/K4ryuu/CS2-Egg/main/pterodactyl/kitsunelab-cs2-egg.json)
+- **Stable (Recommended)**: [Download from main branch](https://raw.githubusercontent.com/K4ryuu/CS2-Egg/dev/pterodactyl/kitsunelab-cs2-egg.json)
 - **Beta**: [Download from beta branch](https://raw.githubusercontent.com/K4ryuu/CS2-Egg/beta/pterodactyl/kitsunelab-cs2-egg.json)
 - **Development**: [Download from dev branch](https://raw.githubusercontent.com/K4ryuu/CS2-Egg/dev/pterodactyl/kitsunelab-cs2-egg.json)
 
