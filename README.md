@@ -41,17 +41,17 @@ Each framework can be enabled/disabled independently via Pterodactyl panel. Auto
 ## Features
 
 ### Automation & Updates
-- **Auto-Restart** → Automatically restart when CS2 updates detected
-- **Auto-Updaters** → MetaMod, CounterStrikeSharp, SwiftlyS2, ModSharp
-- **Version Tracking** → Smart updates only when necessary
-- **Discord Webhooks** → Notifications for scheduled restarts
+
+- **Auto-Updaters** → MetaMod, CounterStrikeSharp, SwiftlyS2, ModSharp automatically update on server restart
+- **[Centralized Update Script](docs/features/vpk-sync.md)** → Auto-restart on CS2 updates with version tracking (misc/update-cs2-centralized.sh)
 
 ### Storage & Performance
-- **VPK Sync** → 80% storage & bandwidth reduction
+
+- **[VPK Sync](docs/features/vpk-sync.md)** → 80% storage & bandwidth reduction via centralized file sharing
 - **Junk Cleaner** → Automatic cleanup (backups, logs, demos)
-- **Optimized Builds** → Enterprise-grade code structure
 
 ### Management & Configuration
+
 - **Console Filter** → Block unwanted messages (inspired by [Poggu](https://github.com/Poggicek)'s [CleanerCS2](https://github.com/Source2ZE/CleanerCS2))
 - **JSON Configs** → FTP-editable configuration files
 - **Colored Logging** → Enhanced console output
@@ -72,9 +72,8 @@ Comprehensive documentation is available:
 
 ### Features
 
-- **[Auto-Restart](docs/features/auto-restart.md)** → Automatic CS2 update restarts
+- **[VPK Sync & Centralized Updates](docs/features/vpk-sync.md)** → 80% storage savings + auto-restart on CS2 updates
 - **[Auto-Updaters](docs/features/auto-updaters.md)** → Plugin auto-updates (MetaMod, CSS, SwiftlyS2, ModSharp)
-- **[VPK Sync](docs/features/vpk-sync.md)** → 80% storage savings
 - **[Console Filter](docs/features/console-filter.md)** → Message filtering
 - **[Junk Cleaner](docs/features/junk-cleaner.md)** → Automatic cleanup
 

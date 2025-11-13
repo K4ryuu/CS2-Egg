@@ -45,11 +45,6 @@ handle_server_output() {
         return
     }
 
-    if [[ "$line" == "SV:  Connection to Steam servers successful." && "${UPDATE_AUTO_RESTART:-0}" -eq 1 ]]; then
-        log_message "Auto-restart enabled: monitoring for CS2 updates" "info"
-        version_check_loop &
-    fi
-
     if [ "${ENABLE_FILTER:-0}" -ne 1 ]; then
         printf '%s\n' "$line"
         return

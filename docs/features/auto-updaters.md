@@ -23,17 +23,17 @@ Each framework has an independent boolean toggle in the Pterodactyl panel:
 
 | Variable             | Description                                      | Auto-Updates |
 | -------------------- | ------------------------------------------------ | ------------ |
-| `INSTALL_METAMOD`    | MetaMod:Source (required for CSS)                | ✅           |
-| `INSTALL_CSS`        | CounterStrikeSharp (auto-enables MetaMod)        | ✅           |
-| `INSTALL_SWIFTLY`    | SwiftlyS2 standalone (no MetaMod required)       | ✅           |
-| `INSTALL_MODSHARP`   | ModSharp standalone with .NET 9                  | ✅           |
+| `INSTALL_METAMOD`    | MetaMod:Source (required for CSS)                | [✓]           |
+| `INSTALL_CSS`        | CounterStrikeSharp (auto-enables MetaMod)        | [✓]           |
+| `INSTALL_SWIFTLY`    | SwiftlyS2 standalone (no MetaMod required)       | [✓]           |
+| `INSTALL_MODSHARP`   | ModSharp standalone with .NET 9                  | [✓]           |
 
 **Multi-Framework Examples:**
-- MetaMod + CSS + SwiftlyS2 → All three enabled simultaneously ✅
-- MetaMod + ModSharp → Compatible combination ✅
-- CSS only → MetaMod auto-enabled as dependency ✅
-- ModSharp + CSS → ModSharp auto-disabled (incompatible) ❌
-- ModSharp + SwiftlyS2 → ModSharp auto-disabled (incompatible) ❌
+- MetaMod + CSS + SwiftlyS2 → All three enabled simultaneously [✓]
+- MetaMod + ModSharp → Compatible combination [✓]
+- CSS only → MetaMod auto-enabled as dependency [✓]
+- ModSharp + CSS → ModSharp auto-disabled (incompatible) [✗]
+- ModSharp + SwiftlyS2 → ModSharp auto-disabled (incompatible) [✗]
 
 ### Setting Up
 
@@ -149,9 +149,9 @@ CSS updates may break plugins. Consider:
 ### Multi-Framework Compatibility
 
 CounterStrikeSharp can coexist with:
-- ✅ MetaMod (required dependency)
-- ✅ SwiftlyS2
-- ❌ ModSharp (incompatible - ModSharp auto-disabled if CSS enabled)
+- [✓] MetaMod (required dependency)
+- [✓] SwiftlyS2
+- [✗] ModSharp (incompatible - ModSharp auto-disabled if CSS enabled)
 
 ## SwiftlyS2
 
@@ -188,9 +188,9 @@ CounterStrikeSharp can coexist with:
 ### Multi-Framework Compatibility
 
 SwiftlyS2 can coexist with:
-- ✅ CounterStrikeSharp (CSS)
-- ✅ MetaMod
-- ❌ ModSharp (incompatible - auto-disabled if ModSharp enabled)
+- [✓] CounterStrikeSharp (CSS)
+- [✓] MetaMod
+- [✗] ModSharp (incompatible - auto-disabled if ModSharp enabled)
 
 ## ModSharp
 
@@ -233,9 +233,9 @@ ModSharp configs are in `game/sharp/configs/core.json`. First install creates de
 ### Multi-Framework Compatibility
 
 ModSharp can coexist with:
-- ✅ MetaMod only
-- ❌ CounterStrikeSharp (CSS) - incompatible, auto-disabled if ModSharp enabled
-- ❌ SwiftlyS2 - incompatible, auto-disabled if ModSharp enabled
+- [✓] MetaMod only
+- [✗] CounterStrikeSharp (CSS) - incompatible, auto-disabled if ModSharp enabled
+- [✗] SwiftlyS2 - incompatible, auto-disabled if ModSharp enabled
 
 **Note:** ModSharp is a standalone framework that conflicts with other C# frameworks. Only MetaMod can run alongside it.
 
@@ -263,10 +263,10 @@ DotNet=9.0.0
 
 The updater:
 
-- ✅ Only downloads when new version available
-- ✅ Compares versions before downloading
-- ✅ Skips updates if already current
-- ✅ Logs all version changes
+- [✓] Only downloads when new version available
+- [✓] Compares versions before downloading
+- [✓] Skips updates if already current
+- [✓] Logs all version changes
 
 This saves bandwidth and startup time.
 
@@ -426,7 +426,7 @@ If you're using the old `ADDON_SELECTION` dropdown:
 
 **Warning Message:**
 ```
-[KitsuneLab] > [WARNING] ⚠️  DEPRECATION WARNING ⚠️
+[KitsuneLab] > [WARNING] DEPRECATION WARNING
 [KitsuneLab] > [WARNING] The ADDON_SELECTION variable is deprecated and will be removed in the next update!
 [KitsuneLab] > [WARNING] Please update your Pterodactyl egg to use the new multi-framework support:
 [KitsuneLab] > [WARNING]   → INSTALL_METAMOD (boolean)
@@ -512,7 +512,7 @@ A: No. ModSharp is incompatible with CSS and SwiftlyS2. Maximum 3 frameworks sim
 
 ## Related Documentation
 
-- [Auto-Restart](auto-restart.md) → Automatic server restarts
+- [VPK Sync & Centralized Updates](vpk-sync.md) → Automatic CS2 updates and server restarts
 - [Configuration Files](../configuration/configuration-files.md) → All configuration options
 - [Building from Source](../advanced/building.md) → Customize update logic
 

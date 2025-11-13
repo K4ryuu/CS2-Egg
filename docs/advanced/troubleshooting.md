@@ -38,78 +38,80 @@ Common issues and their solutions.
 4. Disable VPN/proxy if using one
 5. Wait a few minutes and try again (temporary Steam issue)
 
-## Auto-Restart Issues
+## Centralized Update Script Issues
 
-### Auto-Restart Not Working
+### Script Not Running
 
-**Problem**: Server doesn't restart when CS2 updates.
+**Problem**: Centralized update script (`misc/update-cs2-centralized.sh`) not running.
 
 **Checklist**:
 
-- [ ] `ENABLE_AUTO_RESTART` is set to `1` in Pterodactyl startup
-- [ ] `/egg/configs/auto-restart.json` exists with `"enabled": true`
-- [ ] `pterodactyl_api_token` is set (48 chars, starts with `ptlc_` or `plcn_`)
-- [ ] `pterodactyl_url` is correct (e.g., `https://panel.domain.com`)
-- [ ] API token has proper permissions
-- [ ] `check_interval` is set (60-3600 seconds)
+- [ ] Script has execute permissions: `chmod +x misc/update-cs2-centralized.sh`
+- [ ] Docker daemon is running and accessible
+- [ ] Script is configured in cron (if using auto-updates)
+- [ ] VPK Sync paths are correct in script configuration
 
-**Check logs**:
+**Test manual run**:
 
 ```bash
-# In server console, look for:
-[INFO] Auto-restart enabled
-[INFO] Stored initial buildid: XXXXXX
-[SUCCESS] Version check cron job added
+cd /path/to/CS2-Egg
+./misc/update-cs2-centralized.sh
 ```
 
-**Check config file via FTP**:
+**Check script logs**:
 
-- Navigate to `/egg/configs/auto-restart.json`
-- Verify all fields are properly set
+```bash
+# Script outputs detailed logs during execution
+# Look for errors in: SteamCMD, Docker commands, file permissions
+```
 
-### API Token Invalid
+### Lock File Conflicts
 
-**Error**: `Failed to restart server: HTTP 403` or `HTTP 401`
+**Error**: `Another instance is running (lockfile exists)`
 
-**Solutions**:
-
-1. Generate new API token:
-   - Go to Account → API Credentials
-   - Create Client API Key
-   - Give it a descriptive name
-   - Copy the token immediately (shown only once)
-2. Verify token format: `ptlc_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX` (48 chars)
-3. Update `/egg/configs/auto-restart.json` via FTP:
-   ```json
-   "pterodactyl_api_token": "ptlc_your_new_token_here"
-   ```
-4. Ensure token hasn't expired
-5. Check token has permission to control servers
-
-### Steam API Issues
-
-**Error**: `Failed to check version` or API timeouts
+**Normal behavior**: Lock conflicts during cron execution are normal and prevent overlapping updates.
 
 **Solutions**:
 
-1. Verify Steam API is accessible:
+1. Wait for current update to complete (check `docker ps` for update activity)
+2. Only remove lock if script is truly stuck (not running for 30+ minutes):
    ```bash
-   curl -sf "https://api.steamcmd.net/v1/info/730"
+   rm /tmp/cs2-update.lock
    ```
-2. Check timeout in logs (system has 10-30s built-in timeout)
-3. System falls back gracefully on API failures
-4. Increase `check_interval` to reduce frequency
+3. Check for hung Docker operations: `docker ps -a`
 
-### False Update Detections
+### Docker Container Not Restarting
 
-**Problem**: Server restarts even when no update available.
+**Problem**: CS2 update completed but servers not restarting.
+
+**Checklist**:
+
+- [ ] `AUTO_RESTART_SERVERS="true"` in script configuration
+- [ ] Docker image name matches running containers
+- [ ] Docker daemon has permission to restart containers
+- [ ] Containers are using VPK Sync image (docker.io/sples1/k4ryuu-cs2)
+
+**Debug**:
+
+```bash
+# Check which containers would be restarted
+docker ps --format "{{.Names}}\t{{.Image}}" | grep "sples1/k4ryuu-cs2"
+
+# Manually restart a container
+docker restart <container_name>
+```
+
+### SteamCMD Update Failures
+
+**Error**: SteamCMD validation or update failures
 
 **Solutions**:
 
-1. Increase `check_interval` in `/egg/configs/auto-restart.json` to 600+ seconds
-2. Check if Steam API is having issues: `https://api.steamcmd.net/v1/info/730`
-3. Verify buildid is stable across checks
-4. Check logs for buildid changes
+1. Set `VALIDATE_INSTALL="false"` in script (faster, use for regular updates)
+2. Enable validation only for troubleshooting: `VALIDATE_INSTALL="true"`
+3. Check available disk space (need 60-70GB free)
+4. Verify network connectivity to Steam CDN
+5. Re-run script with validation enabled to repair installation
 
 ## Auto-Updater Issues
 
@@ -276,17 +278,15 @@ Common issues and their solutions.
 
 **Possible causes**:
 
-- Too frequent version checks (increase `check_interval` in auto-restart config)
 - Server running on slow hardware
 - Many players online
 - Resource-intensive plugins
 
 **Solutions**:
 
-1. Increase auto-restart check interval to 600+ seconds
-2. Disable unnecessary features (filter, logging if not needed)
-3. Upgrade server resources
-4. Optimize plugins
+1. Disable unnecessary features (filter, logging if not needed)
+2. Upgrade server resources
+3. Optimize plugins
 
 ### High Memory Usage
 
@@ -372,11 +372,11 @@ Common issues and their solutions.
 
 ### Before Asking for Help
 
-1. ✅ Check this troubleshooting guide
-2. ✅ Search existing GitHub issues
-3. ✅ Check console logs for errors
-4. ✅ Verify your configuration
-5. ✅ Test with default settings
+1. [✓] Check this troubleshooting guide
+2. [✓] Search existing GitHub issues
+3. [✓] Check console logs for errors
+4. [✓] Verify your configuration
+5. [✓] Test with default settings
 
 ### When Reporting Issues
 

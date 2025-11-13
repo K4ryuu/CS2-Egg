@@ -22,19 +22,19 @@ VPK Sync allows multiple CS2 servers to share game files from a single centraliz
 
 **Update Management Advantage:**
 
-The centralized update script can automatically restart **all servers together** after downloading the update once. This is far superior to the [egg-based auto-restart](auto-restart.md), which makes each server download and restart independently.
+The centralized update script can automatically restart **all servers together** after downloading the update once, which is far more efficient than per-server updates.
 
-- ✅ **Single download** vs multiple duplicate downloads
-- ✅ **Coordinated restarts** vs staggered individual restarts
-- ✅ **Bandwidth savings** vs redundant traffic
-- ✅ **Faster updates** vs waiting for each server
+- - **Single download** vs multiple duplicate downloads
+- - **Coordinated restarts** vs staggered individual restarts
+- - **Bandwidth savings** vs redundant traffic
+- - **Faster updates** vs waiting for each server
 
 ## Prerequisites
 
-- ✅ **KitsuneLab CS2 Egg installed in Nests**
-- ✅ **Pterodactyl Panel with [PR #4034](https://github.com/pterodactyl/panel/pull/4034) applied** (adds mount support)
-- ✅ **Root access to node** (for cron setup and permissions)
-- ✅ **Sufficient storage** for one complete CS2 installation
+- - **KitsuneLab CS2 Egg installed in Nests**
+- - **Pterodactyl Panel with [PR #4034](https://github.com/pterodactyl/panel/pull/4034) applied** (adds mount support)
+- - **Root access to node** (for cron setup and permissions)
+- - **Sufficient storage** for one complete CS2 installation
 
 ## Setup Guide
 
@@ -67,17 +67,19 @@ We provide an automated update script that handles everything: version checking,
 
 **Script Features:**
 
-- ✅ **Input validation** - Validates all configuration paths and URLs for security
-- ✅ **Lock file mechanism** - Prevents concurrent execution (safe for cron)
-- ✅ **Live progress** - Real-time output during SteamCMD operations
-- ✅ **SteamCMD native checks** - Automatic disk space and version validation
-- ✅ **Graceful degradation** - Continues even if optional features fail
+- - **Input validation** - Validates all configuration paths and URLs for security
+- - **Lock file mechanism** - Prevents concurrent execution (safe for cron)
+- - **Live progress** - Real-time output during SteamCMD operations
+- - **SteamCMD native checks** - Automatic disk space and version validation
+- - **Graceful degradation** - Continues even if optional features fail
 
 **Prerequisites for the update script:**
 
 - **Required for auto-restart:** `docker` must be installed if you enable automatic server restarts (`AUTO_RESTART_SERVERS=true`)
   - Docker is typically already installed on Pterodactyl nodes
-- **Auto-installed:** SteamCMD will be downloaded automatically if not present
+- **Auto-installed:** SteamCMD will be installed via package manager if not present
+  - Requires Ubuntu/Debian with multiverse repository enabled
+  - Script automatically handles i386 architecture and dependencies
 
 #### Download and Configure
 
@@ -104,9 +106,6 @@ nano update-cs2-centralized.sh
 
 # Required: Path where centralized CS2 files are stored
 CS2_DIR="/srv/cs2-shared"
-
-# Required: SteamCMD installation directory
-STEAMCMD_DIR="/root/steamcmd"
 
 # Optional: Docker image for server detection (for automatic server restart)
 # Servers using this image (any tag/branch) will be automatically restarted after update
@@ -164,30 +163,29 @@ Run manually to verify configuration:
 
 ==> Pre-flight Checks
 
-✓ DONE  Configuration validated successfully
-✓ DONE  Acquired update lock
-✓ DONE  Dependencies satisfied
-ℹ INFO  CS2 Directory: /srv/cs2-shared
-ℹ INFO  SteamCMD Directory: /root/steamcmd
+[DONE]  Configuration validated successfully
+[DONE]  Acquired update lock
+[DONE]  Dependencies satisfied
+[INFO]  CS2 Directory: /srv/cs2-shared
 
 ==> SteamCMD Setup
 
-✓ DONE  SteamCMD already installed
+[DONE]  SteamCMD already installed
 
 ==> CS2 Update
 
 Checking for updates and downloading
-✓ DONE  CS2 is already up to date (version: 20778640)
-ℹ INFO  Installing Steam client libraries...
-ℹ INFO  Setting permissions...
-ℹ INFO  CS2 directory size: 56G
+[DONE]  CS2 is already up to date (version: 20778640)
+[INFO]  Installing Steam client libraries...
+[INFO]  Setting permissions...
+[INFO]  CS2 directory size: 56G
 
 ==> Summary
 
-✓ DONE  CS2 update completed successfully
-ℹ INFO  Version: 20778640
-ℹ INFO  Location: /srv/cs2-shared
-ℹ INFO  Servers will sync new files on next restart
+[DONE]  CS2 update completed successfully
+[INFO]  Version: 20778640
+[INFO]  Location: /srv/cs2-shared
+[INFO]  Servers will sync new files on next restart
 ```
 
 **Expected output (update available):**
@@ -199,34 +197,34 @@ Checking for updates and downloading
  Update state (0x5) downloading, progress: 45.67 (24821478192 / 54352914432)
  Update state (0x5) downloading, progress: 67.23 (36537648512 / 54352914432)
  Update state (0x5) downloading, progress: 89.41 (48592374192 / 54352914432)
-✓ DONE  CS2 updated successfully: 20778640 → 20778900
-ℹ INFO  Installing Steam client libraries...
-ℹ INFO  Setting permissions...
-ℹ INFO  CS2 directory size: 56G
+[DONE]  CS2 updated successfully: 20778640 → 20778900
+[INFO]  Installing Steam client libraries...
+[INFO]  Setting permissions...
+[INFO]  CS2 directory size: 56G
 
 ==> Detecting and Restarting Servers
 
-ℹ INFO  Found 12 container(s) using image: sples1/k4ryuu-cs2*
-ℹ INFO  Restarting container: ptero-a1b2c3d4...
-✓ DONE  Container ptero-a1b2c3d4 restarted successfully
-ℹ INFO  Restarting container: ptero-e5f6g7h8...
-✓ DONE  Container ptero-e5f6g7h8 restarted successfully
+[INFO]  Found 12 container(s) using image: sples1/k4ryuu-cs2*
+[INFO]  Restarting container: ptero-a1b2c3d4...
+[DONE]  Container ptero-a1b2c3d4 restarted successfully
+[INFO]  Restarting container: ptero-e5f6g7h8...
+[DONE]  Container ptero-e5f6g7h8 restarted successfully
 [...10 more containers...]
-✓ DONE  All containers restarted successfully (12/12)
+[DONE]  All containers restarted successfully (12/12)
 
 ==> Summary
 
-✓ DONE  CS2 update completed successfully
-ℹ INFO  Version: 20778900
-ℹ INFO  Location: /srv/cs2-shared
-ℹ INFO  Servers will sync new files on next restart
+[DONE]  CS2 update completed successfully
+[INFO]  Version: 20778900
+[INFO]  Location: /srv/cs2-shared
+[INFO]  Servers will sync new files on next restart
 ```
 
 **Note:** During download/update operations, you'll see real-time progress with the last 3 lines of SteamCMD output. These lines update dynamically and clear when the operation completes.
 
 #### Setup Cron Job
 
-> **💡 Recommended:** Run the script manually once before adding to cron to verify configuration and watch the initial CS2 installation (~60GB download). Once successful, the cron job will handle everything automatically in the background.
+> **Recommended:** Run the script manually once before adding to cron to verify configuration and watch the initial CS2 installation (~60GB download). Once successful, the cron job will handle everything automatically in the background.
 
 Add to crontab to run every 1-2 minutes:
 
@@ -302,8 +300,8 @@ Navigate to: **Admin Panel** → **Mounts** → **Create New**
 - **Name**: CS2 Shared Files
 - **Source**: `/srv/cs2-shared` (external path on node)
 - **Target**: `/tmp/cs2_ds` (internal path in container)
-- **Read Only**: ✅ **ON** (prevents servers from modifying shared files)
-- **Auto Mount**: ✅ **ON** (mounts automatically for assigned servers)
+- **Read Only**: - **ON** (prevents servers from modifying shared files)
+- **Auto Mount**: - **ON** (mounts automatically for assigned servers)
 
 Save the mount.
 
@@ -365,14 +363,14 @@ Console output on successful sync:
 
 ## Troubleshooting
 
-> **💡 Auto-Fixed Issues**
+> **Auto-Fixed Issues**
 >
 > The update script automatically handles most common problems:
 >
-> - ✅ **SteamCMD missing** - Auto-downloads and installs if not found
-> - ✅ **Permission errors** - Automatically runs `chown` and `chmod` after every update
-> - ✅ **Steam libraries** - Copies SDK files automatically
-> - ✅ **Directory creation** - Creates required directories if missing
+> - - **SteamCMD missing** - Auto-downloads and installs if not found
+> - - **Permission errors** - Automatically runs `chown` and `chmod` after every update
+> - - **Steam libraries** - Copies SDK files automatically
+> - - **Directory creation** - Creates required directories if missing
 >
 > If you encounter issues, the script likely fixed them automatically on the next run.
 
@@ -447,8 +445,8 @@ Container (Inside Server):
 | ---------- | ----------------- | ------------------------------------- |
 | Source     | `/srv/cs2-shared` | External path on node                 |
 | Target     | `/tmp/cs2_ds`     | Internal path in container            |
-| Read Only  | ✅ ON             | Prevents modification of shared files |
-| Auto Mount | ✅ ON             | Automatically mounts for servers      |
+| Read Only  | - ON             | Prevents modification of shared files |
+| Auto Mount | - ON             | Automatically mounts for servers      |
 
 ### Storage Calculation
 
@@ -476,7 +474,6 @@ A: Every 1-2 minutes is safe - SteamCMD only downloads when updates exist.
 ## Related Documentation
 
 - [Installation Guide](../getting-started/installation.md)
-- [Auto-Restart Feature](auto-restart.md) - Automatically restart servers when CS2 updates
 - [Configuration Files](../configuration/configuration-files.md)
 - [Building from Source](../advanced/building.md)
 

@@ -31,7 +31,7 @@ Choose the version you want to install:
 
 If you have an existing CS2 server and want to switch to this egg:
 
-### ⚠️ Important: Backup First!
+### Important: Backup First!
 
 Always backup your server files before changing eggs.
 
@@ -78,7 +78,7 @@ When you start your server for the first time:
 ## Next Steps
 
 - [Configure Environment Variables](../configuration/environment-variables.md)
-- [Setup Auto-Restart Feature](../features/auto-restart.md)
+- [Setup VPK Sync & Centralized Updates](../features/vpk-sync.md)
 - [Enable Auto-Updaters](../features/auto-updaters.md)
 - [Configure Console Filter](../features/console-filter.md)
 

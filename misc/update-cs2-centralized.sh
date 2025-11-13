@@ -2,6 +2,7 @@
 # KitsuneLab CS2 Centralized Update Script
 # Automatically updates CS2 files and optionally restarts all affected servers
 # Designed for use with VPK Sync feature
+# Version: 1.0.17
 
 set -euo pipefail
 
@@ -228,6 +229,30 @@ run_with_live_tail() {
         log_error "${label} failed after ${dur}s (exit $ec)"
         echo "${BOLD}Last 10 lines:${RESET}" >&2
         tail -n 10 "$log_file" >&2 || true
+
+        # Check for specific SteamCMD errors and provide helpful context
+        if grep -q "state is 0x" "$log_file" 2>/dev/null; then
+            local error_code=$(grep -oP "state is \K0x[0-9a-fA-F]+" "$log_file" 2>/dev/null | head -n1)
+            echo "" >&2
+
+            case "$error_code" in
+                0x202)
+                    log_error "SteamCMD Error 0x202 - Disk space or filesystem issue"
+                    log_info "• CS2 requires ~60GB for initial installation"
+                    log_info "• After VPK sync, servers only use ~3-8GB each"
+                    log_info "• VPK files (~52GB) shared from centralized location"
+                    echo "" >&2
+                    log_info "Solution: Free up disk space and try again"
+                    log_info "Check space: ${BOLD}df -h $(dirname "$CS2_DIR")${RESET}"
+                    ;;
+                *)
+                    log_error "SteamCMD Error $error_code detected"
+                    log_info "• Check SteamCMD documentation for details"
+                    log_info "• Review full output above for more context"
+                    ;;
+            esac
+        fi
+
         rm -f "$log_file"
         return $ec
     fi
@@ -275,35 +300,104 @@ run_with_spinner() {
     return 0
 }
 
-install_or_reinstall_steamcmd() {
-    section "SteamCMD Setup"
+ensure_steamcmd_dependencies() {
+    # Check and add i386 architecture (required for 32-bit SteamCMD)
+    if ! dpkg --print-foreign-architectures 2>/dev/null | grep -q "i386"; then
+        log_info "Adding i386 architecture..."
+        local arch_error
+        arch_error=$(dpkg --add-architecture i386 2>&1) || {
+            log_error "Failed to add i386 architecture"
+            echo "$arch_error" | tail -n 5 >&2
+            exit 1
+        }
 
-    # Check if SteamCMD is properly installed
-    if [ -f "$STEAMCMD_DIR/steamcmd.sh" ] && [ -x "$STEAMCMD_DIR/steamcmd.sh" ]; then
-        # Validate critical files exist
-        if [ -f "$STEAMCMD_DIR/linux32/steamclient.so" ] || [ -f "$STEAMCMD_DIR/linux64/steamclient.so" ]; then
-            log_ok "SteamCMD already installed at $STEAMCMD_DIR"
-            return 0
+        local update_error
+        update_error=$(apt-get update -qq 2>&1) || {
+            log_error "Failed to update package lists after adding i386 architecture"
+            echo "$update_error" | tail -n 5 >&2
+            exit 1
+        }
+    fi
+
+    # Check for required 32-bit libraries (lib32gcc-s1 on newer systems, lib32gcc1 on older)
+    if ! dpkg -l lib32gcc-s1 2>/dev/null | grep -q "^ii" && \
+       ! dpkg -l lib32gcc1 2>/dev/null | grep -q "^ii"; then
+
+        # Try modern package first (Ubuntu 20.04+, Debian 11+)
+        if run_with_spinner "Installing 32-bit libraries (modern)" \
+            env DEBIAN_FRONTEND=noninteractive apt-get install -y -q lib32gcc-s1 lib32stdc++6; then
+            : # Success
+        # Fallback to legacy package (Ubuntu 18.04, Debian 10)
+        elif run_with_spinner "Installing 32-bit libraries (legacy)" \
+            env DEBIAN_FRONTEND=noninteractive apt-get install -y -q lib32gcc1 lib32stdc++6; then
+            : # Success
+        else
+            log_error "Failed to install 32-bit libraries (tried both lib32gcc-s1 and lib32gcc1)"
+            exit 1
         fi
     fi
 
-    log_warn "SteamCMD not found or incomplete, installing..."
-    rm -rf "$STEAMCMD_DIR"
-    mkdir -p "$STEAMCMD_DIR"
+    return 0
+}
 
-    if ! curl -sqL 'https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz' | tar -xz -C "$STEAMCMD_DIR" 2>/dev/null; then
-        log_error "Failed to download SteamCMD"
-        return 1
+install_or_reinstall_steamcmd() {
+    section "SteamCMD Setup"
+
+    # Health check - verify all prerequisites
+    local needs_deps=false
+    local needs_install=false
+
+    # Check i386 architecture
+    if ! dpkg --print-foreign-architectures 2>/dev/null | grep -q "i386"; then
+        needs_deps=true
     fi
 
-    # Validate extraction
-    if [ ! -f "$STEAMCMD_DIR/steamcmd.sh" ]; then
-        log_error "SteamCMD extraction failed"
-        return 1
+    # Check 32-bit libraries (lib32gcc-s1 on newer systems, lib32gcc1 on older)
+    if ! dpkg -l lib32gcc-s1 2>/dev/null | grep -q "^ii" && \
+       ! dpkg -l lib32gcc1 2>/dev/null | grep -q "^ii"; then
+        needs_deps=true
     fi
 
-    chmod +x "$STEAMCMD_DIR/steamcmd.sh"
-    log_ok "SteamCMD installed successfully"
+    # Check SteamCMD installation
+    if [ ! -f "$STEAMCMD_DIR/steamcmd.sh" ] || [ ! -x "$STEAMCMD_DIR/steamcmd.sh" ]; then
+        needs_install=true
+    elif [ ! -f "$STEAMCMD_DIR/linux32/steamclient.so" ] && [ ! -f "$STEAMCMD_DIR/linux64/steamclient.so" ]; then
+        needs_install=true
+    fi
+
+    # If everything is OK, we're done
+    if [ "$needs_deps" = false ] && [ "$needs_install" = false ]; then
+        log_ok "SteamCMD health check passed"
+        return 0
+    fi
+
+    # Install dependencies if needed
+    if [ "$needs_deps" = true ]; then
+        ensure_steamcmd_dependencies || exit 1
+    fi
+
+    # Install SteamCMD if needed
+    if [ "$needs_install" = true ]; then
+        log_info "Installing SteamCMD..."
+        rm -rf "$STEAMCMD_DIR"
+        mkdir -p "$STEAMCMD_DIR"
+
+        local download_error
+        download_error=$(curl -sqL 'https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz' 2>&1 | tar -xz -C "$STEAMCMD_DIR" 2>&1) || {
+            log_error "Failed to download/extract SteamCMD"
+            echo "$download_error" | tail -n 5 >&2
+            exit 1
+        }
+
+        # Validate extraction
+        if [ ! -f "$STEAMCMD_DIR/steamcmd.sh" ]; then
+            log_error "SteamCMD extraction validation failed (steamcmd.sh not found)"
+            exit 1
+        fi
+
+        chmod +x "$STEAMCMD_DIR/steamcmd.sh"
+        log_ok "SteamCMD installed at $STEAMCMD_DIR"
+    fi
 }
 
 get_local_version() {
@@ -346,12 +440,12 @@ update_cs2() {
         fi
     fi
 
-    log_info "Installing Steam client libraries..."
+    # Install Steam client libraries
     mkdir -p "$CS2_DIR/.steam/sdk32" "$CS2_DIR/.steam/sdk64"
     cp -f "$STEAMCMD_DIR/linux32/steamclient.so" "$CS2_DIR/.steam/sdk32/" 2>/dev/null || true
     cp -f "$STEAMCMD_DIR/linux64/steamclient.so" "$CS2_DIR/.steam/sdk64/" 2>/dev/null || true
 
-    log_info "Setting permissions..."
+    # Set permissions
     chown -R pterodactyl:pterodactyl "$CS2_DIR" 2>/dev/null || true
     chmod -R 755 "$CS2_DIR"
 
@@ -380,17 +474,11 @@ restart_docker_containers() {
     local failed=0
 
     while IFS= read -r container; do
-        log_info "Restarting container: ${BOLD}$container${RESET}..."
-
-        if docker restart "$container" >/dev/null 2>&1; then
-            log_ok "Container $container restarted successfully"
+        if run_with_spinner "Restarting $container" docker restart "$container"; then
             ((success++))
         else
-            log_error "Failed to restart container: $container"
             ((failed++))
         fi
-
-        sleep 0.5
     done <<< "$containers"
 
     if [ $failed -gt 0 ]; then
@@ -410,7 +498,8 @@ download_and_validate_update() {
     local temp_script="/tmp/$(basename "$0").new.$$"
 
     # Download with comprehensive options
-    if ! curl \
+    local download_error
+    download_error=$(curl \
         --max-time 30 \
         --connect-timeout 10 \
         --retry 2 \
@@ -420,10 +509,11 @@ download_and_validate_update() {
         --show-error \
         --location \
         -o "$temp_script" \
-        "$REMOTE_SCRIPT_URL" 2>/dev/null; then
+        "$REMOTE_SCRIPT_URL" 2>&1) || {
         log_warn "Failed to download update from GitHub"
+        [ -n "$download_error" ] && echo "$download_error" | head -n 2 >&2
         return 1
-    fi
+    }
 
     # Validate non-empty
     if [ ! -s "$temp_script" ]; then
@@ -440,11 +530,13 @@ download_and_validate_update() {
     fi
 
     # Validate bash syntax
-    if ! bash -n "$temp_script" 2>/dev/null; then
+    local syntax_error
+    syntax_error=$(bash -n "$temp_script" 2>&1) || {
         log_error "Downloaded script has syntax errors"
+        echo "$syntax_error" | head -n 3 >&2
         rm -f "$temp_script"
         return 1
-    fi
+    }
 
     # Check minimum size (script should be reasonably large)
     local file_size=$(stat -f%z "$temp_script" 2>/dev/null || stat -c%s "$temp_script" 2>/dev/null)
@@ -562,19 +654,30 @@ check_and_apply_updates() {
         return 0
     fi
 
-    # Compare hashes
-    local current_hash=$(sha256sum "$0" | cut -d' ' -f1)
-    local new_hash=$(sha256sum "$temp_script" | cut -d' ' -f1)
+    # Compare versions
+    local current_version=$(grep "^# Version:" "$0" 2>/dev/null | head -n1 | awk '{print $3}')
+    local new_version=$(grep "^# Version:" "$temp_script" 2>/dev/null | head -n1 | awk '{print $3}')
 
-    if [ "$current_hash" = "$new_hash" ]; then
-        log_ok "Script is up to date"
+    # Handle missing version (old script without version header)
+    if [ -z "$current_version" ]; then
+        current_version="unknown"
+    fi
+    if [ -z "$new_version" ]; then
+        log_warn "Downloaded script missing version header, skipping update"
+        rm -f "$temp_script"
+        echo "$(date +%s)" > "$UPDATE_CHECK_TIMESTAMP_FILE"
+        return 0
+    fi
+
+    if [ "$current_version" = "$new_version" ]; then
+        log_ok "Script is up to date (version: $current_version)"
         rm -f "$temp_script"
         echo "$(date +%s)" > "$UPDATE_CHECK_TIMESTAMP_FILE"
         return 0
     fi
 
     # Update available
-    log_info "New script version available, updating..."
+    log_info "New version available: ${BOLD}$current_version${RESET} → ${BOLD}$new_version${RESET}"
 
     # Apply update
     create_versioned_backup
