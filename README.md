@@ -3,7 +3,8 @@
 ![GitHub Repo stars](https://img.shields.io/github/stars/K4ryuu/CS2-Egg?style=for-the-badge)
 ![GitHub issues](https://img.shields.io/github/issues/K4ryuu/CS2-Egg?style=for-the-badge)
 ![GitHub](https://img.shields.io/github/license/K4ryuu/CS2-Egg?style=for-the-badge)
-![GitHub last commit (branch)](https://img.shields.io/github/last-commit/K4ryuu/CS2-Egg/dev?style=for-the-badge)
+![Docker Pulls](https://img.shields.io/docker/pulls/sples1/k4ryuu-cs2?style=for-the-badge&logo=docker&logoColor=white)
+![Docker Image Size](https://img.shields.io/docker/image-size/sples1/k4ryuu-cs2/latest?style=for-the-badge&logo=docker&logoColor=white)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/Dwq8hncnxX)
 
 <!-- PROJECT LOGO -->
