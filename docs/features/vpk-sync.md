@@ -413,49 +413,9 @@ Console output on successful sync:
 - Auto Mount is disabled
 - Mount not manually activated on existing server
 
-**Quick Fix Options:**
+**Quick Fix:**
 
 > **This is the most common issue for servers created before VPK sync was activated!**
-
-**Option 1: Bulk Script (Recommended for Multiple Servers)**
-
-Use our automated script to mount VPK sync on all servers at once via Pterodactyl API:
-
-```bash
-# Download script
-cd /root
-curl -O https://raw.githubusercontent.com/K4ryuu/CS2-Egg/refs/heads/dev/misc/mount-vpk-sync-bulk.sh
-chmod +x mount-vpk-sync-bulk.sh
-
-# Edit configuration
-nano mount-vpk-sync-bulk.sh
-```
-
-Configure the script (edit top of file):
-
-**Required Settings:**
-
-- `PANEL_URL`: Your Pterodactyl panel URL (e.g., `https://panel.yourdomain.com`)
-- `API_KEY`: Application API key from Admin Panel → **Application API** → **Create New**
-  - Required permissions: **Servers** (read), **Mounts** (read/write)
-- `MOUNT_ID`: VPK sync mount ID
-  - Find at: Admin Panel → **Mounts** → Click **CS2 Shared Files** → Check URL
-  - Example: URL `/admin/mounts/view/3` = `MOUNT_ID="3"`
-
-**Optional Settings:**
-
-- `DRY_RUN`: Set to `"true"` to preview, `"false"` to apply changes (default: `"true"`)
-- `EGG_ID`: Filter by specific egg ID (leave empty to process all servers)
-
-Run in dry-run mode first to preview:
-
-```bash
-./mount-vpk-sync-bulk.sh
-```
-
-When ready, set `DRY_RUN="false"` and run again to apply mounts to all servers.
-
-**Option 2: Manual Per-Server (For Single Servers)**
 
 1. Go to your server in Pterodactyl
 2. Click **Mounts** tab
@@ -477,9 +437,9 @@ When ready, set `DRY_RUN="false"` and run again to apply mounts to all servers.
 
    - In mount settings, ensure **Auto Mount** is **ON**
 
-3. **Apply to Server:**
+3. **Apply to Servers:**
 
-   - Go to your server → **Mounts** tab
+   - Go to server → **Mounts** tab
    - Click the **green plus (+)** icon next to the mount
    - Restart server
 
@@ -498,10 +458,11 @@ Servers created before the VPK sync mount was configured don't automatically rec
 
 **Fix:**
 
-1. Verify mount exists: **Admin** → **Mounts**
-2. Check mount is assigned to egg: **Eggs** → **Mounts** tab
-3. Verify `/srv/cs2-shared` exists on node
-4. Restart server
+1. **Verify mount exists:** **Admin** → **Mounts** → Check CS2 Shared Files mount
+2. **Check mount assignment:** Mount must be assigned to both egg and node
+3. **Apply mount to server:** Go to server → **Mounts** tab → Click green (+) icon
+4. **Verify path exists:** `/srv/cs2-shared` must exist on node
+5. **Restart server** to activate VPK sync
 
 ### Permission Denied
 
@@ -548,7 +509,7 @@ A: Servers continue using existing files. Update manually if needed.
 A: Every 1-2 minutes is safe - SteamCMD only downloads when updates exist.
 
 **Q: Why does my server show "Unmounted" in the Mounts tab?**
-A: Most common for servers created before VPK sync. **Quick fix:** Use the [bulk mount script](#mount-shows-unmounted-status) to automatically mount on all servers via API, or manually click the **green plus (+)** icon in server → **Mounts** tab → Restart server. See [Mount Shows "Unmounted" Status](#mount-shows-unmounted-status) for detailed instructions.
+A: Most common for servers created before VPK sync. **Quick fix:** Go to server → **Mounts** tab → Click the **green plus (+)** icon next to the mount → Restart server. The mount will stay permanently mounted. See [Mount Shows "Unmounted" Status](#mount-shows-unmounted-status) for detailed fix.
 
 **Q: Do I need to reinstall servers to enable VPK sync?**
 A: No! Just configure the mount, assign it to the egg/node, and restart the server. VPK sync activates immediately.
