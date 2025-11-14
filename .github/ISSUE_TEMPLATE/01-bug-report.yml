@@ -1,0 +1,129 @@
+name: 🐛 Bug Report
+description: Report a bug, crash, or unexpected behavior
+title: "[BUG] "
+labels: ["bug"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the sections below.
+
+  - type: dropdown
+    id: bug-type
+    attributes:
+      label: Bug Type
+      description: What kind of issue are you experiencing?
+      options:
+        - Server crash/restart
+        - Performance issue (lag, high CPU/RAM)
+        - Addon not working (MetaMod/CSS/SwiftlyS2/ModSharp)
+        - Configuration issue
+        - Docker/container issue
+        - VPK sync issue
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Clear description of the bug
+      placeholder: Server crashes when player joins...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reproduce this issue?
+      placeholder: |
+        1. Start server with MetaMod enabled
+        2. Player joins the server
+        3. Server crashes with error...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What should happen instead?
+      placeholder: Server should remain stable when players join
+    validations:
+      required: true
+
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: How often does this occur?
+      options:
+        - Always (100%)
+        - Often (>50%)
+        - Sometimes (25-50%)
+        - Rarely (<25%)
+    validations:
+      required: true
+
+  - type: input
+    id: docker-image
+    attributes:
+      label: Docker Image Version
+      description: Which Docker image are you using?
+      placeholder: "ghcr.io/k4ryuu/cs2-egg:dev or sples1/k4ryuu-cs2:latest"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: addons
+    attributes:
+      label: Installed Addons
+      description: Which addons are installed?
+      options:
+        - label: MetaMod
+        - label: CounterStrikeSharp
+        - label: SwiftlyS2
+        - label: ModSharp
+        - label: None
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Paste relevant logs (startup logs, crash logs, error messages)
+      placeholder: |
+        Paste logs here...
+      render: shell
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration (if relevant)
+      description: Relevant egg variables or config files
+      placeholder: |
+        INSTALL_METAMOD=1
+        INSTALL_CSS=1
+        ...
+      render: yaml
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other information that might help
+      placeholder: This started happening after CS2 update on...
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      options:
+        - label: I have searched existing issues to avoid duplicates
+          required: true
+        - label: I have provided all relevant information above
+          required: true
+        - label: I am using the latest Docker image version
+          required: false
