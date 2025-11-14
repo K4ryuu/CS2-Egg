@@ -1,6 +1,14 @@
 #!/bin/bash
 source /utils/logging.sh
 
+# Cache platform detection for stat command (performance optimization)
+STAT_PLATFORM=$(uname -s)
+if [[ "$STAT_PLATFORM" == "Darwin" ]]; then
+    STAT_CMD="stat -f %z"
+else
+    STAT_CMD="stat -c %s"
+fi
+
 # Quick check to make sure we have enough disk space
 check_filesystem() {
     local dir="$1"
@@ -93,7 +101,7 @@ cleanup() {
         fi
 
         local size
-        size=$(stat -f %z "$file" 2>/dev/null || stat -c %s "$file" 2>/dev/null)
+        size=$($STAT_CMD "$file" 2>/dev/null)
 
         if [ $? -ne 0 ] || [[ ! "$size" =~ ^[0-9]+$ ]]; then
             log_message "Failed to get file size for: $file" "warning"

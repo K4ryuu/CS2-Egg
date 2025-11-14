@@ -2,7 +2,11 @@
 # KitsuneLab CS2 Centralized Update Script
 # Automatically updates CS2 files and optionally restarts all affected servers
 # Designed for use with VPK Sync feature
-# Version: 1.0.17
+#
+# Usage: ./update-cs2-centralized.sh [--simulate]
+#   --simulate    Skip SteamCMD update, simulate update and trigger restart logic
+#
+# Version: 1.0.19
 
 set -euo pipefail
 
@@ -46,6 +50,9 @@ UPDATE_CHECK_INTERVAL="600"
 # ! ============================================================================
 # ! DO NOT EDIT BELOW THIS LINE UNLESS YOU KNOW WHAT YOU'RE DOING
 # ! ============================================================================
+
+# Simulate mode flag (set by --simulate argument)
+SIMULATE_MODE=false
 
 # ============================================================================
 # INTERNAL CONSTANTS
@@ -456,6 +463,46 @@ update_cs2() {
     [ "$version_before" != "$version_after" ]
 }
 
+get_wings_token() {
+    if [ ! -f "/etc/pterodactyl/config.yml" ]; then
+        return 1
+    fi
+
+    local token=$(grep -E '^\s*token:' "/etc/pterodactyl/config.yml" | awk '{print $2}' | tr -d '"' || true)
+
+    if [ -z "$token" ]; then
+        return 1
+    fi
+
+    echo "$token"
+}
+
+get_wings_api_url() {
+    # Extract API configuration from config.yml api section
+    local api_section=$(sed -n '/^api:/,/^[a-z]/p' "/etc/pterodactyl/config.yml")
+
+    # Get host and port from api section
+    local host=$(echo "$api_section" | grep -E '^\s+host:' | head -1 | awk '{print $2}' | tr -d '"' || echo "0.0.0.0")
+    local port=$(echo "$api_section" | grep -E '^\s+port:' | head -1 | awk '{print $2}' | tr -d '"' || echo "8080")
+
+    # Get SSL enabled status from api.ssl section
+    local ssl_section=$(echo "$api_section" | sed -n '/^\s\+ssl:/,/^\s\+[a-z]/p')
+    local ssl_enabled=$(echo "$ssl_section" | grep -E '^\s+enabled:' | head -1 | awk '{print $2}' | tr -d '"' || echo "true")
+
+    # If host is 0.0.0.0, use 127.0.0.1 for localhost
+    if [ "$host" = "0.0.0.0" ]; then
+        host="127.0.0.1"
+    fi
+
+    # Determine protocol based on SSL setting
+    local protocol="https"
+    if [ "$ssl_enabled" = "false" ]; then
+        protocol="http"
+    fi
+
+    echo "${protocol}://${host}:${port}"
+}
+
 restart_docker_containers() {
     section "Detecting and Restarting Servers"
 
@@ -463,20 +510,51 @@ restart_docker_containers() {
     local containers=$(docker ps --format "{{.Names}}\t{{.Image}}" | grep "$SERVER_IMAGE" | cut -f1)
 
     if [ -z "$containers" ]; then
-        log_info "No containers found using image: ${BOLD}$SERVER_IMAGE${RESET}*"
+        log_info "No containers found using image: ${BOLD}$SERVER_IMAGE${RESET}"
         return 0
     fi
 
     local count=$(echo "$containers" | wc -l | tr -d ' ')
-    log_info "Found ${BOLD}$count${RESET} container(s) using image: ${BOLD}$SERVER_IMAGE${RESET}*"
+    log_info "Found ${BOLD}$count${RESET} container(s) using image: ${BOLD}$SERVER_IMAGE${RESET}"
+
+    # Get Wings API credentials
+    local token
+    local api_url
+
+    if ! token=$(get_wings_token) || ! api_url=$(get_wings_api_url); then
+        log_error "Wings API not available - cannot restart servers"
+        log_error "Make sure Wings is installed on this node and the config exists: /etc/pterodactyl/config.yml"
+        return 1
+    fi
+
+    log_info "Using Wings API for restart"
 
     local success=0
     local failed=0
 
     while IFS= read -r container; do
-        if run_with_spinner "Restarting $container" docker restart "$container"; then
+        # Container name IS the UUID in Pterodactyl
+        local uuid="$container"
+
+        # Wings API restart
+        local response
+        local http_code
+
+        response=$(curl -k -s -w "\n%{http_code}" \
+            -X POST "${api_url}/api/servers/${uuid}/power" \
+            -H "Authorization: Bearer ${token}" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json" \
+            -d '{"action":"restart"}' \
+            2>/dev/null || echo "error\n000")
+
+        http_code=$(echo "$response" | tail -n1)
+
+        if [ "$http_code" = "202" ] || [ "$http_code" = "204" ] || [ "$http_code" = "200" ]; then
+            log_ok "Restarted ${BOLD}$container${RESET} via Wings API"
             ((success++))
         else
+            log_warn "Failed to restart ${BOLD}$container${RESET} via Wings API (HTTP $http_code)"
             ((failed++))
         fi
     done <<< "$containers"
@@ -724,7 +802,31 @@ rollback_from_failed_update() {
 }
 
 main() {
+    # Parse command line arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --simulate)
+                SIMULATE_MODE=true
+                shift
+                ;;
+            *)
+                log_error "Unknown argument: $1"
+                echo ""
+                echo "Usage: $0 [--simulate]"
+                echo ""
+                echo "Options:"
+                echo "  --simulate    Simulate update mode (skip SteamCMD, trigger restart logic)"
+                echo ""
+                exit 1
+                ;;
+        esac
+    done
+
     headline "KitsuneLab CS2 Centralized Update"
+
+    if [ "$SIMULATE_MODE" = "true" ]; then
+        log_warn "Running in SIMULATE mode - SteamCMD update will be skipped"
+    fi
 
     section "Pre-flight Checks"
 
@@ -758,7 +860,20 @@ main() {
 
     # Update CS2 (SteamCMD checks and downloads if needed)
     local update_occurred=false
-    if update_cs2; then
+    if [ "$SIMULATE_MODE" = "true" ]; then
+        # Simulate mode: skip SteamCMD but act as if update happened
+        section "Simulating CS2 Update"
+        log_info "Skipping SteamCMD update (simulate mode)"
+        log_ok "Simulated update complete - triggering restart logic"
+        update_occurred=true
+
+        # Trigger restart logic
+        if [ "$AUTO_RESTART_SERVERS" = "true" ]; then
+            restart_docker_containers
+        else
+            log_info "Auto-restart disabled, servers will sync on next restart"
+        fi
+    elif update_cs2; then
         update_occurred=true
         # Update happened, restart servers if configured
         if [ "$AUTO_RESTART_SERVERS" = "true" ]; then
@@ -769,13 +884,24 @@ main() {
     fi
 
     section "Summary"
-    log_ok "CS2 update completed successfully"
+
+    if [ "$SIMULATE_MODE" = "true" ]; then
+        log_ok "Simulation completed successfully"
+        log_info "Mode: ${BOLD}SIMULATE${RESET} (SteamCMD update skipped)"
+    else
+        log_ok "CS2 update completed successfully"
+    fi
+
     log_info "Version: ${BOLD}$(get_local_version)${RESET}"
     log_info "Location: ${BOLD}$CS2_DIR${RESET}"
 
     if [ "$update_occurred" = "true" ]; then
         if [ "$AUTO_RESTART_SERVERS" = "true" ]; then
-            log_info "Servers restarted and synced with latest version"
+            if [ "$SIMULATE_MODE" = "true" ]; then
+                log_info "Restart logic executed (simulated update)"
+            else
+                log_info "Servers restarted and synced with latest version"
+            fi
         else
             log_info "Servers will sync new files on next restart"
         fi

@@ -3,6 +3,7 @@
 source /utils/logging.sh
 
 # Legacy migration - move old files to new egg directory structure
+# ! KEEP UNTIL 2026.01.01 !
 migrate_legacy_files() {
     local egg_dir="/home/container/egg"
     local old_log="/home/container/egg.log"
@@ -132,7 +133,37 @@ CONFIGEOF
     fi
 }
 
+# Remove obsolete config files from old versions
+# ! KEEP UNTIL 2026.01.01 !
+cleanup_obsolete_configs() {
+    # If PREFIX_TEXT exists, we're on the new egg version (2025.11.14+)
+    # The old auto-restart and webhook configs are no longer used
+    if [ -n "${PREFIX_TEXT}" ]; then
+        local egg_configs="/home/container/egg/configs"
+        local removed_files=false
+
+        # Remove old auto-restart.json (replaced by centralized update script)
+        if [ -f "${egg_configs}/auto-restart.json" ] || [ -f "${egg_configs}/autorestart.json" ]; then
+            rm -f "${egg_configs}/auto-restart.json" "${egg_configs}/autorestart.json" 2>/dev/null
+            log_message "Removed obsolete auto-restart.json (use centralized update script instead)" "info"
+            removed_files=true
+        fi
+
+        # Remove old webhook.json (webhook feature removed)
+        if [ -f "${egg_configs}/webhook.json" ]; then
+            rm -f "${egg_configs}/webhook.json" 2>/dev/null
+            log_message "Removed obsolete webhook.json (feature removed)" "info"
+            removed_files=true
+        fi
+
+        if [ "$removed_files" = true ]; then
+            log_message "Obsolete config cleanup completed" "success"
+        fi
+    fi
+}
+
 # Check for deprecated variables
+# ! KEEP UNTIL 2026.01.01 !
 check_deprecated_variables() {
     local found_deprecated=false
 
