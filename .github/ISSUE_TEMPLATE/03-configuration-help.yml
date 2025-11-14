@@ -2,7 +2,7 @@ name: ⚙️ Configuration Help
 description: Get help with setup, configuration, or deployment
 title: "[CONFIG] "
 labels: ["question", "configuration"]
-assignees: []
+assignees: ["K4ryuu"]
 
 body:
   - type: markdown

@@ -2,7 +2,7 @@ name: 🐛 Bug Report
 description: Report a bug, crash, or unexpected behavior
 title: "[BUG] "
 labels: ["bug"]
-assignees: []
+assignees: ["K4ryuu"]
 
 body:
   - type: markdown

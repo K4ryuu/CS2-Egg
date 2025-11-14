@@ -2,7 +2,7 @@ name: ❓ Question
 description: Ask a general question about CS2-Egg
 title: "[QUESTION] "
 labels: ["question"]
-assignees: []
+assignees: ["K4ryuu"]
 
 body:
   - type: markdown
