@@ -5,6 +5,7 @@ The KitsuneLab CS2 Egg uses JSON configuration files for easy, persistent custom
 ## Location
 
 All configuration files are stored in:
+
 ```
 /home/container/egg/configs/
 ```
@@ -39,27 +40,22 @@ Files are automatically created on first startup with default values and detaile
 ```json
 {
   "preview_mode": false,
-  "patterns": [
-    "Certificate expires"
-  ]
+  "patterns": ["Certificate expires"]
 }
 ```
 
 **Key Settings:**
+
 - `preview_mode` - Show what would be filtered (testing)
 - `patterns` - Array of patterns to filter
   - `"@exact text"` - Exact match only
   - `"contains this"` - Contains match (default)
 
 **Example Patterns:**
+
 ```json
 {
-  "patterns": [
-    "@Server is hibernating",
-    "edicts used",
-    "ConVarRef",
-    "Fontconfig error"
-  ]
+  "patterns": ["@Server is hibernating", "edicts used", "ConVarRef", "Fontconfig error"]
 }
 ```
 
@@ -89,6 +85,7 @@ Files are automatically created on first startup with default values and detaile
 ```
 
 **Key Settings:**
+
 - `intervals` - Hours to keep files
   - `backup_rounds_hours` - Round backups (default: 24h)
   - `demos_hours` - Demo files (default: 168h = 7 days)
@@ -110,32 +107,116 @@ Cleanup runs every hour automatically.
   "logging": {
     "console_level": "INFO",
     "file_enabled": false,
-    "file_level": "DEBUG",
     "max_size_mb": 100,
     "max_files": 30,
     "max_days": 7
-  },
-  "colors": {
-    "enabled": true,
-    "use_emoji": true
   }
 }
 ```
 
 **Key Settings:**
+
 - `console_level` - Console verbosity: `DEBUG`, `INFO`, `WARNING`, `ERROR`
 - `file_enabled` - Save logs to `/home/container/egg/logs/`
-- `file_level` - File log verbosity (can be more detailed than console)
 - `max_size_mb` - Max total log directory size (MB)
 - `max_files` - Max number of log files to keep
 - `max_days` - Max age of log files (days)
-- `colors.enabled` - Colored console output
-- `colors.use_emoji` - Emoji icons in logs
 
 **Log Rotation:**
+
 - One file per day: `YYYY-MM-DD.log`
 - Automatically deleted when ANY limit is reached (size OR count OR age)
 - Location: `/home/container/egg/logs/`
+
+---
+
+## Hidden Egg Variables
+
+These variables are not visible in the Pterodactyl panel UI but can be configured by editing the egg JSON file.
+
+### `PREFIX_TEXT`
+
+**Purpose:** Customize the log prefix text
+
+**Default:** `KitsuneLab`
+
+**How to Change:**
+
+1. In Pterodactyl, go to **Admin → Nests → KitsuneLab CS2 Egg**
+2. Edit the egg JSON
+3. Find the `PREFIX_TEXT` variable
+4. Update the `default_value` field:
+
+```json
+{
+  "name": "Log Prefix Text",
+  "env_variable": "PREFIX_TEXT",
+  "default_value": "MyServerName"
+}
+```
+
+5. **Save the egg**
+6. **Important:** All servers using this egg will use the new prefix after restart
+
+**Example Output:**
+
+- Default: `[KitsuneLab] > Server starting...`
+- Custom: `[MyServerName] > Server starting...`
+
+**Note:** The colors and formatting remain the same, only the text inside `[ ]` changes.
+
+**Why Update Default?** Updating the egg's default value changes the prefix for all servers using that egg, ensuring consistency across your infrastructure.
+
+---
+
+### `ALLOW_TOKENLESS`
+
+**Purpose:** Allow servers to run without a Steam Game Server Login Token (GSLT)
+
+**Default:** `0` (disabled)
+
+**Security Warning:** Running public servers without GSLT may violate Steam's Terms of Service. Use only for:
+
+- Private testing environments
+- LAN servers
+- Development setups
+
+**Why You Should Use a GSLT Token:**
+
+When your server runs with a GSLT token and the IP address changes, Steam automatically updates the IP address in players' favorites within a few days. This means:
+
+- Players don't lose their favorite server when you change hosting providers
+- Server favorites automatically point to the new IP address
+- No manual intervention needed from players
+- Better player retention across IP changes
+
+**Example:**
+
+1. Server runs with token on `192.168.1.100`
+2. Players add server to favorites
+3. You migrate to new IP `10.0.0.50` with the same token
+4. Within 2-5 days, players' favorites automatically update to `10.0.0.50`
+
+**How to Enable Tokenless Mode:**
+
+**Method 1: Per-Server (Recommended)**
+
+1. In Pterodactyl, go to your server through the Admin Section
+2. Navigate to **Startup** tab
+3. Find `ALLOW_TOKENLESS` variable
+4. Change value from `0` to `1`
+5. Restart the server
+
+**Method 2: All Servers (Egg Default)**
+
+1. In Pterodactyl, go to **Admin → Nests → KitsuneLab CS2 Egg**
+2. Click **Variables** tab
+3. Find `ALLOW_TOKENLESS` variable
+4. Change `Default Value` from `0` to `1`
+5. Save changes
+6. All new servers will default to tokenless mode
+
+**Note:** This bypasses the `RequireLoginForDedicatedServers` requirement. For production servers, always use a valid GSLT token from [Steam Game Server Account Management](https://steamcommunity.com/dev/managegameservers).
 
 ---
 
@@ -181,6 +262,7 @@ On first startup:
 ### Step 1: Enable Feature
 
 In Pterodactyl egg variables, set to `1`:
+
 - `ENABLE_FILTER` - Console filter
 - `CLEANUP_ENABLED` - Junk cleaner
 
@@ -189,6 +271,7 @@ In Pterodactyl egg variables, set to `1`:
 ### Step 2: Configure Details
 
 Edit corresponding JSON file in `/egg/configs/` via FTP:
+
 - Add API tokens
 - Set intervals and timings
 - Configure patterns or commands
@@ -208,11 +291,7 @@ Changes apply on next server start.
 ```json
 {
   "preview_mode": false,
-  "patterns": [
-    "HostStateTransition",
-    "edicts used",
-    "@Server is hibernating"
-  ]
+  "patterns": ["HostStateTransition", "edicts used", "@Server is hibernating"]
 }
 ```
 
@@ -227,7 +306,6 @@ Changes apply on next server start.
   "logging": {
     "console_level": "INFO",
     "file_enabled": true,
-    "file_level": "DEBUG",
     "max_size_mb": 100,
     "max_files": 30,
     "max_days": 7
@@ -243,6 +321,7 @@ Changes apply on next server start.
 ### Config Not Loading
 
 **Check:**
+
 - File exists in `/home/container/egg/configs/`
 - Valid JSON syntax (use jsonlint.com)
 - Feature enabled via Pterodactyl egg variable
@@ -251,6 +330,7 @@ Changes apply on next server start.
 ### Feature Not Working
 
 **Check:**
+
 - Enabled in Pterodactyl egg (`=1`)
 - Required fields filled (API tokens, URLs)
 - Console logs for errors
@@ -277,10 +357,12 @@ rm -rf /home/container/egg/configs/
 ### Backup
 
 Via FTP:
+
 1. Download entire `/egg/` directory
 2. Includes all configs, logs, and versions
 
 Via Console:
+
 ```bash
 cd /home/container
 tar -czf egg-backup.tar.gz egg/
@@ -290,11 +372,13 @@ tar -czf egg-backup.tar.gz egg/
 ### Restore
 
 Via FTP:
+
 1. Upload backup
 2. Extract to `/home/container/egg/`
 3. Restart server
 
 Via Console:
+
 ```bash
 cd /home/container
 tar -xzf egg-backup.tar.gz
