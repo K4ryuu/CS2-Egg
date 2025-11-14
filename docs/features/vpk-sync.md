@@ -541,4 +541,4 @@ A: Use the `--simulate` flag: `/root/update-cs2-centralized.sh --simulate`. This
 Need help with VPK sync?
 
 - [Report Issue](https://github.com/K4ryuu/CS2-Egg/issues)
-- [View Update Script](https://github.com/K4ryuu/CS2-Egg/blob/dev/misc/update-cs2-centralized.sh)
+- [View Update Script](https://github.com/K4ryuu/CS2-Egg/blob/main/misc/update-cs2-centralized.sh)
