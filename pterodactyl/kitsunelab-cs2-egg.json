@@ -10,8 +10,10 @@
   "description": "The SteamRT3 Platform image for Pterodactyl CS2 servers is packed with numerous features, designed to simplify server management and reduce hassle.",
   "features": [],
   "docker_images": {
-    "KitsuneLab CS2": "docker.io/sples1/k4ryuu-cs2:latest",
-    "KitsuneLab CS2 Public Beta": "docker.io/sples1/k4ryuu-cs2:beta"
+    "KitsuneLab CS2 (GitHub - Unlimited)": "ghcr.io/k4ryuu/cs2-egg:latest",
+    "KitsuneLab CS2 Public Beta (GitHub - Unlimited)": "ghcr.io/k4ryuu/cs2-egg:beta",
+    "KitsuneLab CS2 (Docker Hub - Limited)": "docker.io/sples1/k4ryuu-cs2:latest",
+    "KitsuneLab CS2 Public Beta (Docker Hub - Limited)": "docker.io/sples1/k4ryuu-cs2:beta"
   },
   "file_denylist": [],
   "startup": "./game/cs2.sh {{CUSTOM_PARAMS}} -dedicated +ip 0.0.0.0 -port {{SERVER_PORT}} +map {{SRCDS_MAP}} -maxplayers {{SRCDS_MAXPLAYERS}} +sv_setsteamaccount {{STEAM_ACC}} +game_type {{GAME_TYPE}} +game_mode {{GAME_MODE}}",
@@ -29,6 +31,16 @@
     }
   },
   "variables": [
+    {
+      "name": "Prefix Text",
+      "description": "Custom text for cosnole prefix. Default: KitsuneLab",
+      "env_variable": "PREFIX_TEXT",
+      "default_value": "KitsuneLab",
+      "user_viewable": false,
+      "user_editable": false,
+      "rules": "string|max:20",
+      "field_type": "text"
+    },
     {
       "name": "Allow Tokenless Servers",
       "description": "Internal setting to allow servers to run without GSLT token.",

@@ -1,0 +1,99 @@
+name: ⚙️ Configuration Help
+description: Get help with setup, configuration, or deployment
+title: "[CONFIG] "
+labels: ["question", "configuration"]
+assignees: ["K4ryuu"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Need help setting up or configuring the egg? Fill out the details below.
+
+  - type: dropdown
+    id: help-type
+    attributes:
+      label: What do you need help with?
+      options:
+        - Initial setup/installation
+        - Addon configuration (MetaMod/CSS/SwiftlyS2/ModSharp)
+        - VPK sync setup
+        - Auto-restart configuration
+        - Pterodactyl egg variables
+        - Docker image configuration
+        - Network/port configuration
+        - Performance tuning
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What are you trying to accomplish?
+      placeholder: I want to set up VPK sync but I'm not sure how to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: attempted
+    attributes:
+      label: What have you tried?
+      description: What steps have you already taken?
+      placeholder: |
+        1. I followed the installation guide...
+        2. I configured X in the panel...
+        3. But Y doesn't work...
+
+  - type: input
+    id: docker-image
+    attributes:
+      label: Docker Image Version
+      description: Which Docker image are you using?
+      placeholder: "ghcr.io/k4ryuu/cs2-egg:dev or sples1/k4ryuu-cs2:latest"
+
+  - type: checkboxes
+    id: addons
+    attributes:
+      label: Addons you're trying to configure
+      options:
+        - label: MetaMod
+        - label: CounterStrikeSharp
+        - label: SwiftlyS2
+        - label: ModSharp
+        - label: None (vanilla server)
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Current Configuration
+      description: Paste relevant egg variables or config file contents
+      placeholder: |
+        INSTALL_METAMOD=1
+        INSTALL_CSS=1
+        ...
+      render: yaml
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs (if relevant)
+      description: Paste any error messages or relevant logs
+      render: shell
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Screenshots, environment details, etc.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      options:
+        - label: I have read the documentation
+          required: true
+        - label: I have searched existing issues
+          required: true

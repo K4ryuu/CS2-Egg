@@ -2,38 +2,92 @@
 
 source /utils/logging.sh
 
-# Current config version - bump this when adding new fields
-CONFIG_VERSION="1.0.0"
+# Current config version - bump this when changing fields
+CONFIG_VERSION="1.0.1"
 
 # Use organized egg directory structure
 CONFIG_DIR="${EGG_CONFIGS_DIR:-/home/container/egg/configs}"
 
-# Migrate old config to new version
+# Check if any config needs migration
+check_config_versions() {
+    local needs_migration=false
+    local old_version=""
+
+    # Check all config files
+    for config_file in "$CONFIG_DIR/console-filter.json" "$CONFIG_DIR/cleanup.json" "$CONFIG_DIR/logging.json"; do
+        if [ -f "$config_file" ]; then
+            local current_version=$(jq -r '.version // "0.0.0"' "$config_file" 2>/dev/null)
+            if [ "$current_version" != "$CONFIG_VERSION" ]; then
+                needs_migration=true
+                old_version="$current_version"
+                break
+            fi
+        fi
+    done
+
+    # Log once if migration is needed
+    if [ "$needs_migration" = true ]; then
+        log_message "Migrating configs from v$old_version to v$CONFIG_VERSION" "info"
+    fi
+}
+
+# Migrate old config to new version (no logging, just migration)
 migrate_config() {
     local config_file="$1"
     local config_name="$2"
-    
+
     if [ ! -f "$config_file" ]; then
         return 0
     fi
-    
+
   # Check if version field exists and matches
   local current_version=$(jq -r '.version // "0.0.0"' "$config_file" 2>/dev/null)
-    
+
     if [ "$current_version" == "$CONFIG_VERSION" ]; then
         return 0
     fi
-    
-    log_message "Migrating $config_name from v$current_version to v$CONFIG_VERSION" "debug"
-    
+
     # Extract old values
     local old_values=$(jq -r 'del(._description) | del(.version)' "$config_file" 2>/dev/null)
-    
+
     # Remove old config
     rm "$config_file"
-    
+
     # Return the old values so we can merge them
     echo "$old_values"
+}
+
+# Apply smart merge to config file (centralized jq logic)
+apply_smart_merge() {
+    local config_file="$1"
+    local old_values="$2"
+
+    if [ -z "$old_values" ] || [ "$old_values" = "null" ]; then
+        return 0
+    fi
+
+    log_message "Merging previous settings..." "debug"
+    local temp_file="${config_file}.tmp"
+
+    jq --argjson old "$old_values" '
+        def smart_merge($old):
+            . as $new |
+            if ($new | type) == "object" then
+                $new | to_entries | map(
+                    .key as $k |
+                    if ($new[$k] | type) == "object" then
+                        {key: $k, value: ($new[$k] | smart_merge($old[$k] // {}))}
+                    else
+                        {key: $k, value: ($old[$k] // $new[$k])}
+                    end
+                ) | from_entries
+            else
+                $old // $new
+            end;
+        smart_merge($old) | .version = "'"$CONFIG_VERSION"'"
+    ' "$config_file" > "$temp_file"
+
+    mv "$temp_file" "$config_file"
 }
 
 init_configs() {
@@ -42,11 +96,12 @@ init_configs() {
 
     mkdir -p "$CONFIG_DIR"
 
+    # Check if migration is needed (logs once if yes)
+    check_config_versions
+
     create_console_filter_config
     create_cleanup_config
     create_logging_config
-
-    log_message "Configuration initialized" "success"
 }
 
 create_console_filter_config() {
@@ -59,10 +114,9 @@ create_console_filter_config() {
     fi
 
     if [ ! -f "$config_file" ]; then
-        log_message "Creating default console-filter config..." "debug"
-        cat > "$config_file" << 'EOF'
+        cat > "$config_file" << EOF
 {
-  "version": "1.0.0",
+  "version": "$CONFIG_VERSION",
   "_description": [
     "Console Filter Configuration",
     "",
@@ -92,14 +146,9 @@ create_console_filter_config() {
   ]
 }
 EOF
-        
-  # Merge old values if migration happened
-        if [ -n "$old_values" ] && [ "$old_values" != "null" ]; then
-            log_message "Merging previous settings..." "debug"
-            local temp_file="${config_file}.tmp"
-            jq --argjson old "$old_values" '. + $old | .version = "'"$CONFIG_VERSION"'"' "$config_file" > "$temp_file"
-            mv "$temp_file" "$config_file"
-        fi
+
+        # Merge old values if migration happened
+        apply_smart_merge "$config_file" "$old_values"
     fi
 }
 
@@ -113,10 +162,9 @@ create_cleanup_config() {
     fi
 
     if [ ! -f "$config_file" ]; then
-        log_message "Creating default cleanup config..." "debug"
-        cat > "$config_file" << 'EOF'
+        cat > "$config_file" << EOF
 {
-  "version": "1.0.0",
+  "version": "$CONFIG_VERSION",
   "_description": [
     "Cleanup Configuration",
     "",
@@ -154,14 +202,9 @@ create_cleanup_config() {
   }
 }
 EOF
-        
-  # Merge old values if migration happened
-        if [ -n "$old_values" ] && [ "$old_values" != "null" ]; then
-            log_message "Merging previous settings..." "debug"
-            local temp_file="${config_file}.tmp"
-            jq --argjson old "$old_values" '. + $old | .version = "'"$CONFIG_VERSION"'"' "$config_file" > "$temp_file"
-            mv "$temp_file" "$config_file"
-        fi
+
+        # Merge old values if migration happened
+        apply_smart_merge "$config_file" "$old_values"
     fi
 }
 
@@ -175,14 +218,13 @@ create_logging_config() {
     fi
 
     if [ ! -f "$config_file" ]; then
-        log_message "Creating default logging config..." "debug"
-        cat > "$config_file" << 'EOF'
+        cat > "$config_file" << EOF
 {
-  "version": "1.0.0",
+  "version": "$CONFIG_VERSION",
   "_description": [
     "Logging Configuration",
     "",
-    "Control console output formatting, colors, and file logging.",
+    "Control console output level and file logging.",
     "",
     "Console Settings:",
     "  - logging.console_level: Minimum log level for console output",
@@ -190,17 +232,12 @@ create_logging_config() {
     "",
     "File Logging:",
     "  - logging.file_enabled: Enable daily rotating log files (true/false)",
-    "  - logging.file_level: Minimum log level for file output",
     "  - logging.max_size_mb: Maximum total log directory size in MB",
     "  - logging.max_files: Maximum number of log files to keep",
     "  - logging.max_days: Maximum age of log files in days",
     "",
     "Log files stored in: /home/container/egg/logs/YYYY-MM-DD.log",
     "Rotation triggers when ANY limit is reached (size OR count OR age)",
-    "",
-    "Appearance:",
-    "  - colors.enabled: Use colored console output (true/false)",
-    "  - colors.use_emoji: Use emoji icons in logs (true/false)",
     "",
     "Note: This config is always loaded and does not require an environment variable.",
     "",
@@ -209,25 +246,15 @@ create_logging_config() {
   "logging": {
     "console_level": "INFO",
     "file_enabled": false,
-    "file_level": "DEBUG",
     "max_size_mb": 100,
     "max_files": 30,
     "max_days": 7
-  },
-  "colors": {
-    "enabled": true,
-    "use_emoji": true
   }
 }
 EOF
-        
-  # Merge old values if migration happened
-        if [ -n "$old_values" ] && [ "$old_values" != "null" ]; then
-            log_message "Merging previous settings..." "debug"
-            local temp_file="${config_file}.tmp"
-            jq --argjson old "$old_values" '. + $old | .version = "'"$CONFIG_VERSION"'"' "$config_file" > "$temp_file"
-            mv "$temp_file" "$config_file"
-        fi
+
+        # Merge old values if migration happened
+        apply_smart_merge "$config_file" "$old_values"
     fi
 }
 
@@ -270,10 +297,7 @@ load_configs() {
     # Load logging config (always available, not feature-gated)
     export CONSOLE_LOG_LEVEL=$(get_config_value "logging.json" ".logging.console_level" "INFO")
     export LOG_FILE_ENABLED=$(get_config_value "logging.json" ".logging.file_enabled" "false")
-    export LOG_FILE_LEVEL=$(get_config_value "logging.json" ".logging.file_level" "DEBUG")
     export LOG_MAX_SIZE_MB=$(get_config_value "logging.json" ".logging.max_size_mb" "100")
     export LOG_MAX_FILES=$(get_config_value "logging.json" ".logging.max_files" "30")
     export LOG_MAX_DAYS=$(get_config_value "logging.json" ".logging.max_days" "7")
-    export LOG_COLORS_ENABLED=$(get_config_value "logging.json" ".colors.enabled" "true")
-    export LOG_USE_EMOJI=$(get_config_value "logging.json" ".colors.use_emoji" "true")
 }
