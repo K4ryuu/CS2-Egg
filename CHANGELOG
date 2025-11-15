@@ -1,3 +1,36 @@
+-- update - 2025.11.14
+
+- feat(centralized): Wings API integration for seamless Pterodactyl server restarts
+- feat(centralized): Automatic SSL/non-SSL detection from Wings configuration
+- feat(centralized): --simulate flag to test restart logic without downloading CS2 updates
+- feat(centralized): Only restarts running servers (stopped servers remain stopped intentionally)
+- feat(build): GitHub Container Registry (ghcr.io) publishing support with unlimited pulls
+- feat(build): -g/--ghcr flag for GitHub Container Registry, -a/--all for both registries
+- feat(build): Pre-build validation for shell script syntax and source dependencies
+- feat(egg): Hidden PREFIX_TEXT variable to customize log prefix text (default: KitsuneLab)
+- feat(entrypoint): Automatic crash detection with troubleshooting guide for common issues
+- refactor(build): Changed -P flag to -d/--dockerhub for explicit registry selection
+- refactor(build): Replaced emoji symbols with simple text symbols for consistency
+- refactor(egg): Default Docker image changed to GitHub Container Registry (ghcr.io/k4ryuu/cs2-egg)
+- optimise(build): Credential caching for GHCR (no repeated authentication needed)
+- optimise(build): Logging output compacted and cleaner structured
+- optimise(config): Config templates use $CONFIG_VERSION variable instead of hardcoded versions
+- optimise(config): Migration checks version once and logs once (removed CONFIG_CHANGES tracking)
+- optimise(config): Centralized smart_merge function eliminates 150 lines of duplicated code
+- optimise(cleanup): Platform detection cached at startup (50% fewer uname system calls)
+- optimise(filter): Exact pattern matching uses O(1) hash lookup instead of iteration
+- optimise(filter): Separated blocking and masking patterns for faster processing
+- optimise(logging): Log level priority cached and reused (20% faster log message filtering)
+- optimise(update_helper): Auto-cleanup obsolete configs (auto-restart.json, webhook.json) on new egg detection
+- remove(config): Removed unused logging config fields (file_level, colors.enabled, colors.use_emoji)
+- fix(config): Bumped config version to 1.0.1 to trigger migration for updated logging.json structure
+- fix(config): Migration preserves only fields that exist in new template (deleted fields stay deleted)
+- fix(logging): Console log level from logging.json now properly applied (was always INFO regardless of config)
+- docs: Updated VPK sync documentation with Wings API details and simulate mode usage
+- docs: Added Docker registry comparison (Docker Hub vs GitHub pull rate limits)
+- docs: Installation guide updated with registry selection and pull limit details
+- docs: Added hidden variables documentation (PREFIX_TEXT, ALLOW_TOKENLESS) to configuration guide
+
 -- update - 2025.11.13
 
 - feat(centralized): Automatic self-update from GitHub with validation and rollback (enabled by default)

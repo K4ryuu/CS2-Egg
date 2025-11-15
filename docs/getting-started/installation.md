@@ -43,10 +43,13 @@ Always backup your server files before changing eggs.
 4. Change the **Nest** to the one containing the KitsuneLab egg
 5. Change the **Egg** to `KitsuneLab CS2 Egg @ K4ryuu`
 6. **Check** the box for **Skip Egg Install Script** (important to preserve your files!)
-7. Select the **Docker Image**:
-   - `docker.io/sples1/k4ryuu-cs2:latest` (Stable)
-   - `docker.io/sples1/k4ryuu-cs2:beta` (Beta)
-   - `docker.io/sples1/k4ryuu-cs2:dev` (Development)
+7. Select the **Docker Image** (see [Docker Image Registries](#docker-image-registries) below):
+   - **Docker Hub** (Limited pulls):
+     - `docker.io/sples1/k4ryuu-cs2:latest` (Stable)
+     - `docker.io/sples1/k4ryuu-cs2:beta` (Beta)
+   - **GitHub Container Registry** (Unlimited pulls):
+     - `ghcr.io/k4ryuu/cs2-egg:latest` (Stable)
+     - `ghcr.io/k4ryuu/cs2-egg:beta` (Beta)
 8. Click **Save Modifications**
 9. Restart your server
 
@@ -58,10 +61,13 @@ Always backup your server files before changing eggs.
 4. Scroll down to **Nest Configuration**
 5. Select the nest containing the KitsuneLab egg
 6. Select `KitsuneLab CS2 Egg @ K4ryuu` as the egg
-7. Choose your **Docker Image**:
-   - `docker.io/sples1/k4ryuu-cs2:latest` (Recommended)
-   - `docker.io/sples1/k4ryuu-cs2:beta`
-   - `docker.io/sples1/k4ryuu-cs2:dev`
+7. Choose your **Docker Image** (see [Docker Image Registries](#docker-image-registries) below):
+   - **Docker Hub** (Limited pulls):
+     - `docker.io/sples1/k4ryuu-cs2:latest` (Stable)
+     - `docker.io/sples1/k4ryuu-cs2:beta` (Beta)
+   - **GitHub Container Registry** (Unlimited pulls - Recommended):
+     - `ghcr.io/k4ryuu/cs2-egg:latest` (Stable)
+     - `ghcr.io/k4ryuu/cs2-egg:beta` (Beta)
 8. Configure allocation (ports)
 9. Set resource limits (CPU, RAM, Disk)
 10. Click **Create Server**
@@ -81,6 +87,42 @@ When you start your server for the first time:
 - [Setup VPK Sync & Centralized Updates](../features/vpk-sync.md)
 - [Enable Auto-Updaters](../features/auto-updaters.md)
 - [Configure Console Filter](../features/console-filter.md)
+
+## Docker Image Registries
+
+The CS2 Egg is available from two container registries with different pull rate limits:
+
+### Docker Hub (Limited)
+
+**Images:**
+- `docker.io/sples1/k4ryuu-cs2:latest` (Stable)
+- `docker.io/sples1/k4ryuu-cs2:beta` (Beta)
+
+**Pull Rate Limits:**
+- **Anonymous users**: 100 pulls per 6 hours per IP address
+- **Authenticated users (free)**: 200 pulls per 6 hours
+- **Pro/Team/Business**: Higher limits based on plan
+
+**Important**: Docker Hub enforces [strict rate limits](https://docs.docker.com/docker-hub/usage/pulls/) which may affect server restarts or updates if you frequently pull images. If you hit the limit, you'll see errors like `toomanyrequests: You have reached your pull rate limit`.
+
+### GitHub Container Registry (Unlimited - Recommended)
+
+**Images:**
+- `ghcr.io/k4ryuu/cs2-egg:latest` (Stable)
+- `ghcr.io/k4ryuu/cs2-egg:beta` (Beta)
+
+**Pull Rate Limits:**
+- **Public images**: Unlimited anonymous pulls
+- **No authentication required** for public images
+- **No rate limit restrictions**
+
+**Recommendation**: Use GitHub Container Registry (`ghcr.io`) images to avoid any pull rate limit issues, especially if you:
+- Run multiple servers on the same IP
+- Frequently restart or update servers
+- Use shared hosting or VPS services
+- Want guaranteed availability without authentication
+
+Both registries contain **identical images** - the only difference is the pull rate limits. Switch between them anytime by changing the Docker image in your server's Startup settings.
 
 ## Troubleshooting
 

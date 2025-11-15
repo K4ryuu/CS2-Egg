@@ -163,18 +163,28 @@ UPDATE_CHECK_INTERVAL="600"
 
 **For automatic server restarts**, set `AUTO_RESTART_SERVERS="true"`:
 
-- Script uses Docker to detect and restart containers matching the specified `SERVER_IMAGE` (all tags/branches)
+- Script uses **Wings API** for seamless Pterodactyl integration
+- Automatically detects and restarts containers matching the specified `SERVER_IMAGE` (all tags/branches)
 - Example: `SERVER_IMAGE="sples1/k4ryuu-cs2"` restarts containers using `:latest`, `:dev`, `:staging`, etc.
-- No API credentials needed - uses native Docker commands
-- Requires Docker installed (already present on Pterodactyl nodes)
+- No manual API configuration needed - automatically reads Wings config from `/etc/pterodactyl/config.yml`
+- Detects SSL/non-SSL configuration automatically
+- Requires Wings installed on the node (standard for Pterodactyl)
 
 #### Test the Script
 
-Run manually to verify configuration:
+**Full test** (downloads CS2 update):
 
 ```bash
 ./update-cs2-centralized.sh
 ```
+
+**Test restart logic only** (skip SteamCMD download):
+
+```bash
+./update-cs2-centralized.sh --simulate
+```
+
+The `--simulate` flag skips the actual CS2 update but triggers all restart logic, perfect for testing Wings API integration or validating container detection without waiting for downloads.
 
 **Expected output:** Pre-flight checks → SteamCMD setup → CS2 update → Summary
 
@@ -366,7 +376,7 @@ Console output on successful sync:
 
 ```
 [RUNNING] Syncing VPK files...
-[SUCCESS] VPK sync complete — linked 28 file(s), total VPK size ~52 GB
+[KitsuneLab] > VPK sync complete — linked 625 file(s), total VPK size 54.46 GB (approx. per-server saving)
 ```
 
 ## Maintenance
@@ -382,8 +392,11 @@ Console output on successful sync:
 **Manual trigger** (if needed, on the server node):
 
 ```bash
-# On node, as root
+# Full update with CS2 download
 /root/update-cs2-centralized.sh
+
+# Test restart logic only (skip download)
+/root/update-cs2-centralized.sh --simulate
 ```
 
 ## Troubleshooting
@@ -514,6 +527,9 @@ A: Most common for servers created before VPK sync. **Quick fix:** Go to server 
 **Q: Do I need to reinstall servers to enable VPK sync?**
 A: No! Just configure the mount, assign it to the egg/node, and restart the server. VPK sync activates immediately.
 
+**Q: How do I test auto-restart without downloading CS2 updates?**
+A: Use the `--simulate` flag: `/root/update-cs2-centralized.sh --simulate`. This skips the SteamCMD download but triggers all restart logic (Wings API detection, container detection, restart execution). Perfect for testing configuration changes or Wings API integration.
+
 ## Related Documentation
 
 - [Installation Guide](../getting-started/installation.md)
@@ -525,4 +541,4 @@ A: No! Just configure the mount, assign it to the egg/node, and restart the serv
 Need help with VPK sync?
 
 - [Report Issue](https://github.com/K4ryuu/CS2-Egg/issues)
-- [View Update Script](https://github.com/K4ryuu/CS2-Egg/blob/dev/misc/update-cs2-centralized.sh)
+- [View Update Script](https://github.com/K4ryuu/CS2-Egg/blob/main/misc/update-cs2-centralized.sh)

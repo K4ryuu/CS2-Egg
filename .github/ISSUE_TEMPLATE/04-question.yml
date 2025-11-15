@@ -1,0 +1,37 @@
+name: ❓ Question
+description: Ask a general question about CS2-Egg
+title: "[QUESTION] "
+labels: ["question"]
+assignees: ["K4ryuu"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have a question that doesn't fit other categories? Ask away!
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What would you like to know?
+      placeholder: How does X work? What's the difference between Y and Z?
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Any additional context that helps answer your question
+      placeholder: I'm trying to understand how VPK sync works because...
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      options:
+        - label: I have searched the documentation
+          required: true
+        - label: I have searched existing issues
+          required: true

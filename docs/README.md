@@ -62,7 +62,7 @@ This egg includes many powerful features:
 
 ### Install a New Server
 
-1. [Download the egg](https://github.com/K4ryuu/CS2-Egg/blob/dev/pterodactyl/kitsunelab-cs2-egg.json)
+1. [Download the egg](https://github.com/K4ryuu/CS2-Egg/blob/main/pterodactyl/kitsunelab-cs2-egg.json)
 
 2. Import into Pterodactyl
 
@@ -97,11 +97,11 @@ docker push your-registry/your-image:my-tag
 
 ## Quick Links
 
-- **[Download Egg (Stable)](https://github.com/K4ryuu/CS2-Egg/blob/dev/pterodactyl/kitsunelab-cs2-egg.json)**
+- **[Download Egg (Stable)](https://github.com/K4ryuu/CS2-Egg/blob/main/pterodactyl/kitsunelab-cs2-egg.json)**
 
 - **[Download Egg (Beta)](https://github.com/K4ryuu/CS2-Egg/blob/beta/pterodactyl/kitsunelab-cs2-egg.json)**
 
-- **[Download Egg (Dev)](https://github.com/K4ryuu/CS2-Egg/blob/dev/pterodactyl/kitsunelab-cs2-egg.json)**
+- **[Download Egg (Dev)](https://github.com/K4ryuu/CS2-Egg/blob/main/pterodactyl/kitsunelab-cs2-egg.json)**
 
 - **[Report Bug](https://github.com/K4ryuu/CS2-Egg/issues/new?assignees=KitsuneLab-Development&labels=bug&projects=&template=bug_report.md&title=%5BBUG%5D)**
 

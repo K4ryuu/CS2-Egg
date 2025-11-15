@@ -4,7 +4,7 @@
 ![GitHub issues](https://img.shields.io/github/issues/K4ryuu/CS2-Egg?style=for-the-badge)
 ![GitHub](https://img.shields.io/github/license/K4ryuu/CS2-Egg?style=for-the-badge)
 ![Docker Pulls](https://img.shields.io/docker/pulls/sples1/k4ryuu-cs2?style=for-the-badge&logo=docker&logoColor=white)
-![Docker Image Size](https://img.shields.io/docker/image-size/sples1/k4ryuu-cs2/latest?style=for-the-badge&logo=docker&logoColor=white)
+![GHCR Pulls](https://img.shields.io/badge/GHCR_Pulls-Unlimited-2088FF?style=for-the-badge&logo=github&logoColor=white)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/Dwq8hncnxX)
 
 <div align="center">
@@ -20,7 +20,7 @@
 
   <p align="center">
     <br />
-    <a href="https://github.com/K4ryuu/CS2-Egg/blob/dev/pterodactyl/kitsunelab-cs2-egg.json">Download</a>
+    <a href="https://github.com/K4ryuu/CS2-Egg/blob/main/pterodactyl/kitsunelab-cs2-egg.json">Download</a>
     ·
     <a href="https://github.com/K4ryuu/CS2-Egg/issues/new?assignees=KitsuneLab-Development&labels=bug&projects=&template=bug_report.md&title=%5BBUG%5D">Report Bug</a>
     ·
@@ -36,10 +36,10 @@
 
 **Supported Operating Systems** (for VPK Sync & Centralized Updates)
 
-| Operating System | Minimum Version | Supported Versions | Status |
-|-----------------|-----------------|-------------------|--------|
-| **Ubuntu** | 18.04 (Bionic) | 18.04, 20.04, 22.04, 24.04 | ✅ Tested |
-| **Debian** | 10 (Buster) | 10, 11, 12, 13 (Trixie) | ✅ Tested |
+| Operating System | Minimum Version | Supported Versions         | Status    |
+| ---------------- | --------------- | -------------------------- | --------- |
+| **Ubuntu**       | 18.04 (Bionic)  | 18.04, 20.04, 22.04, 24.04 | ✅ Tested |
+| **Debian**       | 10 (Buster)     | 10, 11, 12, 13             | ✅ Tested |
 
 The centralized update script automatically detects your OS version and installs appropriate dependencies.
 
@@ -128,7 +128,9 @@ Build your own Docker image using the included build script:
 
 ## Roadmap
 
-- [ ] No plans for now
+- [ ] Improve bad SFTP client compatibility against stating symbolic links
+- [ ] GDC optional connection to automatically detect unreliable gamedatas(?)
+- [ ] Optimize and add more automated tests for update scripts
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

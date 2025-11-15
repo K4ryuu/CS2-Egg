@@ -17,7 +17,8 @@ LOG_FILE_ENABLED="${LOG_FILE_ENABLED:=0}"
 LOG_MAX_SIZE_MB="${LOG_MAX_SIZE_MB:=100}"
 LOG_MAX_FILES="${LOG_MAX_FILES:=30}"
 LOG_MAX_DAYS="${LOG_MAX_DAYS:=7}"
-PREFIX="${PREFIX:=${RED}[KitsuneLab]${WHITE} > }"
+PREFIX_TEXT="${PREFIX_TEXT:-KitsuneLab}"
+PREFIX="${PREFIX:=${RED}[${PREFIX_TEXT}]${WHITE} > }"
 
 # Set up the directory structure
 init_egg_directories() {
@@ -44,18 +45,31 @@ declare -A log_levels=(
     ["error"]=3
 )
 
-get_level_priority() {
-    local log_level="${LOG_LEVEL:-INFO}"
-    case "${log_level^^}" in
-        "DEBUG") echo 0 ;;
-        "INFO") echo 1 ;;
-        "WARNING") echo 2 ;;
-        "ERROR") echo 3 ;;
-    *) echo 1 ;; # Default to INFO if something weird is set
-    esac
-}
+# Cache for log level priority calculation (performance optimization)
+LOG_LEVEL_PRIORITY_CACHE=""
+LOG_LEVEL_CACHE_VALUE=""
 
-LOG_LEVEL_PRIORITY=$(get_level_priority)
+get_level_priority() {
+    local log_level="${CONSOLE_LOG_LEVEL:-INFO}"
+
+    # Return cached value if log level hasn't changed
+    if [[ "$log_level" == "$LOG_LEVEL_CACHE_VALUE" ]] && [[ -n "$LOG_LEVEL_PRIORITY_CACHE" ]]; then
+        echo "$LOG_LEVEL_PRIORITY_CACHE"
+        return
+    fi
+
+    # Calculate and cache new priority
+    LOG_LEVEL_CACHE_VALUE="$log_level"
+    case "${log_level^^}" in
+        "DEBUG") LOG_LEVEL_PRIORITY_CACHE=0 ;;
+        "INFO") LOG_LEVEL_PRIORITY_CACHE=1 ;;
+        "WARNING") LOG_LEVEL_PRIORITY_CACHE=2 ;;
+        "ERROR") LOG_LEVEL_PRIORITY_CACHE=3 ;;
+        *) LOG_LEVEL_PRIORITY_CACHE=1 ;; # Default to INFO
+    esac
+
+    echo "$LOG_LEVEL_PRIORITY_CACHE"
+}
 
 # Clean up old logs based on size/count/age limits
 rotate_logs() {
@@ -99,9 +113,10 @@ log_message() {
     local message="$1"
     local type="${2:-info}"
     local msg_priority="${log_levels[$type]:-1}"
+    local log_level_priority=$(get_level_priority)
 
         # Skip if this message doesn't meet our log level threshold
-    [[ ${msg_priority} -ge ${LOG_LEVEL_PRIORITY} ]] || return 0
+    [[ ${msg_priority} -ge ${log_level_priority} ]] || return 0
 
     # Clean up the message and add timestamp
     local timestamp

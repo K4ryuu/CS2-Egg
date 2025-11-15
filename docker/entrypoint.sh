@@ -18,6 +18,9 @@ sleep 1
 # Run legacy file migration check (only runs on first boot with new structure)
 migrate_legacy_files
 
+# Remove obsolete config files from old versions
+cleanup_obsolete_configs
+
 # Check for deprecated variables (ADDON_SELECTION)
 check_deprecated_variables
 
@@ -128,6 +131,32 @@ log_message "Starting server: ${LOGGED_STARTUP}" "info"
 script -qfc "$MODIFIED_STARTUP" /dev/null 2>&1 | while IFS= read -r line; do
     line="${line%[[:space:]]}"
     [[ "$line" =~ Segmentation\ fault.*"${GAMEEXE}" ]] && continue
+
+    # Detect crash via cs2.sh crash message pattern
+    if [[ "$line" =~ \./game/cs2\.sh:.*Aborted.*\(core\ dumped\) ]]; then
+        handle_server_output "$line"
+
+        log_message "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" "warning"
+        log_message "Server crash detected - Common causes and solutions:" "warning"
+        log_message "" "warning"
+        log_message "1. Plugin Issues:" "info"
+        log_message "   • Check if recently installed/updated plugins are compatible" "info"
+        log_message "   • Try removing plugins one by one to identify the culprit" "info"
+        log_message "" "warning"
+        log_message "2. Addon Compatibility:" "info"
+        log_message "   • Verify MetaMod/CSS/SwiftlyS2/ModSharp versions are up to date" "info"
+        log_message "   • Check addon compatibility with current CS2 version" "info"
+        log_message "   • Review gameinfo.gi for correct addon load order" "info"
+        log_message "" "warning"
+        log_message "3. Outdated Gamedata:" "info"
+        log_message "   • Check which plugins have outdated gamedata for current CS2 version" "info"
+        log_message "   • Visit: https://gdc.eternar.dev" "info"
+        log_message "" "warning"
+        log_message "Review logs above for specific error messages and stack traces" "warning"
+        log_message "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" "warning"
+        continue
+    fi
+
     handle_server_output "$line"
 done
 
