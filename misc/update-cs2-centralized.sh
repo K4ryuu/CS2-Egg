@@ -60,7 +60,7 @@ SIMULATE_MODE=false
 
 # Self-update configuration (internal)
 GITHUB_REPO="K4ryuu/CS2-Egg"
-GITHUB_BRANCH="dev"
+GITHUB_BRANCH="main"
 SCRIPT_FILENAME="update-cs2-centralized.sh"
 REMOTE_SCRIPT_URL="https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}/misc/${SCRIPT_FILENAME}"
 
