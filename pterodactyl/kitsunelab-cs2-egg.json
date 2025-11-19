@@ -210,6 +210,16 @@
       "user_editable": false,
       "rules": "nullable|string",
       "field_type": "text"
+    },
+    {
+      "name": "GDB Remote Debug Port",
+      "description": "GDB remote debugging port for IDA. Specify port number (e.g., 27130) and allocate it in network settings. Connect: IDA → Debugger → Remote GDB debugger. Performance impact: ~5-10%. Leave empty to disable. Development only!",
+      "env_variable": "GDB_DEBUG_PORT",
+      "default_value": "",
+      "user_viewable": false,
+      "user_editable": false,
+      "rules": "nullable|numeric",
+      "field_type": "text"
     }
   ]
 }

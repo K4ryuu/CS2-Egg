@@ -1,3 +1,11 @@
+-- update - 2025.11.19
+
+- feat(entrypoint): Added GDB remote debugging support with automatic process attachment
+- feat(egg): Added GDB_DEBUG_PORT variable for IDA Pro and GDB client integration
+- feat(entrypoint): Automatic CS2 process detection and gdbserver initialization on specified port
+- docs: Added comprehensive GDB debugging documentation with IDA Pro setup guide
+- docs: Documented server lock behavior and remote debugging workflow
+
 -- update - 2025.11.14
 
 - feat(centralized): Wings API integration for seamless Pterodactyl server restarts
