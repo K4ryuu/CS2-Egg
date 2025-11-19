@@ -36,6 +36,8 @@ New to this egg? Start here:
 
 - [Building from Source](advanced/building.md) - Build your own Docker image
 
+- [GDB Debugging](advanced/debugging.md) - Remote debugging with GDB and IDA Pro
+
 - [Troubleshooting](advanced/troubleshooting.md) - Common issues and solutions
 
 ## Key Features
