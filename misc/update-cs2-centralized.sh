@@ -6,7 +6,7 @@
 # Usage: ./update-cs2-centralized.sh [--simulate]
 #   --simulate    Skip SteamCMD update, simulate update and trigger restart logic
 #
-# Version: 1.0.19
+# Version: 1.0.20
 
 set -euo pipefail
 
@@ -24,10 +24,14 @@ CS2_DIR="/srv/cs2-shared"
 # Required: SteamCMD installation directory
 STEAMCMD_DIR="/root/steamcmd"
 
-# Optional: Docker image for server detection (for automatic server restart)
-# Servers using this image will be automatically restarted after update
-# Examples: "sples1/k4ryuu-cs2", "sples1/k4ryuu-cs2:latest"
-SERVER_IMAGE="sples1/k4ryuu-cs2"
+# Optional: Docker images for server detection (for automatic server restart)
+# Servers using these images will be automatically restarted after update
+# Supports multiple images separated by spaces or commas
+# Examples:
+#   Single: "sples1/k4ryuu-cs2"
+#   Multiple: "sples1/k4ryuu-cs2 ghcr.io/k4ryuu/cs2-egg"
+#   With commas: "sples1/k4ryuu-cs2,ghcr.io/k4ryuu/cs2-egg"
+SERVER_IMAGE="sples1/k4ryuu-cs2 ghcr.io/k4ryuu/cs2-egg"
 
 # Optional: Enable automatic server restart after update (true/false)
 # Set to "false" if you want servers to sync on next manual restart
@@ -506,16 +510,42 @@ get_wings_api_url() {
 restart_docker_containers() {
     section "Detecting and Restarting Servers"
 
-    # Find containers using the specified image (all tags/branches)
-    local containers=$(docker ps --format "{{.Names}}\t{{.Image}}" | grep "$SERVER_IMAGE" | cut -f1)
+    # Normalize SERVER_IMAGE: replace commas with spaces for consistent processing
+    local images="${SERVER_IMAGE//,/ }"
+
+    # Build grep pattern for multiple images (escape special chars and join with |)
+    local grep_pattern=""
+    for img in $images; do
+        # Escape special regex characters in image name
+        local escaped_img=$(printf '%s' "$img" | sed 's/[.[\*^$()+?{|\\]/\\&/g')
+        if [ -z "$grep_pattern" ]; then
+            grep_pattern="$escaped_img"
+        else
+            grep_pattern="$grep_pattern|$escaped_img"
+        fi
+    done
+
+    # Find containers using any of the specified images
+    local containers=$(docker ps --format "{{.Names}}\t{{.Image}}" | grep -E "$grep_pattern" | cut -f1)
 
     if [ -z "$containers" ]; then
-        log_info "No containers found using image: ${BOLD}$SERVER_IMAGE${RESET}"
+        log_info "No containers found using images: ${BOLD}$images${RESET}"
         return 0
     fi
 
-    local count=$(echo "$containers" | wc -l | tr -d ' ')
-    log_info "Found ${BOLD}$count${RESET} container(s) using image: ${BOLD}$SERVER_IMAGE${RESET}"
+    # Convert to array for reliable counting and iteration
+    local -a container_array=()
+    while IFS= read -r line; do
+        [[ -n "$line" ]] && container_array+=("$line")
+    done <<< "$containers"
+
+    local count=${#container_array[@]}
+    log_info "Found ${BOLD}$count${RESET} container(s) using images: ${BOLD}$images${RESET}"
+
+    # List containers for visibility
+    for c in "${container_array[@]}"; do
+        echo -e "  ${DIM}→ $c${RESET}" >&2
+    done
 
     # Get Wings API credentials
     local token
@@ -532,7 +562,7 @@ restart_docker_containers() {
     local success=0
     local failed=0
 
-    while IFS= read -r container; do
+    for container in "${container_array[@]}"; do
         # Container name IS the UUID in Pterodactyl
         local uuid="$container"
 
@@ -552,12 +582,12 @@ restart_docker_containers() {
 
         if [ "$http_code" = "202" ] || [ "$http_code" = "204" ] || [ "$http_code" = "200" ]; then
             log_ok "Restarted ${BOLD}$container${RESET} via Wings API"
-            ((success++))
+            ((success++)) || true
         else
             log_warn "Failed to restart ${BOLD}$container${RESET} via Wings API (HTTP $http_code)"
-            ((failed++))
+            ((failed++)) || true
         fi
-    done <<< "$containers"
+    done
 
     if [ $failed -gt 0 ]; then
         log_warn "Restarted $success/$count container(s) successfully ($failed failed)"
