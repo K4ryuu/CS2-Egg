@@ -1,13 +1,13 @@
 #!/bin/bash
 # ModSharp Auto-Update Script
-# Handles .NET 9 runtime and ModSharp installation/updates
+# Handles .NET 10 runtime and ModSharp installation/updates
 
 source /utils/logging.sh
 source /utils/updater_common.sh
 
 # Configuration
 MODSHARP_DIR="./game/sharp"
-DOTNET_VERSION="9.0.0"
+DOTNET_VERSION="10.0.0"
 TEMP_DIR="./temps"
 
 # Install or update .NET runtime
@@ -193,10 +193,6 @@ download_modsharp_asset() {
 
 # Main update function
 update_modsharp() {
-    local MODSHARP_DIR="./game/sharp"
-    local TEMP_DIR="./temps"
-    local DOTNET_VERSION="9.0.0"
-
     # Step 1: Install/update .NET runtime
     if ! install_dotnet_runtime; then
         log_message "Failed to install .NET runtime, aborting ModSharp update" "error"

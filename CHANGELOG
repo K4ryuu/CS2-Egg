@@ -4,6 +4,7 @@
 - feat(centralized): SERVER_IMAGE now accepts multiple images separated by spaces or commas
 - feat(centralized): Container list display before restart for better visibility
 - fix(centralized): Container restart iteration failing after first container with set -e
+- upgrade(modsharp): Updated .NET runtime from 9.0.0 to 10.0.0
 
 -- update - 2025.11.19
 
