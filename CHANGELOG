@@ -1,3 +1,10 @@
+-- update - 2025.11.20
+
+- feat(centralized): Multi-registry support for container detection (Docker Hub + GHCR)
+- feat(centralized): SERVER_IMAGE now accepts multiple images separated by spaces or commas
+- feat(centralized): Container list display before restart for better visibility
+- fix(centralized): Container restart iteration failing after first container with set -e
+
 -- update - 2025.11.19
 
 - feat(entrypoint): Added GDB remote debugging support with automatic process attachment
