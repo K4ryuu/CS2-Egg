@@ -48,9 +48,20 @@ update_swiftly() {
         local swiftly_dir=$(find "$temp_dir" -type d -name "swiftlys2" -path "*/addons/swiftlys2" | head -n1)
 
         if [ -n "$swiftly_dir" ] && [ -d "$swiftly_dir" ]; then
-            cp -rn "$swiftly_dir" "$OUTPUT_DIR/" && \
-            update_version_file "Swiftly" "$new_version" && \
-            log_message "SwiftlyS2 updated to $new_version" "success"
+            local target_dir="$OUTPUT_DIR/swiftlys2"
+
+            if [ -d "$target_dir" ]; then
+                # Update: only overwrite bin/ and gamedata/ (preserve user configs and plugins)
+                cp -rf "$swiftly_dir/bin" "$target_dir/" && \
+                cp -rf "$swiftly_dir/gamedata" "$target_dir/" && \
+                log_message "SwiftlyS2 updated to $new_version (bin + gamedata)" "success"
+            else
+                # Fresh install: copy everything
+                cp -rn "$swiftly_dir" "$OUTPUT_DIR/" && \
+                log_message "SwiftlyS2 installed $new_version" "success"
+            fi
+
+            update_version_file "Swiftly" "$new_version"
             return 0
         else
             log_message "SwiftlyS2 directory not found in archive" "error"
