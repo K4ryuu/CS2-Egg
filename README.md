@@ -1,5 +1,5 @@
 <a name="readme-top"></a>
-
+ 
 ![GitHub Repo stars](https://img.shields.io/github/stars/K4ryuu/CS2-Egg?style=for-the-badge)
 ![GitHub issues](https://img.shields.io/github/issues/K4ryuu/CS2-Egg?style=for-the-badge)
 ![GitHub](https://img.shields.io/github/license/K4ryuu/CS2-Egg?style=for-the-badge)
