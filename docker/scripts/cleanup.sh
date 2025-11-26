@@ -81,6 +81,7 @@ cleanup() {
         ["backup_rounds"]=0
         ["demos"]=0
         ["css_logs"]=0
+        ["swiftly_logs"]=0
         ["accelerator_logs"]=0
         ["accelerator_dumps"]=0
     )
@@ -125,11 +126,14 @@ cleanup() {
             log_deletion "$file" "demos"
         elif [[ "$file" == */addons/counterstrikesharp/logs/* ]]; then
             log_deletion "$file" "css_logs"
+        elif [[ "$file" == */addons/swiftlys2/logs/* ]]; then
+            log_deletion "$file" "swiftly_logs"
         fi
     done < <(find "$GAME_DIRECTORY" \( \
         -name "backup_round*.txt" -mmin "+$((BACKUP_ROUND_PURGE_INTERVAL*60))" -o \
         -name "*.dem" -mmin "+$((DEMO_PURGE_INTERVAL*60))" -o \
-        \( -path "*/addons/counterstrikesharp/logs/*.txt" -mmin "+$((CSS_JUNK_PURGE_INTERVAL*60))" \) \
+        \( -path "*/addons/counterstrikesharp/logs/*.txt" -mmin "+$((CSS_JUNK_PURGE_INTERVAL*60))" \) -o \
+        \( -path "*/addons/swiftlys2/logs/*.log" -mmin "+$((CSS_JUNK_PURGE_INTERVAL*60))" \) \
         \) -print0 2>/dev/null)
 
     # Handle Accelerator logs with proper error checking
