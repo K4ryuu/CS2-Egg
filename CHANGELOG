@@ -1,3 +1,11 @@
+-- update - 2025.11.28
+
+- feat(updater): Added PRERELEASE egg variable to allow downloading prerelease/beta versions from GitHub
+- feat(updater): New centralized get_github_release() function in updater_common.sh
+- fix(swiftlys2): Update now properly overwrites bin/ and gamedata/ directories (was using cp -rn which never updated existing files)
+- feat(cleanup): Added SwiftlyS2 logs cleanup (/game/csgo/addons/swiftlys2/logs/\*.log)
+- optimise(docker): Removed unused packages from Dockerfile (cron, mawk)
+
 -- update - 2025.11.20
 
 - feat(centralized): Multi-registry support for container detection (Docker Hub + GHCR)
