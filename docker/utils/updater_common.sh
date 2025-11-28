@@ -4,6 +4,32 @@
 # Configuration
 VERSION_FILE="${EGG_DIR:-/home/container/egg}/versions.txt"
 
+# Get GitHub release info (supports prerelease via PRERELEASE env var)
+# Outputs JSON: {version, asset_url, asset_name, is_prerelease}
+get_github_release() {
+    local repo="$1"
+    local asset_pattern="${2:-.*}"
+    local url="https://api.github.com/repos/$repo/releases"
+
+    # Select endpoint based on prerelease setting (log to stderr to not pollute output)
+    if [ "${PRERELEASE:-0}" = "1" ]; then
+        log_message "Checking releases (prereleases enabled) for $repo" "debug" >&2
+    else
+        url="$url/latest"
+        log_message "Checking latest stable release for $repo" "debug" >&2
+    fi
+
+    curl -s "$url" 2>/dev/null | jq --arg p "$asset_pattern" '
+        (if type == "array" then .[0] else . end) //empty |
+        {
+            version: .tag_name,
+            is_prerelease: .prerelease,
+            asset_url: (first(.assets[] | select(.name | test($p)) | .browser_download_url) // ""),
+            asset_name: (first(.assets[] | select(.name | test($p)) | .name) // "")
+        }
+    ' 2>/dev/null
+}
+
 # Get current version from version file
 get_current_version() {
     local addon="$1"

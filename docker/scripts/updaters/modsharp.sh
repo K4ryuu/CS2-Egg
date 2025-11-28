@@ -72,26 +72,27 @@ install_dotnet_runtime() {
     fi
 }
 
-# Get latest ModSharp version from GitHub Releases
-get_latest_modsharp_version() {
-    local api_url="https://api.github.com/repos/Kxnrl/modsharp-public/releases/latest"
-    local response=$(curl -s "$api_url" 2>/dev/null)
+get_latest_modsharp_release() {
+    local repo="Kxnrl/modsharp-public"
 
-    if [ -z "$response" ]; then
-        log_message "Failed to fetch ModSharp releases" "error"
+    local release_info
+    release_info=$(get_github_release "$repo")
+
+    # Validate JSON response
+    if [ -z "$release_info" ] || ! echo "$release_info" | jq -e . >/dev/null 2>&1; then
+        log_message "Failed to get release info for $repo" "error"
         return 1
     fi
 
-    # Extract tag name (e.g., "git-69")
-    local tag_name=$(echo "$response" | jq -r '.tag_name // empty')
+    local version=$(echo "$release_info" | jq -r '.version // empty')
 
-    if [ -z "$tag_name" ]; then
+    if [ -z "$version" ]; then
         log_message "Could not parse ModSharp version from API response" "error"
         return 1
     fi
 
     # Convert "git-69" to "git69" for consistency
-    echo "${tag_name//-/}"
+    echo "${version//-/}"
 }
 
 # Download and extract ModSharp asset
@@ -200,7 +201,7 @@ update_modsharp() {
     fi
 
     # Step 2: Get latest version
-    local latest_version=$(get_latest_modsharp_version)
+    local latest_version=$(get_latest_modsharp_release)
     if [ -z "$latest_version" ]; then
         log_message "Could not determine latest ModSharp version" "error"
         return 1
@@ -219,9 +220,16 @@ update_modsharp() {
 
     log_message "Update available: $latest_version (current: ${current_version:-none})" "info"
 
-    # Step 3: Get release assets
-    local api_url="https://api.github.com/repos/Kxnrl/modsharp-public/releases/latest"
-    local response=$(curl -s "$api_url" 2>/dev/null)
+    # Step 3: Get release assets (use same endpoint logic as get_github_release)
+    local repo="Kxnrl/modsharp-public"
+    local api_url="https://api.github.com/repos/$repo/releases"
+    local response=""
+
+    if [ "${PRERELEASE:-0}" -eq 1 ]; then
+        response=$(curl -s "$api_url" | jq '.[0] // empty')
+    else
+        response=$(curl -s "$api_url/latest")
+    fi
 
     # Extract asset download URLs
     local core_url=$(echo "$response" | jq -r '.assets[] | select(.name | contains("linux.zip") and (contains("extensions") | not)) | .browser_download_url')
