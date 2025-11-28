@@ -172,6 +172,16 @@
       "field_type": "text"
     },
     {
+      "name": "Allow Prerelease Updates",
+      "description": "Allow downloading prerelease/beta versions of frameworks (CSS, SwiftlyS2, ModSharp) from GitHub. Warning: Prereleases may be unstable.",
+      "env_variable": "PRERELEASE",
+      "default_value": "0",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|boolean",
+      "field_type": "text"
+    },
+    {
       "name": "Console Filter",
       "description": "Filter unwanted console messages. Configure filter patterns in /egg/configs/console-filter.json",
       "env_variable": "ENABLE_FILTER",

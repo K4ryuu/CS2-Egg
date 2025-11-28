@@ -14,15 +14,18 @@ update_counterstrikesharp() {
     mkdir -p "$OUTPUT_DIR" "$temp_dir"
     rm -rf "$temp_dir"/*
 
-    local api_response=$(curl -s "https://api.github.com/repos/$REPO/releases/latest")
-    if [ -z "$api_response" ]; then
+    local release_info
+    release_info=$(get_github_release "$REPO" "-with-runtime-linux-.*\\.zip$")
+
+    # Validate JSON response
+    if [ -z "$release_info" ] || ! echo "$release_info" | jq -e . >/dev/null 2>&1; then
         log_message "Failed to get release info for $REPO" "error"
         return 1
     fi
 
-    local new_version=$(echo "$api_response" | jq -r '.tag_name // empty')
+    local new_version=$(echo "$release_info" | jq -r '.version // empty')
+    local asset_url=$(echo "$release_info" | jq -r '.asset_url // empty')
     local current_version=$(get_current_version "CSS")
-    local asset_url=$(echo "$api_response" | jq -r '.assets[] | select(.name | test("-with-runtime-linux-.*\\.zip$")) | .browser_download_url' | head -n1)
 
     if [ -z "$new_version" ]; then
         log_message "Failed to get version for $REPO" "error"
