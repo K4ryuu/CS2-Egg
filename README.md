@@ -5,7 +5,7 @@
 ![GitHub](https://img.shields.io/github/license/K4ryuu/CS2-Egg?style=for-the-badge)
 ![Docker Pulls](https://img.shields.io/docker/pulls/sples1/k4ryuu-cs2?style=for-the-badge&logo=docker&logoColor=white)
 ![GHCR Pulls](https://img.shields.io/badge/GHCR_Pulls-Unlimited-2088FF?style=for-the-badge&logo=github&logoColor=white)
-[![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/Dwq8hncnxX)
+[![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://dsc.gg/k4-fanbase)
 
 <div align="center">
   <strong>⭐ Star this repo if you find it useful!</strong>
@@ -26,7 +26,7 @@
     ·
     <a href="https://github.com/K4ryuu/CS2-Egg/issues/new?assignees=KitsuneLab-Development&labels=enhancement&projects=&template=feature_request.md&title=%5BREQ%5D">Request Feature</a>
     ·
-    <a href="https://discord.gg/Dwq8hncnxX">Discord</a>
+    <a href="https://dsc.gg/k4-fanbase">Discord</a>
     ·
     <a href="docs/README.md">Documentation</a>
   </p>
