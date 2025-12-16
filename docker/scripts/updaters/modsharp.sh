@@ -8,7 +8,7 @@ source /utils/updater_common.sh
 # Configuration
 MODSHARP_DIR="./game/sharp"
 DOTNET_VERSION="10.0.0"
-TEMP_DIR="./temps"
+CONFIG_BACKUP="$TEMP_DIR/core.json.backup"
 
 # Install or update .NET runtime
 install_dotnet_runtime() {
@@ -27,169 +27,33 @@ install_dotnet_runtime() {
     # Create runtime directory
     mkdir -p "$runtime_dir"
 
-    # Download URL
+    # Download and extract using common utility
     local dotnet_url="https://dotnetcli.azureedge.net/dotnet/Runtime/$dotnet_version/dotnet-runtime-$dotnet_version-linux-x64.tar.gz"
     local download_file="$TEMP_DIR/dotnet-runtime.tar.gz"
 
-    log_message "Downloading from: $dotnet_url" "debug"
-
-    # Download with retry logic
-    local max_retries=3
-    local retry=0
-    while [ $retry -lt $max_retries ]; do
-        if curl -fsSL -m 300 -o "$download_file" "$dotnet_url"; then
-            break
-        fi
-        ((retry++))
-        log_message "Download failed (attempt $retry/$max_retries)" "warning"
-        sleep 5
-    done
-
-    if [ $retry -eq $max_retries ]; then
-        log_message "Failed to download .NET runtime after $max_retries attempts" "error"
-        return 1
-    fi
-
-    # Verify download
-    if [ ! -s "$download_file" ]; then
-        log_message "Downloaded .NET runtime file is empty" "error"
-        return 1
-    fi
-
-    # Extract runtime
-    log_message "Extracting .NET runtime..." "running"
-    if tar -xzf "$download_file" -C "$runtime_dir" 2>/dev/null; then
-        # Update version file
+    if handle_download_and_extract "$dotnet_url" "$download_file" "$runtime_dir" "tar.gz"; then
         update_version_file "DotNet" "$dotnet_version"
-
         log_message ".NET $dotnet_version runtime installed successfully" "success"
         rm -f "$download_file"
         return 0
     else
-        log_message "Failed to extract .NET runtime" "error"
+        log_message "Failed to install .NET runtime" "error"
         rm -f "$download_file"
         return 1
     fi
 }
 
-get_latest_modsharp_release() {
-    local repo="Kxnrl/modsharp-public"
+# Download and extract asset (uses common utility)
+download_and_extract() {
+    local url="$1"
+    local target_dir="$2"
+    local download_file="$TEMP_DIR/$(basename "$url")"
 
-    local release_info
-    release_info=$(get_github_release "$repo")
+    handle_download_and_extract "$url" "$download_file" "$target_dir" "zip"
+    local result=$?
 
-    # Validate JSON response
-    if [ -z "$release_info" ] || ! echo "$release_info" | jq -e . >/dev/null 2>&1; then
-        log_message "Failed to get release info for $repo" "error"
-        return 1
-    fi
-
-    local version=$(echo "$release_info" | jq -r '.version // empty')
-
-    if [ -z "$version" ]; then
-        log_message "Could not parse ModSharp version from API response" "error"
-        return 1
-    fi
-
-    # Convert "git-69" to "git69" for consistency
-    echo "${version//-/}"
-}
-
-# Download and extract ModSharp asset
-download_modsharp_asset() {
-    local asset_name="$1"
-    local download_url="$2"
-    local extract_to="$3"
-
-    local download_file="$TEMP_DIR/${asset_name}"
-    local extract_dir="$TEMP_DIR/extract_${asset_name%.zip}"
-
-    log_message "Downloading $asset_name..." "running"
-
-    # Download with retry
-    local max_retries=3
-    local retry=0
-    while [ $retry -lt $max_retries ]; do
-        if curl -fsSL -m 300 -o "$download_file" "$download_url"; then
-            break
-        fi
-        ((retry++))
-        log_message "Download failed (attempt $retry/$max_retries)" "warning"
-        sleep 5
-    done
-
-    if [ $retry -eq $max_retries ]; then
-        log_message "Failed to download $asset_name" "error"
-        return 1
-    fi
-
-    # Verify download
-    if [ ! -s "$download_file" ]; then
-        log_message "Downloaded file is empty: $asset_name" "error"
-        return 1
-    fi
-
-    # Extract
-    log_message "Extracting $asset_name..." "running"
-    mkdir -p "$extract_dir"
-
-    if ! unzip -qq -o "$download_file" -d "$extract_dir" 2>/dev/null; then
-        log_message "Failed to extract $asset_name" "error"
-        rm -f "$download_file"
-        return 1
-    fi
-
-    # Copy extracted files to target
-    if [ -d "$extract_dir/build/linux/sharp" ]; then
-        # Core asset structure: build/linux/sharp/
-        log_message "Installing core files..." "debug"
-
-        # Create directories first (preserve existing content)
-        mkdir -p "$MODSHARP_DIR"/{bin,core,configs,gamedata,modules,shared,data,logs}
-
-        # Copy from build/linux/sharp/ (only add new files, don't overwrite existing)
-        local source_dir="$extract_dir/build/linux/sharp"
-
-        cp -rn "$source_dir/bin"/* "$MODSHARP_DIR/bin/" 2>/dev/null || true
-        cp -rn "$source_dir/core"/* "$MODSHARP_DIR/core/" 2>/dev/null || true
-        cp -rn "$source_dir/gamedata"/* "$MODSHARP_DIR/gamedata/" 2>/dev/null || true
-        cp -rn "$source_dir/shared"/* "$MODSHARP_DIR/shared/" 2>/dev/null || true
-        cp -rn "$source_dir/modules"/* "$MODSHARP_DIR/modules/" 2>/dev/null || true
-
-        # Only copy default config if it doesn't exist
-        if [ ! -f "$MODSHARP_DIR/configs/core.json" ] && [ -f "$source_dir/configs/core.json" ]; then
-            cp "$source_dir/configs/core.json" "$MODSHARP_DIR/configs/"
-            log_message "Installed default core.json config" "debug"
-        else
-            log_message "Preserved existing core.json config" "debug"
-        fi
-
-        # Copy any other new config files (but don't overwrite existing)
-        if [ -d "$source_dir/configs" ]; then
-            cp -n "$source_dir/configs"/* "$MODSHARP_DIR/configs/" 2>/dev/null || true
-        fi
-
-    else
-        # Extensions asset structure: build/linux-extensions/
-        log_message "Installing extensions to shared/..." "debug"
-        mkdir -p "$MODSHARP_DIR/shared"
-
-        local extensions_dir="$extract_dir/build/linux-extensions"
-        if [ -d "$extensions_dir" ]; then
-            # Copy all extension folders (only add new files, don't overwrite existing)
-            for item in "$extensions_dir"/*; do
-                if [ -d "$item" ]; then
-                    local folder_name=$(basename "$item")
-                    cp -rn "$item" "$MODSHARP_DIR/shared/"
-                    log_message "Installed extension: $folder_name" "debug"
-                fi
-            done
-        fi
-    fi
-
-    # Cleanup
-    rm -rf "$download_file" "$extract_dir"
-    return 0
+    rm -f "$download_file"
+    return $result
 }
 
 # Main update function
@@ -200,19 +64,37 @@ update_modsharp() {
         return 1
     fi
 
-    # Step 2: Get latest version
-    local latest_version=$(get_latest_modsharp_release)
-    if [ -z "$latest_version" ]; then
-        log_message "Could not determine latest ModSharp version" "error"
+    # Step 2: Get release info (direct API call for multiple assets)
+    local repo="Kxnrl/modsharp-public"
+    local api_url="https://api.github.com/repos/$repo/releases"
+    local release_info
+
+    if [ "${PRERELEASE:-0}" -eq 1 ]; then
+        release_info=$(curl -s "$api_url" | jq '.[0] // empty')
+    else
+        release_info=$(curl -s "$api_url/latest")
+    fi
+
+    if [ -z "$release_info" ] || ! echo "$release_info" | jq -e . >/dev/null 2>&1; then
+        log_message "Failed to get ModSharp release info" "error"
         return 1
     fi
 
-    local current_version=$(get_current_version "ModSharp")
+    # Extract version and asset URLs (using GitHub API format)
+    local latest_version=$(echo "$release_info" | jq -r '.tag_name // empty' | sed 's/-//g')
+    local core_url=$(echo "$release_info" | jq -r '.assets[] | select(.name | contains("linux.zip") and (contains("extensions") | not)) | .browser_download_url')
+    local extensions_url=$(echo "$release_info" | jq -r '.assets[] | select(.name | contains("linux-extensions.zip")) | .browser_download_url')
 
+    if [ -z "$latest_version" ] || [ -z "$core_url" ] || [ -z "$extensions_url" ]; then
+        log_message "Could not parse ModSharp release data" "error"
+        return 1
+    fi
+
+    # Check if update needed
+    local current_version=$(get_current_version "ModSharp")
     log_message "Current version: ${current_version:-none}" "debug"
     log_message "Latest version: $latest_version" "debug"
 
-    # Check if update needed
     if [ "$current_version" = "$latest_version" ] && [ -d "$MODSHARP_DIR" ]; then
         log_message "ModSharp is up-to-date ($current_version)" "info"
         return 0
@@ -220,54 +102,37 @@ update_modsharp() {
 
     log_message "Update available: $latest_version (current: ${current_version:-none})" "info"
 
-    # Step 3: Get release assets (use same endpoint logic as get_github_release)
-    local repo="Kxnrl/modsharp-public"
-    local api_url="https://api.github.com/repos/$repo/releases"
-    local response=""
-
-    if [ "${PRERELEASE:-0}" -eq 1 ]; then
-        response=$(curl -s "$api_url" | jq '.[0] // empty')
-    else
-        response=$(curl -s "$api_url/latest")
+    # Step 3: Backup core.json if exists
+    if [ -f "/home/container/sharp/configs/core.json" ]; then
+        cp "/home/container/sharp/configs/core.json" "$CONFIG_BACKUP"
+        log_message "Backed up core.json" "debug"
     fi
 
-    # Extract asset download URLs
-    local core_url=$(echo "$response" | jq -r '.assets[] | select(.name | contains("linux.zip") and (contains("extensions") | not)) | .browser_download_url')
-    local extensions_url=$(echo "$response" | jq -r '.assets[] | select(.name | contains("linux-extensions.zip")) | .browser_download_url')
-
-    if [ -z "$core_url" ] || [ -z "$extensions_url" ]; then
-        log_message "Could not find required assets in release" "error"
-        return 1
-    fi
-
-    # Extract asset names
-    local core_name=$(basename "$core_url")
-    local extensions_name=$(basename "$extensions_url")
-
-    log_message "Downloading ModSharp $latest_version..." "running"
-
-    # Step 4: Download and install core
-    if ! download_modsharp_asset "$core_name" "$core_url" "$MODSHARP_DIR"; then
+    # Step 4: Download and install core (extract to /game/)
+    if ! download_and_extract "$core_url" "./game/"; then
         log_message "Failed to install ModSharp core" "error"
         return 1
     fi
 
-    # Step 5: Download and install extensions
-    if ! download_modsharp_asset "$extensions_name" "$extensions_url" "$MODSHARP_DIR/shared"; then
+    # Step 5: Download and install extensions (extract to /game/sharp/shared/)
+    if ! download_and_extract "$extensions_url" "./game/sharp/shared/"; then
         log_message "Failed to install ModSharp extensions" "warning"
         # Continue anyway, extensions are not critical
     fi
 
-    # Step 6: Update version file
+    # Step 6: Restore core.json if we backed it up
+    if [ -f "$CONFIG_BACKUP" ]; then
+        mkdir -p "/home/container/sharp/configs"
+        cp "$CONFIG_BACKUP" "/home/container/sharp/configs/core.json"
+        log_message "Restored core.json config" "success"
+        rm -f "$CONFIG_BACKUP"
+    fi
+
+    # Step 8: Update version file
     update_version_file "ModSharp" "$latest_version"
 
     log_message "ModSharp updated to $latest_version" "success"
     return 0
-}
-
-# Install ModSharp (first time)
-install_modsharp() {
-    update_modsharp
 }
 
 # Entry point
@@ -275,12 +140,8 @@ main() {
     # Create temp directory
     mkdir -p "$TEMP_DIR"
 
-    # Check if installation or update is needed
-    if [ ! -d "$MODSHARP_DIR" ]; then
-        install_modsharp
-    else
-        update_modsharp
-    fi
+    # Install or update ModSharp
+    update_modsharp
 
     local exit_code=$?
 

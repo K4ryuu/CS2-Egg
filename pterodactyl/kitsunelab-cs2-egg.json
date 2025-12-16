@@ -19,7 +19,7 @@
   "startup": "./game/cs2.sh {{CUSTOM_PARAMS}} -dedicated +ip 0.0.0.0 -port {{SERVER_PORT}} +map {{SRCDS_MAP}} -maxplayers {{SRCDS_MAXPLAYERS}} +sv_setsteamaccount {{STEAM_ACC}} +game_type {{GAME_TYPE}} +game_mode {{GAME_MODE}}",
   "config": {
     "files": "{}",
-    "startup": "{\r\n    \"done\": \"Connection to Steam servers successful\"\r\n}",
+    "startup": "{\r\n    \"done\": \"Source2Init OK\"\r\n}",
     "logs": "{}",
     "stop": "quit"
   },

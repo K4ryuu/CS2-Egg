@@ -7,7 +7,6 @@ source /utils/updater_common.sh
 
 update_metamod() {
     local OUTPUT_DIR="./game/csgo/addons"
-    local TEMP_DIR="./temps"
 
     if [ ! -d "$OUTPUT_DIR/metamod" ]; then
         log_message "Installing Metamod..." "info"

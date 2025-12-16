@@ -6,7 +6,7 @@
 # Usage: ./update-cs2-centralized.sh [--simulate]
 #   --simulate    Skip SteamCMD update, simulate update and trigger restart logic
 #
-# Version: 1.0.20
+# Version: 1.0.21
 
 set -euo pipefail
 
@@ -57,6 +57,9 @@ UPDATE_CHECK_INTERVAL="600"
 
 # Simulate mode flag (set by --simulate argument)
 SIMULATE_MODE=false
+
+# Store original arguments for self-update restart
+ORIGINAL_ARGS=("$@")
 
 # ============================================================================
 # INTERNAL CONSTANTS
@@ -732,7 +735,8 @@ apply_update() {
     echo "$(date +%s)" > "$UPDATE_CHECK_TIMESTAMP_FILE"
 
     # Exec restart (preserves PID, lock file)
-    exec "$0" "$@"
+    # Use ORIGINAL_ARGS to pass the script's command-line arguments, not function args
+    exec "$0" "${ORIGINAL_ARGS[@]}"
 }
 
 check_and_apply_updates() {

@@ -7,7 +7,6 @@ source /utils/updater_common.sh
 
 update_counterstrikesharp() {
     local OUTPUT_DIR="./game/csgo/addons"
-    local TEMP_DIR="./temps"
     local REPO="roflmuffin/CounterStrikeSharp"
     local temp_dir="$TEMP_DIR/css"
 

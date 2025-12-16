@@ -8,7 +8,6 @@ source /utils/updater_common.sh
 # Update Swiftly
 update_swiftly() {
     local OUTPUT_DIR="./game/csgo/addons"
-    local TEMP_DIR="./temps"
     local REPO="swiftly-solution/swiftlys2"
     local temp_dir="$TEMP_DIR/swiftly"
 
