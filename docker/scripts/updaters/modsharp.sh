@@ -8,7 +8,7 @@ source /utils/updater_common.sh
 # Configuration
 MODSHARP_DIR="./game/sharp"
 DOTNET_VERSION="10.0.0"
-TEMP_DIR="./temps"
+CONFIG_BACKUP="$TEMP_DIR/core.json.backup"
 
 # Install or update .NET runtime
 install_dotnet_runtime() {

@@ -3,6 +3,7 @@
 
 # Configuration
 VERSION_FILE="${EGG_DIR:-/home/container/egg}/versions.txt"
+TEMP_DIR="./temps"
 
 # Get GitHub release info (supports prerelease via PRERELEASE env var)
 # Outputs JSON: {version, asset_url, asset_name, is_prerelease}
