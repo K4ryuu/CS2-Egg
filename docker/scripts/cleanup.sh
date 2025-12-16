@@ -84,6 +84,7 @@ cleanup() {
         ["swiftly_logs"]=0
         ["accelerator_logs"]=0
         ["accelerator_dumps"]=0
+        ["core_dumps"]=0
     )
 
     local start_time
@@ -148,6 +149,14 @@ cleanup() {
             -name "*.dmp.txt" -o \
             -name "*.dmp" \
             \) -mmin "+$((ACCELERATOR_DUMP_PURGE_INTERVAL*60))" -print0 2>/dev/null)
+    fi
+
+    # Clean up core dumps (deleted on every restart)
+    local core_dumps_dir="./game/bin/linuxsteamrt64"
+    if [ -d "$core_dumps_dir" ]; then
+        while IFS= read -r -d '' file; do
+            log_deletion "$file" "core_dumps"
+        done < <(find "$core_dumps_dir" -maxdepth 1 -type f -name "core" -print0 2>/dev/null)
     fi
 
     local end_time
