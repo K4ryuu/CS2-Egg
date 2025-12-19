@@ -1,3 +1,7 @@
+-- update - 2025.12.19
+
+feat(cleanup): Enhance core dump deletion to include numbered core files
+
 -- update - 2025.12.16
 
 - feat(cleanup): Core dump cleanup added (~2.2 GB disk space freed per restart)
