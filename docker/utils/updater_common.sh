@@ -208,52 +208,6 @@ add_to_gameinfo() {
     fi
 }
 
-# Remove addon path from gameinfo.gi if present
-# Usage: remove_from_gameinfo "sharp"
-remove_from_gameinfo() {
-    local addon_path="$1"
-    local GAMEINFO_FILE="/home/container/game/csgo/gameinfo.gi"
-
-    if [ ! -f "$GAMEINFO_FILE" ]; then
-        log_message "gameinfo.gi not found at $GAMEINFO_FILE" "debug"
-        return 0
-    fi
-
-    # Check if path exists
-    if ! grep -q "Game[[:blank:]]*${addon_path}" "$GAMEINFO_FILE"; then
-        log_message "${addon_path} not found in gameinfo.gi" "debug"
-        return 0
-    fi
-
-    log_message "Removing ${addon_path} from gameinfo.gi..." "info"
-
-    # Create backup
-    cp "$GAMEINFO_FILE" "$GAMEINFO_FILE.bak" 2>/dev/null || {
-        log_message "Failed to backup gameinfo.gi" "error"
-        return 1
-    }
-
-    # Remove the line containing the addon path
-    sed "/Game[[:space:]]*${addon_path//\//\\/}/d" "$GAMEINFO_FILE.bak" > "$GAMEINFO_FILE"
-
-    if [ $? -ne 0 ]; then
-        log_message "sed command failed, restoring backup" "error"
-        mv "$GAMEINFO_FILE.bak" "$GAMEINFO_FILE"
-        return 1
-    fi
-
-    # Verify it was removed
-    if ! grep -q "Game[[:space:]]*${addon_path}" "$GAMEINFO_FILE"; then
-        log_message "Removed ${addon_path} from gameinfo.gi" "info"
-        rm -f "$GAMEINFO_FILE.bak"
-        return 0
-    else
-        log_message "Failed to remove ${addon_path}, restoring backup" "error"
-        mv "$GAMEINFO_FILE.bak" "$GAMEINFO_FILE"
-        return 1
-    fi
-}
-
 # Ensure MetaMod is always first addon after Game_LowViolence line
 # This is critical because MetaMod must load before others as for example SwiftlyS2 if loaded first, metamod cant load
 ensure_metamod_first() {
