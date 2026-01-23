@@ -37,13 +37,17 @@ get_log_file_path() {
     echo "${EGG_LOGS_DIR}/${date_str}.log"
 }
 
-# Map log levels to priorities for filtering
-declare -A log_levels=(
-    ["debug"]=0
-    ["info"]=1
-    ["running"]=2
-    ["error"]=3
-)
+# Map log levels to priorities for filtering (compatible with older bash)
+_get_msg_priority() {
+    local type="$1"
+    case "$type" in
+        "debug") echo 0 ;;
+        "info") echo 1 ;;
+        "running") echo 2 ;;
+        "error") echo 3 ;;
+        *) echo 1 ;; # Default to info
+    esac
+}
 
 # Cache for log level priority calculation (performance optimization)
 LOG_LEVEL_PRIORITY_CACHE=""
@@ -60,7 +64,7 @@ get_level_priority() {
 
     # Calculate and cache new priority
     LOG_LEVEL_CACHE_VALUE="$log_level"
-    case "${log_level^^}" in
+    case "$(echo "$log_level" | tr '[:lower:]' '[:upper:]')" in
         "DEBUG") LOG_LEVEL_PRIORITY_CACHE=0 ;;
         "INFO") LOG_LEVEL_PRIORITY_CACHE=1 ;;
         "WARNING") LOG_LEVEL_PRIORITY_CACHE=2 ;;
@@ -112,7 +116,7 @@ clean_old_logs() {
 log_message() {
     local message="$1"
     local type="${2:-info}"
-    local msg_priority="${log_levels[$type]:-1}"
+    local msg_priority=$(_get_msg_priority "$type")
     local log_level_priority=$(get_level_priority)
 
         # Skip if this message doesn't meet our log level threshold
