@@ -103,8 +103,8 @@ update_modsharp() {
     log_message "Update available: $latest_version (current: ${current_version:-none})" "info"
 
     # Step 3: Backup core.json if exists
-    if [ -f "/home/container/sharp/configs/core.json" ]; then
-        cp "/home/container/sharp/configs/core.json" "$CONFIG_BACKUP"
+    if [ -f "/home/container/game/sharp/configs/core.json" ]; then
+        cp "/home/container/game/sharp/configs/core.json" "$CONFIG_BACKUP"
         log_message "Backed up core.json" "debug"
     fi
 
@@ -122,8 +122,8 @@ update_modsharp() {
 
     # Step 6: Restore core.json if we backed it up
     if [ -f "$CONFIG_BACKUP" ]; then
-        mkdir -p "/home/container/sharp/configs"
-        cp "$CONFIG_BACKUP" "/home/container/sharp/configs/core.json"
+        mkdir -p "/home/container/game/sharp/configs"
+        cp "$CONFIG_BACKUP" "/home/container/game/sharp/configs/core.json"
         log_message "Restored core.json config" "success"
         rm -f "$CONFIG_BACKUP"
     fi
