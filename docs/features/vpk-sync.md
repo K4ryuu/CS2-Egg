@@ -46,7 +46,9 @@ Before proceeding, ensure the KitsuneLab CS2 Egg is imported into your Pterodact
 
 ### Step 2: Apply Pterodactyl Panel Modification
 
-> **Warning:** Do **NOT** copy and paste the entire PR or overwrite files directly. Instead, carefully apply the changes **line by line** as shown in [PR #4034](https://github.com/pterodactyl/panel/pull/4034/files). Pterodactyl versions may differ, and blindly replacing files can break your panel or cause compatibility issues. Review each change and adapt as needed for your version.
+> **Important:** Only **Pterodactyl Panel** requires PR #4034 changes. **Wings does NOT require any modifications** - it works seamlessly with the update script as-is. The script automatically detects and integrates with your existing Wings installation.
+
+> **Warning:** Do **NOT** copy and paste the entire PR or overwrite files directly. Instead, carefully apply the changes **line by line** as shown in [PR #4034](https://github.com/pterodactyl/panel/pull/4034/files). The link shows only the required files that need modification. Pterodactyl versions may differ, and blindly replacing files can break your panel or cause compatibility issues. Review each change and adapt as needed for your version.
 
 Apply [PR #4034](https://github.com/pterodactyl/panel/pull/4034/files) to enable directory auto mounting:
 
