@@ -83,10 +83,10 @@ When you start your server for the first time:
 
 ## Next Steps
 
-- [Configure Environment Variables](../configuration/environment-variables.md)
-- [Setup VPK Sync & Centralized Updates](../features/vpk-sync.md)
-- [Enable Auto-Updaters](../features/auto-updaters.md)
-- [Configure Console Filter](../features/console-filter.md)
+- [Configuration Files](../configuration/configuration-files.md) - Configure features and customize settings
+- [Setup VPK Sync & Centralized Updates](../features/vpk-sync.md) - Centralize game files across multiple servers
+- [Enable Auto-Updaters](../features/auto-updaters.md) - Automatic plugin and mod updates
+- [Troubleshooting Guide](../advanced/troubleshooting.md) - Solutions for common issues
 
 ## Docker Image Registries
 

@@ -173,9 +173,9 @@ docker restart <container_name>
 
 **Solutions**:
 
-1. Verify `ENABLE_CONSOLE_FILTER` is set to `1` in Pterodactyl startup
-2. Check `/egg/configs/console-filter.json` exists and `"enabled": true`
-3. Verify filter patterns are correct (supports regex)
+1. Verify `ENABLE_FILTER` is set to `1` in Pterodactyl startup
+2. Check `/egg/configs/console-filter.json` exists with proper patterns
+3. Verify filter patterns are correct (supports exact and contains matching)
 4. Check console for filter loading messages
 5. Edit patterns via FTP in `/egg/configs/console-filter.json`
 
@@ -186,8 +186,8 @@ docker restart <container_name>
 **Solutions**:
 
 1. Edit `/egg/configs/console-filter.json` via FTP
-2. Review your `filter_patterns` array
-3. Use more specific patterns
+2. Review your `patterns` array
+3. Use more specific patterns (prefix with `@` for exact match)
 4. Remove overly broad patterns
 5. Test changes by restarting server
 
@@ -210,10 +210,10 @@ docker restart <container_name>
 
 **Solutions**:
 
-1. Verify `ENABLE_CLEANUP` is set to `1`
-2. Check `/egg/configs/cleanup.json` exists with `"enabled": true`
-3. Verify cleanup patterns match your files
-4. Check cleanup intervals are appropriate
+1. Verify `CLEANUP_ENABLED` is set to `1` in Pterodactyl startup
+2. Check `/egg/configs/cleanup.json` exists with proper intervals configured
+3. Verify cleanup intervals (in hours) match your file retention needs
+4. Check console for cleanup messages during startup
 5. Look for cleanup messages in logs
 
 ### Important Files Deleted
@@ -223,10 +223,10 @@ docker restart <container_name>
 **Solutions**:
 
 1. Edit `/egg/configs/cleanup.json` via FTP
-2. Adjust `max_age_days` values to be more conservative
-3. Modify `file_patterns` to be more specific
-4. Disable cleanup: Set `"enabled": false` in config
-5. Restore from backups
+2. Adjust interval values (in hours) to be more conservative
+3. Increase hours to keep files longer (e.g., 168 hours = 7 days)
+4. Disable cleanup: Set `CLEANUP_ENABLED=0` in Pterodactyl startup
+5. Restore from backups if needed
 
 ## Logging Issues
 
@@ -236,11 +236,11 @@ docker restart <container_name>
 
 **Solutions**:
 
-1. Verify `ENABLE_LOGGING` is set to `1`
-2. Check `/egg/configs/logging.json` has `"enabled": true`
-3. Verify `/egg/logs/` directory exists and is writable
-4. Check for error messages during startup
-5. Logs are created on first write (may be delayed)
+1. Check `/egg/configs/logging.json` has `"file_enabled": true`
+2. Verify `/egg/logs/` directory exists and is writable
+3. Check for error messages during startup
+4. Logs are created on first write (may be delayed)
+5. Note: Logging is always loaded, no environment variable needed
 
 ### Log Rotation Not Working
 
@@ -267,9 +267,9 @@ docker restart <container_name>
 **Solutions**:
 
 1. Edit `/egg/configs/logging.json` via FTP
-2. Adjust `max_files` (number of files) and `max_days` (age in days)
+2. Adjust `max_files` (number of files) and `max_days` (age in days) under `logging` section
 3. Rotation deletes files when: size>max OR count>max OR age>max
-4. Set stricter limits if too many files
+4. Set stricter limits if too many files (lower values = fewer files kept)
 5. Restart to apply new settings
 
 ## Performance Issues
