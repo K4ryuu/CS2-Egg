@@ -53,7 +53,6 @@ Docker images are automatically pulled when specified in the egg. To use a newer
 3. Change the **Docker Image** dropdown or field to:
    - `docker.io/sples1/k4ryuu-cs2:latest` for the latest stable
    - `docker.io/sples1/k4ryuu-cs2:beta` for beta
-   - `docker.io/sples1/k4ryuu-cs2:dev` for development
 4. Start your server
 
 The new image will be automatically pulled on startup.
@@ -62,7 +61,6 @@ The new image will be automatically pulled on startup.
 
 - `latest` - Stable release (recommended for production)
 - `beta` - Beta testing release (new features, less stable)
-- `dev` - Development release (bleeding edge, may have bugs)
 
 ## Auto-Updates
 
@@ -159,10 +157,10 @@ If an update causes issues:
 
 ### CS2 Server Rollback
 
-CS2 server rollback via beta branches is not currently supported by this egg. For version-specific deployments, consider using Docker image tags:
+CS2 server rollback is not currently supported by this egg. For version-specific deployments, consider using Docker image tags:
 
-- `docker.io/sples1/k4ryuu-cs2:latest` - Latest stable CS2
-- `docker.io/sples1/k4ryuu-cs2:beta` - Public beta branch
+- `docker.io/sples1/k4ryuu-cs2:latest` - Latest stable
+- `docker.io/sples1/k4ryuu-cs2:beta` - Beta
 
 Manual rollback requires direct SteamCMD usage outside the egg's automated update system.
 

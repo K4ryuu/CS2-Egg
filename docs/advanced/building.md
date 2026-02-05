@@ -240,7 +240,7 @@ name: Build Docker Image
 
 on:
   push:
-    branches: [main, dev, beta]
+    branches: [main]
   pull_request:
     branches: [main]
 
