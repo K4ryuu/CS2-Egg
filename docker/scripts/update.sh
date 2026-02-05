@@ -52,16 +52,20 @@ update_addons() {
         INSTALL_METAMOD=1
     fi
 
-    # Compatibility check: ModSharp is incompatible with CSS only
-    # SwiftlyS2 is compatible with ModSharp if SwiftlyS2 loads last (handled by ensure_swiftly_last)
-    if [ "${INSTALL_CSS:-0}" -eq 1 ]; then
-        if [ "${INSTALL_MODSHARP:-0}" -eq 1 ]; then
-            log_message "ModSharp is incompatible with CSS, disabling ModSharp..." "warning"
-            INSTALL_MODSHARP=0
+    # Consolidated ModSharp incompatibility check
+    modsharp_is_present=false
+    if [ "${INSTALL_MODSHARP:-0}" -eq 1 ] || grep -q "Game[[:space:]]*sharp" "/home/container/game/csgo/gameinfo.gi" 2>/dev/null; then
+        modsharp_is_present=true
+    fi
+
+    if [ "$modsharp_is_present" = true ]; then
+        if [ "${INSTALL_CSS:-0}" -eq 1 ]; then
+            log_message "ModSharp is present alongside CounterStrikeSharp. These addons may be incompatible and may cause conflicts. It is recommended to use only one of them." "warning"
         fi
 
-        # Always remove ModSharp from gameinfo if CSS is enabled (incompatible)
-        remove_from_gameinfo "sharp"
+        if [ "${INSTALL_SWIFTLY:-0}" -eq 1 ]; then
+            log_message "ModSharp is present alongside SwiftlyS2. These addons may be incompatible and may cause conflicts. It is recommended to use only one of them." "warning"
+        fi
     fi
 
     # MetaMod:Source

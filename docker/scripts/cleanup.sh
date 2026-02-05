@@ -156,7 +156,7 @@ cleanup() {
     if [ -d "$core_dumps_dir" ]; then
         while IFS= read -r -d '' file; do
             log_deletion "$file" "core_dumps"
-        done < <(find "$core_dumps_dir" -maxdepth 1 -type f -name "core" -print0 2>/dev/null)
+        done < <(find "$core_dumps_dir" -maxdepth 1 -type f \( -name "core" -o -name "core.[0-9]*" \) -print0 2>/dev/null)
     fi
 
     local end_time

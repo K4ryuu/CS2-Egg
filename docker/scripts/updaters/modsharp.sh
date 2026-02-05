@@ -6,7 +6,7 @@ source /utils/logging.sh
 source /utils/updater_common.sh
 
 # Configuration
-MODSHARP_DIR="./game/sharp"
+MODSHARP_DIR="/home/container/game/sharp"
 DOTNET_VERSION="10.0.0"
 CONFIG_BACKUP="$TEMP_DIR/core.json.backup"
 
@@ -95,16 +95,26 @@ update_modsharp() {
     log_message "Current version: ${current_version:-none}" "debug"
     log_message "Latest version: $latest_version" "debug"
 
-    if [ "$current_version" = "$latest_version" ] && [ -d "$MODSHARP_DIR" ]; then
-        log_message "ModSharp is up-to-date ($current_version)" "info"
-        return 0
+    # Check if update is needed
+    if [ -n "$current_version" ]; then
+        semver_compare "$latest_version" "$current_version"
+        case $? in
+            0) # Equal
+                log_message "ModSharp is up-to-date ($current_version)" "info"
+                return 0
+                ;;
+            2) # new < current
+                log_message "ModSharp is at a newer version ($current_version) than latest ($latest_version). Skipping downgrade." "info"
+                return 0
+                ;;
+        esac
     fi
 
     log_message "Update available: $latest_version (current: ${current_version:-none})" "info"
 
     # Step 3: Backup core.json if exists
-    if [ -f "/home/container/game/sharp/configs/core.json" ]; then
-        cp "/home/container/game/sharp/configs/core.json" "$CONFIG_BACKUP"
+    if [ -f "$MODSHARP_DIR/configs/core.json" ]; then
+        cp "$MODSHARP_DIR/configs/core.json" "$CONFIG_BACKUP"
         log_message "Backed up core.json" "debug"
     fi
 
@@ -122,8 +132,8 @@ update_modsharp() {
 
     # Step 6: Restore core.json if we backed it up
     if [ -f "$CONFIG_BACKUP" ]; then
-        mkdir -p "/home/container/game/sharp/configs"
-        cp "$CONFIG_BACKUP" "/home/container/game/sharp/configs/core.json"
+        mkdir -p "$MODSHARP_DIR/configs"
+        cp "$CONFIG_BACKUP" "$MODSHARP_DIR/configs/core.json"
         log_message "Restored core.json config" "success"
         rm -f "$CONFIG_BACKUP"
     fi

@@ -32,10 +32,19 @@ update_swiftly() {
         return 0
     fi
 
-    # Check if update needed
-    if [ "$current_version" = "$new_version" ]; then
-        log_message "SwiftlyS2 is up-to-date ($current_version)" "info"
-        return 0
+    # Check if update is needed
+    if [ -n "$current_version" ]; then
+        semver_compare "$new_version" "$current_version"
+        case $? in
+            0) # Equal
+                log_message "SwiftlyS2 is up-to-date ($current_version)" "info"
+                return 0
+                ;;
+            2) # new < current
+                log_message "SwiftlyS2 is at a newer version ($current_version) than latest ($new_version). Skipping downgrade." "info"
+                return 0
+                ;;
+        esac
     fi
 
     if [ -z "$asset_url" ]; then

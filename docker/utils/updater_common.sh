@@ -31,30 +31,28 @@ get_github_release() {
     ' 2>/dev/null
 }
 
-# Get GitHub release info (supports prerelease via PRERELEASE env var)
-# Outputs JSON: {version, asset_url, asset_name, is_prerelease}
-get_github_release() {
-    local repo="$1"
-    local asset_pattern="${2:-.*}"
-    local url="https://api.github.com/repos/$repo/releases"
+# Compare two semantic versions (semver)
+# Returns:
+#   0: if v1 == v2
+#   1: if v1 > v2
+#   2: if v1 < v2
+semver_compare() {
+    local v1=$(echo "$1" | sed 's/v//')
+    local v2=$(echo "$2" | sed 's/v//')
 
-    # Select endpoint based on prerelease setting (log to stderr to not pollute output)
-    if [ "${PRERELEASE:-0}" = "1" ]; then
-        log_message "Checking releases (prereleases enabled) for $repo" "debug" >&2
-    else
-        url="$url/latest"
-        log_message "Checking latest stable release for $repo" "debug" >&2
+    # Handle equality first for performance
+    if [ "$v1" = "$v2" ]; then
+        return 0
     fi
 
-    curl -s "$url" 2>/dev/null | jq --arg p "$asset_pattern" '
-        (if type == "array" then .[0] else . end) //empty |
-        {
-            version: .tag_name,
-            is_prerelease: .prerelease,
-            asset_url: (first(.assets[] | select(.name | test($p)) | .browser_download_url) // ""),
-            asset_name: (first(.assets[] | select(.name | test($p)) | .name) // "")
-        }
-    ' 2>/dev/null
+    # Use sort -V to find the "largest" version
+    local highest=$(printf "%s\n%s" "$v1" "$v2" | sort -V | tail -n1)
+
+    if [ "$v1" = "$highest" ]; then
+        return 1 # v1 > v2
+    else
+        return 2 # v1 < v2
+    fi
 }
 
 # Get current version from version file
@@ -76,7 +74,7 @@ update_version_file() {
     mkdir -p "$(dirname "$VERSION_FILE")"
 
     if [ -f "$VERSION_FILE" ] && grep -q "^$addon=" "$VERSION_FILE"; then
-        sed -i "s/^$addon=.*/$addon=$new_version/" "$VERSION_FILE"
+        sed -i.bak "s/^$addon=.*/$addon=$new_version/" "$VERSION_FILE" && rm -f "$VERSION_FILE.bak"
     else
         echo "$addon=$new_version" >> "$VERSION_FILE"
     fi
@@ -133,19 +131,32 @@ handle_download_and_extract() {
     return 0
 }
 
-# Centralized version checking
+# Centralized version checking using semver
 check_version() {
     local addon="$1"
     local current="${2:-none}"
     local new="$3"
 
-    if [ "$current" != "$new" ]; then
-        log_message "Update available for $addon: $new (current: $current)" "info"
-        return 0
+    if [ "$current" = "none" ] || [ -z "$current" ]; then
+        log_message "Update available for $addon: $new (current: none)" "info"
+        return 0 # New install
     fi
 
-    log_message "$addon is up-to-date ($current)" "debug"
-    return 1
+    semver_compare "$new" "$current"
+    case $? in
+        0) # Equal
+            log_message "$addon is up-to-date ($current)" "debug"
+            return 1
+            ;;
+        1) # new > current
+            log_message "Update available for $addon: $new (current: $current)" "info"
+            return 0
+            ;;
+        2) # new < current
+            log_message "$addon is at a newer version ($current) than latest ($new). Skipping downgrade." "info"
+            return 1
+            ;;
+    esac
 }
 
 # Add addon path to gameinfo.gi if not already present
@@ -192,52 +203,6 @@ add_to_gameinfo() {
         return 0
     else
         log_message "WARNING: ${addon_path} not found after sed insertion, restoring backup" "error"
-        mv "$GAMEINFO_FILE.bak" "$GAMEINFO_FILE"
-        return 1
-    fi
-}
-
-# Remove addon path from gameinfo.gi if present
-# Usage: remove_from_gameinfo "sharp"
-remove_from_gameinfo() {
-    local addon_path="$1"
-    local GAMEINFO_FILE="/home/container/game/csgo/gameinfo.gi"
-
-    if [ ! -f "$GAMEINFO_FILE" ]; then
-        log_message "gameinfo.gi not found at $GAMEINFO_FILE" "debug"
-        return 0
-    fi
-
-    # Check if path exists
-    if ! grep -q "Game[[:blank:]]*${addon_path}" "$GAMEINFO_FILE"; then
-        log_message "${addon_path} not found in gameinfo.gi" "debug"
-        return 0
-    fi
-
-    log_message "Removing ${addon_path} from gameinfo.gi..." "info"
-
-    # Create backup
-    cp "$GAMEINFO_FILE" "$GAMEINFO_FILE.bak" 2>/dev/null || {
-        log_message "Failed to backup gameinfo.gi" "error"
-        return 1
-    }
-
-    # Remove the line containing the addon path
-    sed "/Game[[:space:]]*${addon_path//\//\\/}/d" "$GAMEINFO_FILE.bak" > "$GAMEINFO_FILE"
-
-    if [ $? -ne 0 ]; then
-        log_message "sed command failed, restoring backup" "error"
-        mv "$GAMEINFO_FILE.bak" "$GAMEINFO_FILE"
-        return 1
-    fi
-
-    # Verify it was removed
-    if ! grep -q "Game[[:space:]]*${addon_path}" "$GAMEINFO_FILE"; then
-        log_message "Removed ${addon_path} from gameinfo.gi" "info"
-        rm -f "$GAMEINFO_FILE.bak"
-        return 0
-    else
-        log_message "Failed to remove ${addon_path}, restoring backup" "error"
         mv "$GAMEINFO_FILE.bak" "$GAMEINFO_FILE"
         return 1
     fi
