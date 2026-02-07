@@ -2,18 +2,18 @@
   "_comment": "DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PTERODACTYL PANEL - PTERODACTYL.IO",
   "meta": {
     "version": "PTDL_v2",
-    "update_url": null
+    "update_url": "https://raw.githubusercontent.com/K4ryuu/CS2-Egg/main/pterodactyl/kitsunelab-cs2-egg.json"
   },
-  "exported_at": "2025-11-7T15:31:48+02:00",
+  "exported_at": "2026-02-7T15:31:48+02:00",
   "name": "KitsuneLab CS2 Egg @ K4ryuu",
   "author": "k4ryuu@icloud.com",
   "description": "The SteamRT3 Platform image for Pterodactyl CS2 servers is packed with numerous features, designed to simplify server management and reduce hassle.",
   "features": [],
   "docker_images": {
-    "KitsuneLab CS2 (GitHub - Unlimited)": "ghcr.io/k4ryuu/cs2-egg:latest",
-    "KitsuneLab CS2 Public Beta (GitHub - Unlimited)": "ghcr.io/k4ryuu/cs2-egg:beta",
-    "KitsuneLab CS2 (Docker Hub - Limited)": "docker.io/sples1/k4ryuu-cs2:latest",
-    "KitsuneLab CS2 Public Beta (Docker Hub - Limited)": "docker.io/sples1/k4ryuu-cs2:beta"
+    "KitsuneLab CS2 - GitHub - Unlimited": "ghcr.io/k4ryuu/cs2-egg:latest",
+    "KitsuneLab CS2 Beta - GitHub - Unlimited": "ghcr.io/k4ryuu/cs2-egg:beta",
+    "KitsuneLab CS2 - DockerHub - Limited": "docker.io/sples1/k4ryuu-cs2:latest",
+    "KitsuneLab CS2 Beta - DockerHub - Limited": "docker.io/sples1/k4ryuu-cs2:beta"
   },
   "file_denylist": [],
   "startup": "./game/cs2.sh {{CUSTOM_PARAMS}} -dedicated +ip 0.0.0.0 -port {{SERVER_PORT}} +map {{SRCDS_MAP}} -maxplayers {{SRCDS_MAXPLAYERS}} +sv_setsteamaccount {{STEAM_ACC}} +game_type {{GAME_TYPE}} +game_mode {{GAME_MODE}}",
