@@ -170,6 +170,8 @@ jobs:
               typeValue = typeField.options.find(o => o.name === 'Bug')?.id;
             } else if (labels.includes('feature')) {
               typeValue = typeField.options.find(o => o.name === 'Feature')?.id;
+            } else if (labels.includes('enhancement')) {
+              typeValue = typeField.options.find(o => o.name === 'Enhancement')?.id;
             } else if (labels.includes('documentation')) {
               typeValue = typeField.options.find(o => o.name === 'Documentation')?.id;
             } else if (labels.includes('question')) {
