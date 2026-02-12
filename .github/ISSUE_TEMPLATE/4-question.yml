@@ -2,6 +2,7 @@ name: Question / Support
 description: Ask a question or request help
 title: "[Question]: "
 labels: ["question"]
+projects: ["K4ryuu/8"]
 assignees:
   - K4ryuu
 body:

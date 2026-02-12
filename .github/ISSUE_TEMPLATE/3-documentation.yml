@@ -2,6 +2,7 @@ name: Documentation Issue
 description: Report an issue with documentation
 title: "[Docs]: "
 labels: ["documentation"]
+projects: ["K4ryuu/8"]
 assignees:
   - K4ryuu
 body:

@@ -2,6 +2,7 @@ name: Feature Request
 description: Suggest a new feature or enhancement
 title: "[Feature]: "
 labels: ["feature"]
+projects: ["K4ryuu/8"]
 assignees:
   - K4ryuu
 body:
