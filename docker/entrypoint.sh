@@ -127,38 +127,18 @@ LOGGED_STARTUP=$(echo "${MODIFIED_STARTUP}" | \
     sed -E 's/(\+sv_setsteamaccount\s+[A-Z0-9]{32})/+sv_setsteamaccount ************************/g')
 log_message "Starting server: ${LOGGED_STARTUP}" "info"
 
-# Start GDB debugger in background if port specified
+# GDB mode: use Valve's built-in GAME_DEBUGGER support (cs2.sh line 106)
+# gdbserver launches cs2 as parent process, so no SYS_PTRACE capability needed
 if [ -n "${GDB_DEBUG_PORT}" ]; then
-    (
-        # Wait for CS2 to start and find its PID using /proc
-        for i in {1..30}; do
-            sleep 1
-
-            # Search for CS2 process in /proc
-            for pid in /proc/[0-9]*; do
-                [ -d "$pid" ] || continue
-                cmdline=$(cat "$pid/cmdline" 2>/dev/null | tr '\0' ' ')
-
-                if [[ "$cmdline" =~ game/bin/.*/cs2 ]] || [[ "$cmdline" =~ /cs2\.sh ]]; then
-                    CS2_PID=$(basename "$pid")
-                    break 2
-                fi
-            done
-        done
-
-        if [ -n "${CS2_PID}" ]; then
-            log_message "Starting GDB debugger on port ${GDB_DEBUG_PORT} (PID: ${CS2_PID})" "info"
-            log_message "The console may hang until you resume it through IDA Pro or GDB client" "warning"
-            gdbserver :${GDB_DEBUG_PORT} --attach ${CS2_PID} > /tmp/gdb.log 2>&1
-            log_message "GDB debugger stopped" "warning"
-        else
-            log_message "CS2 process not found after 30s timeout" "error"
-        fi
-    ) &
+    export GAME_DEBUGGER="gdbserver --no-disable-randomization :${GDB_DEBUG_PORT}"
+    log_message "GDB mode: Server will start under gdbserver on port ${GDB_DEBUG_PORT}" "info"
+    log_message "Server will wait for debugger connection before starting" "warning"
 fi
 
 # Actually start the server and handle its output
-script -qfc "$MODIFIED_STARTUP" /dev/null 2>&1 | while IFS= read -r line; do
+START_CMD="script -qfc \"$MODIFIED_STARTUP\" /dev/null 2>&1"
+
+eval "$START_CMD" | while IFS= read -r line; do
     line="${line%[[:space:]]}"
     [[ "$line" =~ Segmentation\ fault.*"${GAMEEXE}" ]] && continue
 

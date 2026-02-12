@@ -54,6 +54,12 @@ Now you can:
 - Verify firewall allows TCP on debug port
 - Check `/tmp/gdb.log` in container
 
+**Can't stop the server with Stop button?**
+
+- The `quit` command and graceful shutdown do not work while GDB is attached
+- Use the **Kill** button in Pterodactyl to force stop the server
+- This is a Docker limitation with gdbserver signal handling
+
 **Performance issues?**
 
 - Expected with debugging enabled

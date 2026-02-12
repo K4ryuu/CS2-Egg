@@ -1,3 +1,9 @@
+-- update - 2026.02.12
+
+- fix(gdb): Replaced background gdbserver --attach with Valve's native GAME_DEBUGGER env var
+- fix(gdb): Suspend/breakpoints now work without SYS_PTRACE Docker capability
+- fix(gdb): gdbserver launches cs2 as parent process instead of attaching externally
+
 -- update - 2026.02.05
 
 - fix: Update ModSharp directory paths for consistency in backup and restore operations
