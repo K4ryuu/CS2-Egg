@@ -1,0 +1,39 @@
+name: Feature Request
+description: Suggest a new feature or enhancement
+title: "[Feature]: "
+labels: ["feature"]
+assignees:
+  - K4ryuu
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a new feature! Please describe your idea in detail.
+
+        ---
+
+        💖 **I automatically detect GitHub Sponsors!**
+        Sponsors are automatically labeled. Priority support is available from the **$15/month tier** and above. [Become a Sponsor](https://github.com/sponsors/K4ryuu)
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: How important is this feature?
+      options:
+        - Low - Nice to have
+        - Medium - Would improve experience
+        - High - Important for many users
+        - Critical - Essential feature
+      default: 0
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Feature Description
+      description: Describe the feature you'd like to see. Include any mockups, examples, or additional context that may help.
+      placeholder: I would like to see...
+    validations:
+      required: true

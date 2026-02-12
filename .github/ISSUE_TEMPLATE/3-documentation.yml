@@ -1,0 +1,54 @@
+name: Documentation Issue
+description: Report an issue with documentation
+title: "[Docs]: "
+labels: ["documentation"]
+assignees:
+  - K4ryuu
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Help me improve my documentation!
+
+        ---
+
+        💖 **I automatically detect GitHub Sponsors!**
+        Sponsors are automatically labeled. Priority support is available from the **$15/month tier** and above. [Become a Sponsor](https://github.com/sponsors/K4ryuu)
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: How important is this documentation issue?
+      options:
+        - Low - Minor improvement
+        - Medium - Affects understanding
+        - High - Causes confusion
+        - Critical - Incorrect or missing critical info
+      default: 0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: doc-type
+    attributes:
+      label: Documentation Type
+      description: What type of documentation issue is this?
+      options:
+        - Missing documentation
+        - Incorrect information
+        - Unclear explanation
+        - Typo or formatting issue
+        - Outdated content
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: issue
+    attributes:
+      label: Issue Description
+      description: What's wrong with the current documentation? Include the location, suggestions for improvement, and any screenshots that may help.
+      placeholder: The documentation says... but it should say...
+    validations:
+      required: true
