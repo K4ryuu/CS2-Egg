@@ -1,14 +1,17 @@
-name: Issue Automation
+name: Project Automation
 
 on:
   issues:
-    types: [opened, labeled, unlabeled]
+    types: [opened, reopened, labeled, unlabeled]
+  pull_request:
+    types: [opened, reopened]
 
 jobs:
-  automate-issues:
+  automate-project:
     runs-on: ubuntu-latest
     permissions:
       issues: write
+      pull-requests: write
       contents: read
 
     steps:
@@ -17,17 +20,19 @@ jobs:
         with:
           github-token: ${{ secrets.PROJECT_TOKEN }}
           script: |
-            const issue = context.payload.issue;
-            const issueAuthor = issue.user.login;
-            const issueBody = issue.body || '';
-            const labels = issue.labels.map(l => l.name);
-            const isNewIssue = context.payload.action === 'opened';
+            const isPR = !!context.payload.pull_request;
+            const item = isPR ? context.payload.pull_request : context.payload.issue;
+            const itemAuthor = item.user.login;
+            const itemBody = item.body || '';
+            const labels = (item.labels || []).map(l => l.name);
+            const isNew = context.payload.action === 'opened';
+            const isReopened = context.payload.action === 'reopened';
 
-            // ===== STEP 1: Auto-label (only for new issues) =====
-            if (isNewIssue) {
+            // ===== STEP 1: Auto-label (only for new issues, skip for PRs) =====
+            if (!isPR && isNew) {
               // Extract priority from issue body
-              const priorityMatch = issueBody.match(/### Priority\s*\n\s*(.+)/i) ||
-                                   issueBody.match(/### Urgency\s*\n\s*(.+)/i);
+              const priorityMatch = itemBody.match(/### Priority\s*\n\s*(.+)/i) ||
+                                   itemBody.match(/### Urgency\s*\n\s*(.+)/i);
 
               let priorityLabel = null;
               if (priorityMatch) {
@@ -48,10 +53,10 @@ jobs:
                 await github.rest.issues.addLabels({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
-                  issue_number: issue.number,
+                  issue_number: item.number,
                   labels: [priorityLabel]
                 });
-                labels.push(priorityLabel); // Add to labels array for project field mapping
+                labels.push(priorityLabel);
               }
 
               // Check sponsor status
@@ -84,25 +89,25 @@ jobs:
 
                 const sponsors = result.user.sponsorshipsAsMaintainer.nodes;
                 const isSponsor = sponsors.some(s =>
-                  s.sponsorEntity.login.toLowerCase() === issueAuthor.toLowerCase()
+                  s.sponsorEntity.login.toLowerCase() === itemAuthor.toLowerCase()
                 );
 
                 if (isSponsor) {
                   await github.rest.issues.addLabels({
                     owner: context.repo.owner,
                     repo: context.repo.repo,
-                    issue_number: issue.number,
+                    issue_number: item.number,
                     labels: ['sponsor']
                   });
-                  labels.push('sponsor'); // Add to labels array for project field mapping
+                  labels.push('sponsor');
 
                   const sponsorship = sponsors.find(s =>
-                    s.sponsorEntity.login.toLowerCase() === issueAuthor.toLowerCase()
+                    s.sponsorEntity.login.toLowerCase() === itemAuthor.toLowerCase()
                   );
                   const tier = sponsorship?.tier?.monthlyPriceInDollars || 0;
 
                   let thankYouMessage = `💖 **Thank you for being a GitHub Sponsor!**\n\n`;
-                  thankYouMessage += `Hi @${issueAuthor}, thank you so much for your support! `;
+                  thankYouMessage += `Hi @${itemAuthor}, thank you so much for your support! `;
 
                   if (tier >= 15) {
                     thankYouMessage += `As a **$${tier}/month sponsor**, your issue will receive **priority review and triage**.\n\n`;
@@ -115,7 +120,7 @@ jobs:
                   await github.rest.issues.createComment({
                     owner: context.repo.owner,
                     repo: context.repo.repo,
-                    issue_number: issue.number,
+                    issue_number: item.number,
                     body: thankYouMessage
                   });
                 }
@@ -159,94 +164,67 @@ jobs:
             const priorityField = fields.find(f => f.name === 'Priority');
             const sponsorField = fields.find(f => f.name === 'Sponsor');
 
-            // Determine field values from labels
+            // Determine field values
             let typeValue = null;
             let priorityValue = null;
             let sponsorValue = null;
             let statusValue = statusField.options.find(o => o.name === 'Backlog')?.id;
 
-            // Type mapping
-            if (labels.includes('bug')) {
-              typeValue = typeField.options.find(o => o.name === 'Bug')?.id;
-            } else if (labels.includes('feature')) {
-              typeValue = typeField.options.find(o => o.name === 'Feature')?.id;
-            } else if (labels.includes('enhancement')) {
-              typeValue = typeField.options.find(o => o.name === 'Enhancement')?.id;
-            } else if (labels.includes('documentation')) {
-              typeValue = typeField.options.find(o => o.name === 'Documentation')?.id;
-            } else if (labels.includes('question')) {
-              typeValue = typeField.options.find(o => o.name === 'Question')?.id;
-            }
-
-            // Priority mapping
-            if (labels.includes('priority: critical')) {
-              priorityValue = priorityField.options.find(o => o.name === 'Critical')?.id;
-            } else if (labels.includes('priority: high')) {
-              priorityValue = priorityField.options.find(o => o.name === 'High')?.id;
-            } else if (labels.includes('priority: medium')) {
-              priorityValue = priorityField.options.find(o => o.name === 'Medium')?.id;
-            } else if (labels.includes('priority: low')) {
-              priorityValue = priorityField.options.find(o => o.name === 'Low')?.id;
-            }
-
-            // Sponsor mapping
-            if (labels.includes('sponsor')) {
-              sponsorValue = sponsorField.options.find(o => o.name === 'Yes')?.id;
+            if (isPR) {
+              // PR always gets Type = 'PR'
+              typeValue = typeField.options.find(o => o.name === 'PR')?.id;
             } else {
-              sponsorValue = sponsorField.options.find(o => o.name === 'No')?.id;
+              // Issue type mapping from labels
+              if (labels.includes('bug')) {
+                typeValue = typeField.options.find(o => o.name === 'Bug')?.id;
+              } else if (labels.includes('feature')) {
+                typeValue = typeField.options.find(o => o.name === 'Feature')?.id;
+              } else if (labels.includes('enhancement')) {
+                typeValue = typeField.options.find(o => o.name === 'Enhancement')?.id;
+              } else if (labels.includes('documentation')) {
+                typeValue = typeField.options.find(o => o.name === 'Documentation')?.id;
+              } else if (labels.includes('question')) {
+                typeValue = typeField.options.find(o => o.name === 'Question')?.id;
+              }
+
+              // Priority mapping (issues only)
+              if (labels.includes('priority: critical')) {
+                priorityValue = priorityField.options.find(o => o.name === 'Critical')?.id;
+              } else if (labels.includes('priority: high')) {
+                priorityValue = priorityField.options.find(o => o.name === 'High')?.id;
+              } else if (labels.includes('priority: medium')) {
+                priorityValue = priorityField.options.find(o => o.name === 'Medium')?.id;
+              } else if (labels.includes('priority: low')) {
+                priorityValue = priorityField.options.find(o => o.name === 'Low')?.id;
+              }
+
+              // Sponsor mapping (issues only)
+              if (labels.includes('sponsor')) {
+                sponsorValue = sponsorField.options.find(o => o.name === 'Yes')?.id;
+              } else {
+                sponsorValue = sponsorField.options.find(o => o.name === 'No')?.id;
+              }
             }
 
-            // Check if issue is already in project
-            let itemId = null;
-            try {
-              const projectItems = await github.graphql(`
-                query {
-                  node(id: "${projectId}") {
-                    ... on ProjectV2 {
-                      items(first: 100) {
-                        nodes {
-                          id
-                          content {
-                            ... on Issue {
-                              number
-                            }
-                          }
-                        }
-                      }
-                    }
+            // Add item to project (idempotent - returns existing item if already there)
+            const addResult = await github.graphql(`
+              mutation {
+                addProjectV2ItemById(input: {
+                  projectId: "${projectId}"
+                  contentId: "${item.node_id}"
+                }) {
+                  item {
+                    id
                   }
                 }
-              `);
-
-              const existingItem = projectItems.node.items.nodes.find(
-                item => item.content?.number === issue.number
-              );
-              itemId = existingItem?.id;
-            } catch (error) {
-              console.log('Could not check existing items:', error.message);
-            }
-
-            // Add item to project if not already there
-            if (!itemId) {
-              const addResult = await github.graphql(`
-                mutation {
-                  addProjectV2ItemById(input: {
-                    projectId: "${projectId}"
-                    contentId: "${issue.node_id}"
-                  }) {
-                    item {
-                      id
-                    }
-                  }
-                }
-              `);
-              itemId = addResult.addProjectV2ItemById.item.id;
-            }
+              }
+            `);
+            const itemId = addResult.addProjectV2ItemById.item.id;
 
             // Update fields
             const updates = [];
 
-            if (statusValue && isNewIssue) {
+            if (statusValue && (isNew || isReopened)) {
               updates.push(github.graphql(`
                 mutation {
                   updateProjectV2ItemFieldValue(input: {
@@ -316,4 +294,4 @@ jobs:
 
             await Promise.all(updates);
 
-            console.log('✅ Issue processed successfully!');
+            console.log(`✅ ${isPR ? 'PR' : 'Issue'} processed successfully!`);
