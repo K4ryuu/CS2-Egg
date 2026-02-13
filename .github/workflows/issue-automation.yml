@@ -15,20 +15,19 @@ jobs:
       contents: read
 
     steps:
-      - name: Auto-label and add to project
+      # STEP 1: Auto-label and comment with BOT identity 🤖
+      - name: Auto-label and sponsor detection
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.PROJECT_TOKEN }}
+          github-token: ${{ github.token }}  # Built-in token = github-actions[bot]
           script: |
             const isPR = !!context.payload.pull_request;
             const item = isPR ? context.payload.pull_request : context.payload.issue;
             const itemAuthor = item.user.login;
             const itemBody = item.body || '';
-            const labels = (item.labels || []).map(l => l.name);
             const isNew = context.payload.action === 'opened';
-            const isReopened = context.payload.action === 'reopened';
 
-            // ===== STEP 1: Auto-label (only for new issues, skip for PRs) =====
+            // Only label new issues (not PRs)
             if (!isPR && isNew) {
               // Extract priority from issue body
               const priorityMatch = itemBody.match(/### Priority\s*\n\s*(.+)/i) ||
@@ -37,7 +36,7 @@ jobs:
               let priorityLabel = null;
               if (priorityMatch) {
                 const selection = priorityMatch[1].trim().toLowerCase();
-                // Match priority at the START of the selection to avoid false matches like "not critical"
+                // Match priority at the START to avoid false matches like "not critical"
                 if (selection.startsWith('critical')) {
                   priorityLabel = 'priority: critical';
                 } else if (selection.startsWith('high')) {
@@ -57,7 +56,7 @@ jobs:
                   issue_number: item.number,
                   labels: [priorityLabel]
                 });
-                labels.push(priorityLabel);
+                console.log(`✅ Added label: ${priorityLabel}`);
               }
 
               // Check sponsor status
@@ -100,7 +99,6 @@ jobs:
                     issue_number: item.number,
                     labels: ['sponsor']
                   });
-                  labels.push('sponsor');
 
                   const sponsorship = sponsors.find(s =>
                     s.sponsorEntity.login.toLowerCase() === itemAuthor.toLowerCase()
@@ -124,16 +122,38 @@ jobs:
                     issue_number: item.number,
                     body: thankYouMessage
                   });
+                  console.log(`✅ Added sponsor label and comment`);
                 }
               } catch (error) {
                 // Silently fail - don't comment on errors
+                console.log(`⚠️ Sponsor check failed: ${error.message}`);
               }
             }
 
-            // ===== STEP 2: Add to project and update fields =====
+            console.log(`✅ Labeling step completed as github-actions[bot]`);
+
+      # STEP 2: Add to GitHub Projects with USER identity 👤
+      - name: Add to GitHub Project
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PROJECT_TOKEN }}  # Personal token = your identity
+          script: |
+            const isPR = !!context.payload.pull_request;
+            const item = isPR ? context.payload.pull_request : context.payload.issue;
+            const isNew = context.payload.action === 'opened';
+            const isReopened = context.payload.action === 'reopened';
+
+            // Fetch fresh labels (in case step 1 added new ones)
+            const issueData = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: item.number
+            });
+            const labels = issueData.data.labels.map(l => l.name);
+
             const projectId = 'PVT_kwHOBjsGhc4BPD0C';
 
-            // Get field IDs
+            // Get project field IDs
             const projectFields = await github.graphql(`
               query {
                 node(id: "${projectId}") {
@@ -172,10 +192,9 @@ jobs:
             let statusValue = statusField.options.find(o => o.name === 'Backlog')?.id;
 
             if (isPR) {
-              // PR always gets Type = 'PR'
               typeValue = typeField.options.find(o => o.name === 'PR')?.id;
             } else {
-              // Issue type mapping from labels
+              // Issue type mapping
               if (labels.includes('bug')) {
                 typeValue = typeField.options.find(o => o.name === 'Bug')?.id;
               } else if (labels.includes('feature')) {
@@ -188,7 +207,7 @@ jobs:
                 typeValue = typeField.options.find(o => o.name === 'Question')?.id;
               }
 
-              // Priority mapping (issues only)
+              // Priority mapping
               if (labels.includes('priority: critical')) {
                 priorityValue = priorityField.options.find(o => o.name === 'Critical')?.id;
               } else if (labels.includes('priority: high')) {
@@ -199,7 +218,7 @@ jobs:
                 priorityValue = priorityField.options.find(o => o.name === 'Low')?.id;
               }
 
-              // Sponsor mapping (issues only)
+              // Sponsor mapping
               if (labels.includes('sponsor')) {
                 sponsorValue = sponsorField.options.find(o => o.name === 'Yes')?.id;
               } else {
@@ -207,7 +226,7 @@ jobs:
               }
             }
 
-            // Add item to project (idempotent - returns existing item if already there)
+            // Add to project
             const addResult = await github.graphql(`
               mutation {
                 addProjectV2ItemById(input: {
@@ -222,7 +241,7 @@ jobs:
             `);
             const itemId = addResult.addProjectV2ItemById.item.id;
 
-            // Update fields
+            // Update project fields
             const updates = [];
 
             if (statusValue && (isNew || isReopened)) {
@@ -234,9 +253,7 @@ jobs:
                     fieldId: "${statusField.id}"
                     value: {singleSelectOptionId: "${statusValue}"}
                   }) {
-                    projectV2Item {
-                      id
-                    }
+                    projectV2Item { id }
                   }
                 }
               `));
@@ -251,9 +268,7 @@ jobs:
                     fieldId: "${typeField.id}"
                     value: {singleSelectOptionId: "${typeValue}"}
                   }) {
-                    projectV2Item {
-                      id
-                    }
+                    projectV2Item { id }
                   }
                 }
               `));
@@ -268,9 +283,7 @@ jobs:
                     fieldId: "${priorityField.id}"
                     value: {singleSelectOptionId: "${priorityValue}"}
                   }) {
-                    projectV2Item {
-                      id
-                    }
+                    projectV2Item { id }
                   }
                 }
               `));
@@ -285,9 +298,7 @@ jobs:
                     fieldId: "${sponsorField.id}"
                     value: {singleSelectOptionId: "${sponsorValue}"}
                   }) {
-                    projectV2Item {
-                      id
-                    }
+                    projectV2Item { id }
                   }
                 }
               `));
@@ -295,4 +306,4 @@ jobs:
 
             await Promise.all(updates);
 
-            console.log(`✅ ${isPR ? 'PR' : 'Issue'} processed successfully!`);
+            console.log(`✅ Added to project with your identity (projects permission)`);
