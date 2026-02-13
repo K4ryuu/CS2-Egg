@@ -37,13 +37,14 @@ jobs:
               let priorityLabel = null;
               if (priorityMatch) {
                 const selection = priorityMatch[1].trim().toLowerCase();
-                if (selection.includes('critical')) {
+                // Match priority at the START of the selection to avoid false matches like "not critical"
+                if (selection.startsWith('critical')) {
                   priorityLabel = 'priority: critical';
-                } else if (selection.includes('high')) {
+                } else if (selection.startsWith('high')) {
                   priorityLabel = 'priority: high';
-                } else if (selection.includes('medium')) {
+                } else if (selection.startsWith('medium')) {
                   priorityLabel = 'priority: medium';
-                } else if (selection.includes('low')) {
+                } else if (selection.startsWith('low')) {
                   priorityLabel = 'priority: low';
                 }
               }
