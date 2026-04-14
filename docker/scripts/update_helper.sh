@@ -25,26 +25,27 @@ detect_daemon_vpk() {
         echo "${n} files, ${s}"
     }
 
-    if find -L /home/container/game/csgo -maxdepth 3 -name "*.vpk" -type f 2>/dev/null | grep -q .; then
-        log_message "VPK files detected ($(_vpk_info)) - centrally managed, skipping internal updates" "info"
-        SRCDS_STOP_UPDATE=1
-    elif find /home/container/game/csgo -maxdepth 3 -name "*.vpk" 2>/dev/null | grep -q .; then
-        log_message "VPK files detected - waiting for daemon synchronization..." "info"
-        local _waited=0
-        while [ $_waited -lt 10 ]; do
-            sleep 1; ((_waited++)) || true
-            if find -L /home/container/game/csgo -maxdepth 3 -name "*.vpk" -type f 2>/dev/null | grep -q .; then
-                log_message "Synchronized (${_waited}s) - $(_vpk_info) centrally managed, skipping internal updates" "info"
-                SRCDS_STOP_UPDATE=1
-                break
-            fi
-        done
-        if [ "${SRCDS_STOP_UPDATE:-0}" -eq 0 ]; then
-            log_message "Daemon sync timed out - daemon not running or mount failed." "warning"
-            log_message "  → Check: journalctl -u cs2-vpk-daemon -n 50" "warning"
-            log_message "  → Install: curl -fsSL https://raw.githubusercontent.com/K4ryuu/CS2-Egg/main/misc/install-cs2-update.sh | sudo bash" "warning"
-        fi
+    # No VPK files or symlinks at all → not in daemon mode
+    if ! find /home/container/game/csgo -maxdepth 3 -name "*.vpk" 2>/dev/null | grep -q .; then
+        return 0
     fi
+
+    # VPK symlinks exist - wait for daemon to mount CS2_DIR.
+    # Daemon and entrypoint start concurrently; mount may take a few seconds.
+    local _waited=0
+    while [ $_waited -lt 60 ]; do
+        if find -L /home/container/game/csgo -maxdepth 3 -name "*.vpk" -type f 2>/dev/null | grep -q .; then
+            log_message "Daemon ready ($(_vpk_info)) - centrally managed, skipping internal updates" "info"
+            SRCDS_STOP_UPDATE=1
+            return 0
+        fi
+        sleep 1; ((_waited++)) || true
+        [ $((_waited % 10)) -eq 0 ] && log_message "Waiting for daemon mount... (${_waited}s)" "info"
+    done
+
+    log_message "Daemon mount timed out after 60s - daemon not running or mount failed." "warning"
+    log_message "  → Check: journalctl -u cs2-vpk-daemon -n 50" "warning"
+    log_message "  → Install: curl -fsSL https://raw.githubusercontent.com/K4ryuu/CS2-Egg/main/misc/install-cs2-update.sh | sudo bash" "warning"
 }
 
 # Removes local SteamCMD only when daemon VPKs are confirmed accessible.
