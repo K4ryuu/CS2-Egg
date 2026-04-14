@@ -15,6 +15,20 @@ VPK Sync allows multiple CS2 servers to share game files from a single centraliz
 
 > **No Pterodactyl/Pelican Panel modifications required.** The script works directly with Docker and Wings - no PR patches, no mount setup, no egg variable configuration.
 
+## Startup Performance
+
+With the centralized script and VPK sync, new server startup is near-instant:
+
+| Step | Time |
+|------|------|
+| Daemon detects container start | ~0s |
+| Daemon mounts CS2_DIR into container | 1–3s |
+| Entrypoint detects VPKs, skips SteamCMD | ~0s |
+| CS2 server process starts | ~2s |
+| **Total (new server, first boot)** | **~5 seconds** |
+
+This replaces what would otherwise be a 10–30 minute SteamCMD download on first boot.
+
 ## Storage Savings
 
 | Servers | Without Sync | With Sync | Savings      |
