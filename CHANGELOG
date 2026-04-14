@@ -1,3 +1,19 @@
+-- update - 2026.04.14
+
+- feat: Pelican panel support
+- feat(modsharp): admins.jsonc preserved across updates (backup + restore alongside core.json)
+- feat(centralized): Installer script (install-cs2-update.sh) - guided wizard, systemd daemon setup, cron registration, auto troubleshoot
+- feat(centralized): AUTO_RESTART_SERVERS default changed to true
+- feat(centralized): UPDATE_CHECK_INTERVAL default changed to \* (every cron run, rate-limited by script)
+- feat(metamod): Switched to GitHub releases, always uses prerelease channel (CS2 builds)
+- feat(metamod): GitHub mirror fallback (ghproxy.net, gh.llkk.cc) for restricted regions. This is for Asian community with love who reported their issue!
+- feat(updater): All GitHub downloads automatically try mirrors on failure (1 attempt per source).
+- feat(cleanup): steamcmd, steamapps, Steam directories removed when game files are externally managed (saves ~200MB+)
+- refactor(update_helper): SteamCMD auto-removed from container when daemon VPKs confirmed accessible
+- deprecation(sync): SYNC_LOCATION support marked for removal 2026-10-01
+- docs(vpk-sync): Rewritten around installer script, storage savings table, push methods, lock behavior
+- docs(readme): Added Centralized Update & VPK Sync section with installer one-liner
+
 -- update - 2026.02.12
 
 - fix(gdb): Replaced background gdbserver --attach with Valve's native GAME_DEBUGGER env var

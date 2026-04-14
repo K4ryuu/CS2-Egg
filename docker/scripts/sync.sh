@@ -29,9 +29,10 @@ format_bytes() {
 # - Way less bandwidth and disk usage
 # - Configs stay separate per-server
 
+# ! TODO: Remove sync_files() and sync_cfg_files() after 2026-10-01 (SYNC_LOCATION deprecated)
 sync_files() {
     # Bail early if sync isn't configured
-    if [ -z "${SYNC_LOCATION}" ] || [ "${SYNC_LOCATION}" == "" ]; then
+    if [ ! "${SYNC_LOCATION+defined}" = "defined" ] || [ -z "${SYNC_LOCATION}" ]; then
         return 0
     fi
 
@@ -40,10 +41,9 @@ sync_files() {
 
     # Make sure the source directory actually exists
     if [ ! -d "$src_dir" ]; then
-        log_message "Sync location not found: $src_dir" "error"
-        log_message "SYNC_LOCATION directory not found: $src_dir" "error"
-        log_message "Make sure SYNC_LOCATION matches the path where your files are actually mounted to (TARGET)." "error"
-        exit 1
+        log_message "SYNC_LOCATION directory not found: $src_dir - skipping VPK sync" "warning"
+        log_message "If using centralized VPK push, clear the SYNC_LOCATION variable on this server." "warning"
+        return 0
     fi
 
     log_message "Syncing VPK files..." "info"
@@ -97,14 +97,14 @@ sync_files() {
 
     local human_total
     human_total=$(format_bytes "$vpk_total_size")
-    log_message "VPK sync complete — linked ${vpk_count} file(s), total VPK size ${human_total} (approx. per-server saving)" "success"
+    log_message "VPK sync complete - linked ${vpk_count} file(s), total VPK size ${human_total} (approx. per-server saving)" "success"
 
     return 0
 }
 
 sync_cfg_files() {
     # Skip if sync isn't set up
-    if [ -z "${SYNC_LOCATION}" ] || [ "${SYNC_LOCATION}" == "" ]; then
+    if [ ! "${SYNC_LOCATION+defined}" = "defined" ] || [ -z "${SYNC_LOCATION}" ]; then
         return 0
     fi
 

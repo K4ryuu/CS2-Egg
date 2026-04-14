@@ -1,5 +1,5 @@
 <a name="readme-top"></a>
- 
+
 ![GitHub Repo stars](https://img.shields.io/github/stars/K4ryuu/CS2-Egg?style=for-the-badge)
 ![GitHub issues](https://img.shields.io/github/issues/K4ryuu/CS2-Egg?style=for-the-badge)
 ![GitHub](https://img.shields.io/github/license/K4ryuu/CS2-Egg?style=for-the-badge)
@@ -16,7 +16,7 @@
 <div align="center">
   <h1 align="center">KitsuneLab©</h1>
   <h3 align="center">CS2 Egg</h3>
-  <a align="center">Production-ready CS2 Pterodactyl Egg with automated updates, intelligent cleanup, auto-restart on game updates, and advanced configuration management.</a>
+  <a align="center">Production-ready CS2 Pterodactyl & Pelican Egg with automated updates, intelligent cleanup, auto-restart on game updates, and advanced configuration management.</a>
 
   <p align="center">
     <br />
@@ -54,7 +54,28 @@ Every contribution helps me dedicate more time to development, support, and crea
 
 ⭐ **Or support me for free by starring this repository!**
 
+## Centralized Update & VPK Sync
+
+Run CS2 on multiple servers without storing 55GB per server. One installation, shared across all containers.
+
+A guided **installation wizard** handles everything - download, configuration, systemd daemon, and cron setup. Default options work for most setups.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/K4ryuu/CS2-Egg/main/misc/install-cs2-update.sh | sudo bash
+```
+
+> **Recommended:** run with default options. Just press Enter through the wizard.
+
+→ [Full documentation](docs/features/vpk-sync.md)
+
 ## System Requirements
+
+**Supported Panels**
+
+| Panel           | Status                |
+| --------------- | --------------------- |
+| **Pterodactyl** | ✅ Supported & Tested |
+| **Pelican**     | ✅ Supported & Tested |
 
 **Supported Operating Systems** (for VPK Sync & Centralized Updates)
 
@@ -76,7 +97,7 @@ The centralized update script automatically detects your OS version and installs
 - **[SwiftlyS2](https://github.com/swiftly-solution/swiftlys2)** → Standalone C# framework v2
 - **[ModSharp](https://github.com/Kxnrl/modsharp-public)** → Standalone C# platform with .NET 9 runtime
 
-Each framework can be enabled/disabled independently via Pterodactyl panel. Auto-updates on server restart while enabled.
+Each framework can be enabled/disabled independently via Pterodactyl/Pelican panel. Auto-updates on server restart while enabled.
 
 ## Features
 

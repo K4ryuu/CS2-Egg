@@ -4,10 +4,10 @@
     "version": "PTDL_v2",
     "update_url": "https://raw.githubusercontent.com/K4ryuu/CS2-Egg/main/pterodactyl/kitsunelab-cs2-egg.json"
   },
-  "exported_at": "2026-02-7T15:31:48+02:00",
+  "exported_at": "2026-03-30T16:51:51+00:00",
   "name": "KitsuneLab CS2 Egg @ K4ryuu",
   "author": "k4ryuu@icloud.com",
-  "description": "The SteamRT3 Platform image for Pterodactyl CS2 servers is packed with numerous features, designed to simplify server management and reduce hassle.",
+  "description": "The SteamRT3 Platform image for Pterodactyl & Pelican CS2 servers is packed with numerous features, designed to simplify server management and reduce hassle.",
   "features": [],
   "docker_images": {
     "KitsuneLab CS2 - GitHub - Unlimited": "ghcr.io/k4ryuu/cs2-egg:latest",
@@ -209,16 +209,6 @@
       "user_viewable": true,
       "user_editable": true,
       "rules": "required|boolean",
-      "field_type": "text"
-    },
-    {
-      "name": "VPK Sync",
-      "description": "Host directory path containing centralized CS2 game files for syncing. Enables VPK symlinking for massive storage savings. Requires Pterodactyl mount configuration (documentation on GitHub). Leave empty to disable.",
-      "env_variable": "SYNC_LOCATION",
-      "default_value": "",
-      "user_viewable": false,
-      "user_editable": false,
-      "rules": "nullable|string",
       "field_type": "text"
     },
     {

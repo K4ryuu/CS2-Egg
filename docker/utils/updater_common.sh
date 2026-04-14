@@ -86,23 +86,27 @@ handle_download_and_extract() {
     local output_file="$2"
     local extract_dir="$3"
     local file_type="$4"  # "zip" or "tar.gz"
+    # For GitHub URLs, build a list of mirrors to try (helps users in restricted regions)
+    local -a _urls=("$url")
+    if [[ "$url" == *"github.com"* ]] || [[ "$url" == *"githubusercontent.com"* ]]; then
+        _urls+=(
+            "https://ghproxy.net/$url"
+            "https://gh.llkk.cc/$url"
+        )
+    fi
 
-    log_message "Downloading from: $url" "debug"
-
-    # Download with timeout and retry
-    local max_retries=3
-    local retry=0
-    while [ $retry -lt $max_retries ]; do
-        if curl -fsSL -m 300 -o "$output_file" "$url"; then
+    local _ok=false
+    for _url in "${_urls[@]}"; do
+        log_message "Downloading from: $_url" "debug"
+        if curl -fsSL -m 300 -A "Mozilla/5.0" -o "$output_file" "$_url"; then
+            _ok=true
             break
         fi
-        ((retry++))
-        log_message "Download failed (attempt $retry/$max_retries)" "warning"
-        sleep 5
+        log_message "Download failed, trying next mirror..." "warning"
     done
 
-    if [ $retry -eq $max_retries ]; then
-        log_message "Failed to download after $max_retries attempts" "error"
+    if ! $_ok; then
+        log_message "All download sources failed" "error"
         return 1
     fi
 

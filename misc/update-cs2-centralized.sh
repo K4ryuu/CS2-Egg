@@ -1,12 +1,16 @@
 #!/bin/bash
 # KitsuneLab CS2 Centralized Update Script
-# Automatically updates CS2 files and optionally restarts all affected servers
-# Designed for use with VPK Sync feature
+# Automatically updates CS2 files and pushes them to all server containers
 #
 # Usage: ./update-cs2-centralized.sh [--simulate]
-#   --simulate    Skip SteamCMD update, simulate update and trigger restart logic
+#        ./update-cs2-centralized.sh --daemon
 #
-# Version: 1.0.21
+#   --simulate    Skip SteamCMD update, simulate update and trigger restart logic
+#   --daemon      Run as event listener daemon - pushes game files instantly when
+#                 a CS2 container starts (new server or restart). Install as a
+#                 systemd service for automatic startup.
+#
+# Version: 1.0.40
 
 set -euo pipefail
 
@@ -35,7 +39,7 @@ SERVER_IMAGE="sples1/k4ryuu-cs2 ghcr.io/k4ryuu/cs2-egg"
 
 # Optional: Enable automatic server restart after update (true/false)
 # Set to "false" if you want servers to sync on next manual restart
-AUTO_RESTART_SERVERS="false"
+AUTO_RESTART_SERVERS="true"
 
 # Optional: Validate game files integrity during update (true/false)
 # Set to "false" for faster updates (recommended for cron)
@@ -47,9 +51,22 @@ VALIDATE_INSTALL="false"
 # Keeps last 3 versions as backup, validates before applying
 AUTO_UPDATE_SCRIPT="true"
 
-# Optional: Interval between update checks in seconds (default: 600 = 10 minutes)
-# Script will only check for updates if this interval has elapsed
-UPDATE_CHECK_INTERVAL="600"
+# Optional: Interval between update checks in seconds
+# "*" = check every cron run (recommended with * * * * * cron)
+# Number = minimum seconds between checks (e.g. 600 = at most once per 10 minutes)
+UPDATE_CHECK_INTERVAL="*"
+
+# Optional: Push updated game files directly into server volumes after each update
+# This replaces the need for Pterodactyl/Pelican mount config + SYNC_LOCATION on the egg
+# "symlink"  = symlinks to CS2_DIR, panel sees ~0 disk usage per server (default)
+#              CS2_DIR is bind-mounted read-only into each container automatically
+#              requires kernel 5.2+ (Ubuntu 20.04+), python3 on the host
+# "hardlink" = hardlinks to CS2_DIR inodes, zero extra REAL disk space but panel
+#              disk quota counts full size (~53GB) - use only if quota doesn't matter
+#              falls back to copy if CS2_DIR and panel volumes are on different filesystems
+# "copy"     = full copy per server, each server owns its files, writable
+# "off"      = disable push, servers won't receive game files automatically
+VPK_PUSH_METHOD="symlink"
 
 # ! ============================================================================
 # ! DO NOT EDIT BELOW THIS LINE UNLESS YOU KNOW WHAT YOU'RE DOING
@@ -88,6 +105,16 @@ if [[ -t 1 ]] && [[ -z "${NO_COLOR:-}" ]]; then
 else
     BOLD=""; DIM=""; RED=""; GREEN=""; YELLOW=""; BLUE=""; MAGENTA=""; CYAN=""; GRAY=""; RESET=""
 fi
+
+format_bytes() {
+    local size="$1"
+    if [[ ! "$size" =~ ^[0-9]+$ ]]; then echo "0 B"; return 1; fi
+    if   [ "$size" -ge 1099511627776 ]; then awk -v s="$size" 'BEGIN { printf "%.2f TB", s/1099511627776 }'
+    elif [ "$size" -ge 1073741824 ];    then awk -v s="$size" 'BEGIN { printf "%.2f GB", s/1073741824 }'
+    elif [ "$size" -ge 1048576 ];       then awk -v s="$size" 'BEGIN { printf "%.2f MB", s/1048576 }'
+    elif [ "$size" -ge 1024 ];          then awk -v s="$size" 'BEGIN { printf "%.2f KB", s/1024 }'
+    else echo "${size} B"; fi
+}
 
 log_info()    { echo -e "ℹ ${BOLD}${CYAN}INFO${RESET}  $*" >&2; }
 log_ok()      { echo -e "✓ ${BOLD}${GREEN}DONE${RESET}  $*" >&2; }
@@ -128,13 +155,22 @@ validate_config() {
         ((errors++))
     fi
 
-    # Validate Docker configuration if auto-restart is enabled
-    if [ "$AUTO_RESTART_SERVERS" = "true" ]; then
+    # Validate Docker configuration if auto-restart or VPK push is enabled
+    if [ "$AUTO_RESTART_SERVERS" = "true" ] || [ "$VPK_PUSH_METHOD" != "off" ]; then
         if [ -z "$SERVER_IMAGE" ]; then
-            log_error "SERVER_IMAGE is required when AUTO_RESTART_SERVERS=true"
+            log_error "SERVER_IMAGE is required when AUTO_RESTART_SERVERS=true or VPK_PUSH_METHOD is enabled"
             ((errors++))
         fi
     fi
+
+    # Validate VPK_PUSH_METHOD value
+    case "$VPK_PUSH_METHOD" in
+        symlink|hardlink|copy|off) ;;
+        *)
+            log_error "Invalid VPK_PUSH_METHOD: $VPK_PUSH_METHOD (must be: symlink, hardlink, copy, off)"
+            ((errors++))
+            ;;
+    esac
 
     if [ $errors -gt 0 ]; then
         log_error "Configuration validation failed with $errors error(s)"
@@ -602,6 +638,400 @@ restart_docker_containers() {
 }
 
 # ============================================================================
+# VPK PUSH FUNCTIONS
+# ============================================================================
+
+# Bind-mount CS2_DIR into a running container's mount namespace via nsenter.
+# Called on every 'start' event - the container is alive but entrypoint hasn't
+# checked for VPKs yet (sleep 1 + init gives us a comfortable window).
+_nsenter_mount() {
+    local container="$1"
+    local src="$2"
+    local dst="$3"
+
+    local pid
+    pid=$(docker inspect --format '{{.State.Pid}}' "$container" 2>/dev/null) || {
+        log_warn "nsenter[$container]: docker inspect failed"
+        return 1
+    }
+    if [ "${pid:-0}" = "0" ]; then
+        log_warn "nsenter[$container]: PID=0, container not running yet"
+        return 1
+    fi
+    log_info "nsenter[$container]: pid=$pid src=$src dst=$dst"
+
+    # src must exist and be readable on host
+    if [ ! -d "$src" ]; then
+        log_warn "nsenter[$container]: src $src does not exist on host"
+        return 1
+    fi
+    log_info "nsenter[$container]: src ok ($(ls "$src" 2>/dev/null | wc -l) entries, perms: $(stat -c '%a %U:%G' "$src" 2>/dev/null))"
+
+    # Check if already mounted by reading the container's mount table from the host.
+    # /proc/$pid/mountinfo field 5 is the mount point path - no nsenter needed, no hang risk.
+    if awk -v dst="$dst" '$5 == dst {found=1} END {exit !found}' "/proc/$pid/mountinfo" 2>/dev/null; then
+        log_info "nsenter[$container]: $dst already mounted, skipping"
+        return 0
+    fi
+    log_info "nsenter[$container]: not yet mounted, proceeding"
+
+    # open_tree() + move_mount() approach (kernel 5.2+, syscalls 428/429):
+    # open_tree() creates a detached mount clone from the HOST namespace - it is not
+    # bound to any mount namespace, so the kernel's check_mnt() cross-namespace check
+    # does not apply. move_mount() then attaches it into the container's namespace.
+    if ! command -v python3 >/dev/null 2>&1; then
+        log_warn "nsenter[$container]: python3 not found on host - cannot bind-mount into container"
+        log_warn "nsenter[$container]: install with: apt-get install -y python3"
+        return 1
+    fi
+
+    local mount_err
+    if ! mount_err=$(NSENTER_PID="$pid" NSENTER_SRC="$src" NSENTER_DST="$dst" \
+        timeout 15 python3 - 2>&1 <<'PYEOF'
+import os, ctypes, sys, fcntl
+try:
+    pid    = int(os.environ['NSENTER_PID'])
+    src    = os.environ['NSENTER_SRC'].encode()
+    dst    = os.environ['NSENTER_DST'].encode()
+    libc   = ctypes.CDLL(None, use_errno=True)
+    libc.syscall.restype = ctypes.c_long
+    mnt_fd = os.open(f'/proc/{pid}/ns/mnt', os.O_RDONLY)
+    fcntl.fcntl(mnt_fd, fcntl.F_SETFD, 0)
+    # open_tree(AT_FDCWD, src, OPEN_TREE_CLONE) from HOST namespace
+    # returns a detached mount fd not tied to any namespace
+    tree_fd = int(libc.syscall(ctypes.c_long(428), ctypes.c_int(-100),
+                               ctypes.c_char_p(src), ctypes.c_uint(1)))
+    if tree_fd < 0:
+        sys.stderr.write(f'open_tree: {os.strerror(ctypes.get_errno())}\n'); sys.exit(1)
+    fcntl.fcntl(tree_fd, fcntl.F_SETFD, 0)
+except Exception as e:
+    sys.stderr.write(f'setup: {e}\n'); sys.exit(1)
+child = os.fork()
+if child == 0:
+    if libc.setns(ctypes.c_int(mnt_fd), ctypes.c_int(0)) != 0:
+        sys.stderr.write(f'setns: {os.strerror(ctypes.get_errno())}\n'); os._exit(2)
+    os.makedirs(dst.decode(), exist_ok=True)
+    # move_mount(tree_fd, "", AT_FDCWD, dst, MOVE_MOUNT_F_EMPTY_PATH=4)
+    # attaches the detached mount into the container's namespace - no check_mnt() block
+    r = int(libc.syscall(ctypes.c_long(429), ctypes.c_int(tree_fd), ctypes.c_char_p(b''),
+                         ctypes.c_int(-100), ctypes.c_char_p(dst), ctypes.c_uint(4)))
+    if r != 0:
+        sys.stderr.write(f'move_mount: {os.strerror(ctypes.get_errno())}\n'); os._exit(1)
+    libc.mount(b'none', dst, b'none', ctypes.c_ulong(4096|32|1), None)  # remount ro
+    os._exit(0)
+_, st = os.waitpid(child, 0); sys.exit(os.WEXITSTATUS(st))
+PYEOF
+    ); then
+        log_warn "nsenter[$container]: mount failed: $mount_err"
+        return 1
+    fi
+    log_info "nsenter[$container]: bind mount ok"
+}
+
+# Sync base files + VPK files from CS2_DIR into a single server volume
+_sync_to_volume() {
+    local container="$1"
+    local dest="$2"
+    local src="$CS2_DIR"
+
+    local container_mount_dst="/tmp/cs2-shared"
+
+    # Sync non-VPK base files; exclude per-server configs and gameinfo.gi
+    # --no-o --no-g: don't overwrite ownership (preserve volume root owner = pterodactyl)
+    rsync -aKz --no-o --no-g \
+        --exclude '*.vpk' \
+        --exclude 'cfg/' \
+        --exclude 'game/csgo/gameinfo.gi' \
+        "$src/" "$dest" 2>/dev/null || {
+        log_warn "rsync failed for $container"
+        return 1
+    }
+
+    # Ensure volume root stays writable for the container user
+    chmod 755 "$dest" 2>/dev/null || true
+
+    # Copy gameinfo.gi only on first sync - don't overwrite the server's own
+    local gameinfo_src="$src/game/csgo/gameinfo.gi"
+    local gameinfo_dst="$dest/game/csgo/gameinfo.gi"
+    if [ -f "$gameinfo_src" ] && [ ! -f "$gameinfo_dst" ]; then
+        cp "$gameinfo_src" "$gameinfo_dst" 2>/dev/null || true
+    fi
+
+    # Copy cfg files - only if they don't already exist (never overwrite)
+    local cfg_src="$src/game/csgo/cfg"
+    local cfg_dst="$dest/game/csgo/cfg"
+    if [ -d "$cfg_src" ]; then
+        mkdir -p "$cfg_dst" 2>/dev/null || true
+        while IFS= read -r -d '' cfg_file; do
+            local rel="${cfg_file#$cfg_src/}"
+            local dst_file="$cfg_dst/$rel"
+            if [ ! -e "$dst_file" ]; then
+                mkdir -p "$(dirname "$dst_file")" 2>/dev/null || true
+                cp "$cfg_file" "$dst_file" 2>/dev/null || true
+            fi
+        done < <(find "$cfg_src" -type f \( -name "*.cfg" -o -name "*.vcfg" \) -print0 2>/dev/null)
+    fi
+
+    # Handle VPK files
+    local vpk_count=0
+    local vpk_size=0
+
+    while IFS= read -r -d '' vpk_file; do
+        local rel="${vpk_file#$src/}"
+        local link_dst="$dest/$rel"
+
+        mkdir -p "$(dirname "$link_dst")" 2>/dev/null
+
+        local fsize
+        fsize=$(stat -c %s "$vpk_file" 2>/dev/null || echo 0)
+        [[ "$fsize" =~ ^[0-9]+$ ]] || fsize=0
+
+        # Remove existing file/link before placing new one
+        case "$VPK_PUSH_METHOD" in
+            symlink)
+                local target="${container_mount_dst}/${rel}"
+                # skip if symlink already points to correct target
+                if [ "$(readlink "$link_dst" 2>/dev/null)" = "$target" ]; then
+                    ((vpk_count++)) || true
+                    vpk_size=$((vpk_size + fsize))
+                    continue
+                fi
+                { [ -e "$link_dst" ] || [ -L "$link_dst" ]; } && rm -f "$link_dst" 2>/dev/null
+                ln -sf "$target" "$link_dst" 2>/dev/null || return 1
+                ;;
+            hardlink)
+                local src_ino src_dev dst_dev
+                src_ino=$(stat -c %i "$vpk_file" 2>/dev/null || echo 0)
+                src_dev=$(stat -c %d "$vpk_file" 2>/dev/null || echo 0)
+                # skip if already hardlinked to same inode; remove broken symlinks too
+                if [ -e "$link_dst" ] || [ -L "$link_dst" ]; then
+                    local dst_ino
+                    dst_ino=$(stat -c %i "$link_dst" 2>/dev/null || echo 1)
+                    if [ "$src_ino" = "$dst_ino" ]; then
+                        ((vpk_count++)) || true
+                        vpk_size=$((vpk_size + fsize))
+                        continue
+                    fi
+                    rm -f "$link_dst" 2>/dev/null
+                fi
+                dst_dev=$(stat -c %d "$(dirname "$link_dst")" 2>/dev/null || echo 1)
+                local op_err
+                if [ "$src_dev" != "$dst_dev" ]; then
+                    # cross-filesystem: fall back to copy (one-time cost, rsync handles updates)
+                    if ! op_err=$(cp "$vpk_file" "$link_dst" 2>&1); then
+                        log_warn "hardlink[$container]: copy failed for $rel: $op_err"
+                        return 1
+                    fi
+                    chown pterodactyl:pterodactyl "$link_dst" 2>/dev/null || true
+                    chmod 644 "$link_dst" 2>/dev/null || true
+                else
+                    if ! op_err=$(ln "$vpk_file" "$link_dst" 2>&1); then
+                        log_warn "hardlink[$container]: ln failed for $rel: $op_err"
+                        return 1
+                    fi
+                fi
+                ;;
+            copy)
+                cp "$vpk_file" "$link_dst" 2>/dev/null || return 1
+                chown pterodactyl:pterodactyl "$link_dst" 2>/dev/null || true
+                chmod 644 "$link_dst" 2>/dev/null || true
+                ;;
+        esac
+
+        ((vpk_count++)) || true
+        vpk_size=$((vpk_size + fsize))
+    done < <(find "$src" -type f -name "*.vpk" -print0 2>/dev/null)
+
+    local human_size
+    human_size=$(format_bytes "$vpk_size")
+    log_info "  ${DIM}→ $container: $vpk_count VPK(s), ${human_size}${RESET}"
+
+    return 0
+}
+
+push_vpk_to_containers() {
+    [ "$VPK_PUSH_METHOD" = "off" ] && return 0
+
+    section "Pushing Game Files to Server Volumes"
+
+    # symlink mode: ensure CS2_DIR is world-readable so container user can access the mount
+    if [ "$VPK_PUSH_METHOD" = "symlink" ]; then
+        chmod -R a+rX "$CS2_DIR" 2>/dev/null || true
+    fi
+
+    if ! command -v docker >/dev/null 2>&1; then
+        log_error "Docker is required for VPK push but not installed"
+        return 1
+    fi
+
+    # Build image grep pattern (same logic as restart_docker_containers)
+    local images="${SERVER_IMAGE//,/ }"
+    local grep_pattern=""
+    for img in $images; do
+        local escaped_img
+        escaped_img=$(printf '%s' "$img" | sed 's/[.[\*^$()+?{|\\]/\\&/g')
+        [ -z "$grep_pattern" ] && grep_pattern="$escaped_img" || grep_pattern="$grep_pattern|$escaped_img"
+    done
+
+    local containers
+    containers=$(docker ps --format "{{.Names}}\t{{.Image}}" | grep -E "$grep_pattern" | cut -f1)
+
+    if [ -z "$containers" ]; then
+        log_info "No running containers found for VPK push"
+        return 0
+    fi
+
+    local -a container_array=()
+    while IFS= read -r line; do
+        [[ -n "$line" ]] && container_array+=("$line")
+    done <<< "$containers"
+
+    log_info "Pushing game files to ${BOLD}${#container_array[@]}${RESET} container(s) [method: ${BOLD}$VPK_PUSH_METHOD${RESET}]"
+
+    local success=0
+    local failed=0
+
+    for container in "${container_array[@]}"; do
+        local volume_path
+        volume_path=$(docker inspect "$container" \
+            --format '{{range .Mounts}}{{if eq .Destination "/home/container"}}{{.Source}}{{end}}{{end}}' 2>/dev/null)
+
+        if [ -z "$volume_path" ] || [ ! -d "$volume_path" ]; then
+            log_warn "Could not get volume path for $container, skipping"
+            ((failed++)) || true
+            continue
+        fi
+
+        if _sync_to_volume "$container" "$volume_path"; then
+            ((success++)) || true
+        else
+            log_warn "Push failed for ${BOLD}$container${RESET}"
+            ((failed++)) || true
+        fi
+    done
+
+    # Hardlink mode: set VPK files in CS2_DIR to root:root 644
+    # Hardlinks share the inode, so this makes them read-only for the container user too
+    if [ "$VPK_PUSH_METHOD" = "hardlink" ] && [ $success -gt 0 ]; then
+        find "$CS2_DIR" -type f -name "*.vpk" \
+            -exec chown root:root {} + \
+            -exec chmod 644 {} + 2>/dev/null || true
+        log_info "VPK files set to read-only (hardlink mode)"
+    fi
+
+    if [ $failed -gt 0 ]; then
+        log_warn "VPK push: $success/${#container_array[@]} succeeded ($failed failed)"
+        return 1
+    fi
+
+    log_ok "VPK push complete - ${BOLD}$success/${#container_array[@]}${RESET} server(s) synced"
+    return 0
+}
+
+run_event_daemon() {
+    section "VPK Push Daemon"
+
+    if ! command -v docker >/dev/null 2>&1; then
+        log_error "Docker is required for daemon mode"
+        exit 1
+    fi
+
+    if [ -z "$SERVER_IMAGE" ]; then
+        log_error "SERVER_IMAGE must be configured for daemon mode"
+        exit 1
+    fi
+
+    # Build --filter image= args for each configured image
+    local images="${SERVER_IMAGE//,/ }"
+    local filter_args=()
+    for img in $images; do
+        filter_args+=(--filter "image=$img")
+    done
+
+    log_ok "Daemon started - watching for container start events"
+    log_info "Images: ${BOLD}$SERVER_IMAGE${RESET}"
+    log_info "Push method: ${BOLD}$VPK_PUSH_METHOD${RESET}"
+    log_info "CS2 source: ${BOLD}$CS2_DIR${RESET}"
+    echo "" >&2
+
+    # Outer loop: reconnect if the docker events stream drops (daemon restart, etc.)
+    while true; do
+        # Listen for both create (new server) and start (fallback for missed creates)
+        docker events \
+            --filter type=container \
+            --filter event=create \
+            --filter event=start \
+            "${filter_args[@]}" \
+            --format '{{.Action}} {{.Actor.Attributes.name}}' 2>/dev/null | \
+        while IFS=' ' read -r event container; do
+            [[ -z "$container" ]] && continue
+
+            # symlink mode: nsenter-mount on EVERY start event, before debounce/lock
+            # start fires after create (which may still be pushing) - mount must happen regardless
+            if [ "$event" = "start" ] && [ "$VPK_PUSH_METHOD" = "symlink" ]; then
+                if _nsenter_mount "$container" "$CS2_DIR" "/tmp/cs2-shared"; then
+                    log_info "CS2_DIR mounted into ${BOLD}$container${RESET} at /tmp/cs2-shared"
+                else
+                    log_warn "nsenter mount failed for $container - symlinks may not resolve"
+                fi
+            fi
+
+            # Debounce: skip push if this container was pushed within the last 30s
+            # (Wings fires create + start together; mount above already handled, push can skip)
+            local debounce_file="/tmp/cs2-vpk-pushed-${container}"
+            if [ -f "$debounce_file" ]; then
+                local last_push
+                last_push=$(cat "$debounce_file" 2>/dev/null || echo 0)
+                local now
+                now=$(date +%s)
+                if [ $((now - last_push)) -lt 30 ]; then
+                    continue
+                fi
+            fi
+
+            # Per-container lock to avoid overlapping pushes (e.g. create + start firing together)
+            local lock_file="/var/lock/cs2-vpk-push-${container}.lock"
+            if ! mkdir "$lock_file" 2>/dev/null; then
+                continue
+            fi
+
+            local volume_path
+            volume_path=$(docker inspect "$container" \
+                --format '{{range .Mounts}}{{if eq .Destination "/home/container"}}{{.Source}}{{end}}{{end}}' \
+                2>/dev/null)
+
+            if [ -z "$volume_path" ] || [ ! -d "$volume_path" ]; then
+                rmdir "$lock_file" 2>/dev/null || true
+                continue
+            fi
+
+            if [ "$event" = "start" ]; then
+                # skip push if working VPKs already present (create event already handled it)
+                if find -L "$volume_path" -maxdepth 6 -name "*.vpk" -type f 2>/dev/null | grep -q .; then
+                    rmdir "$lock_file" 2>/dev/null || true
+                    continue
+                fi
+                log_info "Container started without VPK files: ${BOLD}$container${RESET} - pushing now..."
+            else
+                log_info "Container started: ${BOLD}$container${RESET} - pushing game files before first start..."
+            fi
+
+            if _sync_to_volume "$container" "$volume_path"; then
+                date +%s > "$debounce_file"
+                log_ok "Game files pushed to ${BOLD}$container${RESET}"
+            else
+                log_warn "Push failed for ${BOLD}$container${RESET}"
+            fi
+
+            rmdir "$lock_file" 2>/dev/null || true
+        done
+
+        log_warn "Docker event stream ended - reconnecting in 5s..."
+        sleep 5
+    done
+}
+
+# ============================================================================
 # SELF-UPDATE FUNCTIONS
 # ============================================================================
 
@@ -689,6 +1119,7 @@ preserve_user_config() {
         "VALIDATE_INSTALL"
         "AUTO_UPDATE_SCRIPT"
         "UPDATE_CHECK_INTERVAL"
+        "VPK_PUSH_METHOD"
     )
 
     log_info "Preserving user configuration..."
@@ -743,8 +1174,8 @@ check_and_apply_updates() {
     # Skip if disabled
     [ "$AUTO_UPDATE_SCRIPT" != "true" ] && return 0
 
-    # Rate limiting
-    if [ -f "$UPDATE_CHECK_TIMESTAMP_FILE" ]; then
+    # Rate limiting (* = check every run, number = minimum seconds between checks)
+    if [ "$UPDATE_CHECK_INTERVAL" != "*" ] && [ -f "$UPDATE_CHECK_TIMESTAMP_FILE" ]; then
         local last_check=$(cat "$UPDATE_CHECK_TIMESTAMP_FILE")
         local now=$(date +%s)
         local elapsed=$((now - last_check))
@@ -783,6 +1214,16 @@ check_and_apply_updates() {
 
     if [ "$current_version" = "$new_version" ]; then
         log_ok "Script is up to date (version: $current_version)"
+        rm -f "$temp_script"
+        echo "$(date +%s)" > "$UPDATE_CHECK_TIMESTAMP_FILE"
+        return 0
+    fi
+
+    # Only update if the remote version is actually newer (sort -V handles semver)
+    local newest
+    newest=$(printf '%s\n%s\n' "$current_version" "$new_version" | sort -V | tail -n1)
+    if [ "$newest" != "$new_version" ]; then
+        log_ok "Local version ($current_version) is ahead of remote ($new_version) - skipping"
         rm -f "$temp_script"
         echo "$(date +%s)" > "$UPDATE_CHECK_TIMESTAMP_FILE"
         return 0
@@ -843,13 +1284,24 @@ main() {
                 SIMULATE_MODE=true
                 shift
                 ;;
+            --daemon)
+                validate_config
+                [ "$VPK_PUSH_METHOD" = "off" ] && {
+                    log_error "Daemon mode requires VPK_PUSH_METHOD to be set (not \"off\")"
+                    exit 1
+                }
+                run_event_daemon
+                exit 0
+                ;;
             *)
                 log_error "Unknown argument: $1"
                 echo ""
                 echo "Usage: $0 [--simulate]"
+                echo "       $0 --daemon"
                 echo ""
                 echo "Options:"
                 echo "  --simulate    Simulate update mode (skip SteamCMD, trigger restart logic)"
+                echo "  --daemon      Run as event listener - push game files on container start"
                 echo ""
                 exit 1
                 ;;
@@ -875,10 +1327,15 @@ main() {
     trap 'release_lock; exit 129' SIGHUP
 
     # Check dependencies
-    if [ "$AUTO_RESTART_SERVERS" = "true" ]; then
+    if [ "$AUTO_RESTART_SERVERS" = "true" ] || [ "$VPK_PUSH_METHOD" != "off" ]; then
         if ! command -v docker >/dev/null 2>&1; then
-            log_error "Docker is required for auto-restart feature but not installed"
-            log_error "Install Docker or disable auto-restart by setting AUTO_RESTART_SERVERS=false"
+            log_error "Docker is required for VPK push / auto-restart but not installed"
+            log_error "Install Docker or set AUTO_RESTART_SERVERS=false and VPK_PUSH_METHOD=off"
+            exit 1
+        fi
+        if ! command -v rsync >/dev/null 2>&1; then
+            log_error "rsync is required for VPK push but not installed"
+            log_error "Install rsync: apt-get install -y rsync"
             exit 1
         fi
     fi
@@ -898,22 +1355,24 @@ main() {
         # Simulate mode: skip SteamCMD but act as if update happened
         section "Simulating CS2 Update"
         log_info "Skipping SteamCMD update (simulate mode)"
-        log_ok "Simulated update complete - triggering restart logic"
+        log_ok "Simulated update complete - triggering push and restart logic"
         update_occurred=true
 
-        # Trigger restart logic
+        push_vpk_to_containers
         if [ "$AUTO_RESTART_SERVERS" = "true" ]; then
             restart_docker_containers
         else
-            log_info "Auto-restart disabled, servers will sync on next restart"
+            log_info "Auto-restart disabled, servers will pick up new files on next restart"
         fi
     elif update_cs2; then
         update_occurred=true
-        # Update happened, restart servers if configured
+        # Push updated game files into server volumes
+        push_vpk_to_containers
+        # Restart servers if configured
         if [ "$AUTO_RESTART_SERVERS" = "true" ]; then
             restart_docker_containers
         else
-            log_info "Auto-restart disabled, servers will sync on next restart"
+            log_info "Auto-restart disabled, servers will pick up new files on next restart"
         fi
     fi
 
@@ -926,21 +1385,25 @@ main() {
         log_ok "CS2 update completed successfully"
     fi
 
-    log_info "Version: ${BOLD}$(get_local_version)${RESET}"
-    log_info "Location: ${BOLD}$CS2_DIR${RESET}"
+    log_info "Version:    ${BOLD}$(get_local_version)${RESET}"
+    log_info "Location:   ${BOLD}$CS2_DIR${RESET}"
+    log_info "Push method: ${BOLD}$VPK_PUSH_METHOD${RESET}"
 
     if [ "$update_occurred" = "true" ]; then
+        if [ "$VPK_PUSH_METHOD" != "off" ]; then
+            log_info "Game files pushed to server volumes"
+        fi
         if [ "$AUTO_RESTART_SERVERS" = "true" ]; then
             if [ "$SIMULATE_MODE" = "true" ]; then
                 log_info "Restart logic executed (simulated update)"
             else
-                log_info "Servers restarted and synced with latest version"
+                log_info "Servers restarted with latest version"
             fi
         else
-            log_info "Servers will sync new files on next restart"
+            log_info "Servers will pick up new files on next restart"
         fi
     else
-        log_info "No update available, servers already running latest version"
+        log_info "No update available, servers already on latest version"
     fi
     echo ""
 }

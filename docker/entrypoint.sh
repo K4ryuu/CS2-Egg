@@ -15,15 +15,6 @@ trap 'handle_error ${LINENO} "$BASH_COMMAND"' ERR
 cd /home/container
 sleep 1
 
-# Run legacy file migration check (only runs on first boot with new structure)
-migrate_legacy_files
-
-# Remove obsolete config files from old versions
-cleanup_obsolete_configs
-
-# Check for deprecated variables (ADDON_SELECTION)
-check_deprecated_variables
-
 # Initialize and load configurations
 init_configs
 load_configs
@@ -31,17 +22,26 @@ load_configs
 # Get internal Docker IP
 INTERNAL_IP=$(ip route get 1 | awk '{print $NF;exit}')
 
-# VPK Sync and SteamCMD installation (skip if updates disabled)
+detect_daemon_vpk
+cleanup_daemon_mode
+
+# Legacy VPK sync (SYNC_LOCATION mode) - runs before daemon detection result check
 if [ ${SRCDS_STOP_UPDATE:-0} -eq 0 ]; then
-    # VPK Sync (if configured) - must happen before SteamCMD
     sync_files
     sync_cfg_files
 
-    # Initial setup and sync
+    # Legacy VPK sync ran - game files managed externally, SteamCMD not needed
+    if [ "${SYNC_LOCATION+defined}" = "defined" ]; then
+        log_message "Legacy VPK sync complete - game files managed externally, skipping SteamCMD" "info"
+        SRCDS_STOP_UPDATE=1
+        rm -rf /home/container/steamcmd /home/container/steamapps /home/container/Steam
+    fi
+fi
+
+# SteamCMD install and cleanup (skip if VPKs managed externally)
+if [ ${SRCDS_STOP_UPDATE:-0} -eq 0 ]; then
     install_steamcmd
     clean_old_logs
-else
-    log_message "Updates disabled, skipping VPK sync and SteamCMD" "warning"
 fi
 
 # Server update process

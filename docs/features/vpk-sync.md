@@ -1,504 +1,19 @@
 # VPK Sync Feature
 
-Dramatically reduce storage and bandwidth by centralizing CS2 game files.
+Dramatically reduce storage and bandwidth by centralizing CS2 game files across all servers on a node.
 
 ## Overview
 
-VPK Sync allows multiple CS2 servers to share game files from a single centralized location instead of each server storing its own complete copy.
-
-**Storage Savings:**
-
-- Without sync: ~55GB per server
-- With sync: ~3GB per server (configs + workshop only)
-- **Savings per server: ~52GB** (real data)
-- **10 servers**: 550GB → 82GB (85% reduction)
+VPK Sync allows multiple CS2 servers to share game files from a single centralized location instead of each server maintaining its own complete copy.
 
 **How It Works:**
 
-1. Automated cron job keeps centralized CS2 installation updated
-2. Pterodactyl mounts this directory into containers (read-only)
-3. Sync script symlinks .vpk files (~52GB) and syncs other files
-4. Each server uses shared files, maintains separate configs
-
-> **No reinstall required** - Once configured, just restart servers to activate VPK sync and instantly free up storage space.
-
-**Update Management Advantage:**
-
-The centralized update script can automatically restart **all servers together** after downloading the update once, which is far more efficient than per-server updates.
-
-- - **Single download** vs multiple duplicate downloads
-- - **Coordinated restarts** vs staggered individual restarts
-- - **Bandwidth savings** vs redundant traffic
-- - **Faster updates** vs waiting for each server
-
-## Prerequisites
-
-- - **KitsuneLab CS2 Egg installed in Nests**
-- - **Pterodactyl Panel with [PR #4034](https://github.com/pterodactyl/panel/pull/4034/files) applied** (adds auto mount support)
-- - **Root access to node** (for cron setup and permissions)
-- - **Sufficient storage** for one complete CS2 installation
-
-## Setup Guide
-
-### Step 1: Install Egg in Nests
-
-Before proceeding, ensure the KitsuneLab CS2 Egg is imported into your Pterodactyl Nests.
-
-### Step 2: Apply Pterodactyl Panel Modification
-
-> **Important:** Only **Pterodactyl Panel** requires PR #4034 changes. **Wings does NOT require any modifications** - it works seamlessly with the update script as-is. The script automatically detects and integrates with your existing Wings installation.
-
-> **Warning:** Do **NOT** copy and paste the entire PR or overwrite files directly. Instead, carefully apply the changes **line by line** as shown in [PR #4034](https://github.com/pterodactyl/panel/pull/4034/files). The link shows only the required files that need modification. Pterodactyl versions may differ, and blindly replacing files can break your panel or cause compatibility issues. Review each change and adapt as needed for your version.
-
-Apply [PR #4034](https://github.com/pterodactyl/panel/pull/4034/files) to enable directory auto mounting:
-
-```bash
-cd /var/www/pterodactyl
-cp -r app app.backup  # Backup first!
-
-# Apply PR #4034 changes
-# See: https://github.com/pterodactyl/panel/pull/4034/files
-
-# Run database migrations (new values for mount support)
-php artisan migrate --force
-
-# Clear cache
-php artisan config:clear
-php artisan cache:clear
-```
-
-### Step 3: Setup Automated Updates (Cron Job)
-
-We provide an automated update script that handles everything: version checking, downloading, permissions, and optionally restarting servers.
-
-**Script Features:**
-
-- **Input validation** - Validates all configuration paths and URLs for security
-- **Lock file mechanism** - Prevents concurrent execution (safe for cron)
-- **Live progress** - Real-time output during SteamCMD operations with spinner animation
-- **SteamCMD native checks** - Automatic disk space and version validation
-- **Intelligent error detection** - Contextual help for common errors (0x202 disk space, 0x402 network, 0x606 invalid App ID)
-- **Health check system** - Validates all prerequisites before operations
-- **Multi-distro support** - Works on Ubuntu 18.04+ and Debian 10+ with automatic package fallback
-- **Version-based updates** - Self-update mechanism independent of user configuration
-- **Graceful degradation** - Continues even if optional features fail
-
-**System Requirements:**
-
-- **Operating System**: Ubuntu 18.04+ or Debian 10+ (64-bit)
-  - Ubuntu: 18.04 (Bionic), 20.04 (Focal), 22.04 (Jammy), 24.04 (Noble)
-  - Debian: 10 (Buster), 11 (Bullseye), 12 (Bookworm), 13 (Trixie)
-- **Architecture**: x86_64 with i386 multiarch support (auto-configured by script)
-- **Required for auto-restart:** `docker` (typically already installed on Pterodactyl nodes)
-- **Auto-installed dependencies:**
-  - SteamCMD downloaded and installed automatically if not present
-  - i386 architecture and 32-bit libraries (lib32gcc-s1 or lib32gcc1)
-  - Automatically handles modern vs legacy package names
-
-#### Download and Configure
-
-Download the script:
-
-```bash
-cd /root
-curl -O https://raw.githubusercontent.com/K4ryuu/CS2-Egg/refs/heads/main/misc/update-cs2-centralized.sh
-chmod +x update-cs2-centralized.sh
-```
-
-Edit configuration at the top of the script:
-
-```bash
-nano update-cs2-centralized.sh
-```
-
-**Configuration section (at the top of the file):**
-
-```bash
-# ============================================================================
-# CONFIGURATION - Edit these values for your setup
-# ============================================================================
-
-# Required: CS2 App ID (don't change unless you know what you're doing)
-APP_ID="730"
-
-# Required: Path where centralized CS2 files are stored
-# This must match the path you configured in Pterodactyl mounts
-CS2_DIR="/srv/cs2-shared"
-
-# Required: SteamCMD installation directory
-STEAMCMD_DIR="/root/steamcmd"
-
-# Optional: Docker image for server detection (for automatic server restart)
-# Servers using this image (any tag/branch) will be automatically restarted after update
-# Examples: "sples1/k4ryuu-cs2", "sples1/k4ryuu-cs2:latest"
-SERVER_IMAGE="sples1/k4ryuu-cs2"
-
-# Optional: Enable automatic server restart after update (true/false)
-# Set to "false" if you want servers to sync on next manual restart
-AUTO_RESTART_SERVERS="false"
-
-# Optional: Validate game files integrity during update (true/false)
-# Set to "false" for faster updates (recommended for cron)
-# Set to "true" to verify all files (useful for troubleshooting)
-VALIDATE_INSTALL="false"
-
-# Optional: Enable automatic script self-update (true/false)
-# Script checks GitHub for updates and auto-replaces itself
-# Keeps last 3 versions as backup, validates before applying
-AUTO_UPDATE_SCRIPT="true"
-
-# Optional: Interval between update checks in seconds (default: 600 = 10 minutes)
-# Script will only check for updates if this interval has elapsed
-UPDATE_CHECK_INTERVAL="600"
-```
-
-**Script Self-Update** (enabled by default):
-
-- Checks GitHub every 10 minutes for updates (configurable via `UPDATE_CHECK_INTERVAL`)
-- **Version-based detection** - compares version headers, not file hashes (config-independent)
-- **Preserves your configuration** - paths and settings automatically transferred to new version
-- Validates syntax, creates backup, atomically replaces itself
-- Keeps last 3 versions in `.script-backups/` directory for rollback
-- Health check after update with automatic rollback on failure
-- Backwards compatible - auto-upgrades old scripts without version headers
-- Set `AUTO_UPDATE_SCRIPT="false"` to disable
-
-**For automatic server restarts**, set `AUTO_RESTART_SERVERS="true"`:
-
-- Script uses **Wings API** for seamless Pterodactyl integration
-- Automatically detects and restarts containers matching the specified `SERVER_IMAGE` (all tags/branches)
-- Example: `SERVER_IMAGE="sples1/k4ryuu-cs2"` restarts containers using `:latest`, `:dev`, `:staging`, etc.
-- No manual API configuration needed - automatically reads Wings config from `/etc/pterodactyl/config.yml`
-- Detects SSL/non-SSL configuration automatically
-- Requires Wings installed on the node (standard for Pterodactyl)
-
-#### Test the Script
-
-**Full test** (downloads CS2 update):
-
-```bash
-./update-cs2-centralized.sh
-```
-
-**Test restart logic only** (skip SteamCMD download):
-
-```bash
-./update-cs2-centralized.sh --simulate
-```
-
-The `--simulate` flag skips the actual CS2 update but triggers all restart logic, perfect for testing Wings API integration or validating container detection without waiting for downloads.
-
-**Expected output:** Pre-flight checks → SteamCMD setup → CS2 update → Summary
-
-<details>
-<summary>Click to expand full output (no update available)</summary>
-
-```
-──────────────────────────────────────────────────────
- KitsuneLab CS2 Centralized Update
-──────────────────────────────────────────────────────
-
-==> Pre-flight Checks
-
-[DONE]  Configuration validated successfully
-[DONE]  Acquired update lock
-[DONE]  Dependencies satisfied
-[INFO]  CS2 Directory: /srv/cs2-shared
-
-==> SteamCMD Setup
-
-[DONE]  SteamCMD health check passed
-
-==> CS2 Update
-
-Checking for updates and downloading
-[DONE]  CS2 is already up to date (version: 20778640)
-[INFO]  Installing Steam client libraries...
-[INFO]  Setting permissions...
-[INFO]  CS2 directory size: 56G
-
-==> Summary
-
-[DONE]  CS2 update completed successfully
-[INFO]  Version: 20778640
-[INFO]  Location: /srv/cs2-shared
-[INFO]  Servers will sync new files on next restart
-```
-
-</details>
-
-<details>
-<summary>Click to expand full output (update available)</summary>
-
-```
-==> CS2 Update
-
-Checking for updates and downloading
- Update state (0x5) downloading, progress: 45.67 (24821478192 / 54352914432)
- Update state (0x5) downloading, progress: 67.23 (36537648512 / 54352914432)
- Update state (0x5) downloading, progress: 89.41 (48592374192 / 54352914432)
-[DONE]  CS2 updated successfully: 20778640 → 20778900
-[INFO]  Installing Steam client libraries...
-[INFO]  Setting permissions...
-[INFO]  CS2 directory size: 56G
-
-==> Detecting and Restarting Servers
-
-[INFO]  Found 12 container(s) using image: sples1/k4ryuu-cs2*
-[INFO]  Restarting container: ptero-a1b2c3d4...
-[DONE]  Container ptero-a1b2c3d4 restarted successfully
-[INFO]  Restarting container: ptero-e5f6g7h8...
-[DONE]  Container ptero-e5f6g7h8 restarted successfully
-[...10 more containers...]
-[DONE]  All containers restarted successfully (12/12)
-
-==> Summary
-
-[DONE]  CS2 update completed successfully
-[INFO]  Version: 20778900
-[INFO]  Location: /srv/cs2-shared
-[INFO]  Servers will sync new files on next restart
-```
-
-</details>
-
-**Error Detection:**
-
-If SteamCMD encounters errors, the script provides contextual help:
-
-```
-[ERROR] SteamCMD Error 0x202 - Disk space or filesystem issue
-[INFO]  • CS2 requires ~60GB for initial installation
-[INFO]  • After VPK sync, servers only use ~3-8GB each
-[INFO]  • VPK files (~52GB) shared from centralized location
-[INFO]  Solution: Free up disk space and try again
-[INFO]  Check space: df -h /srv/cs2-shared
-```
-
-Common error codes: 0x202 (disk space), 0x402 (network), 0x606 (invalid App ID)
-
-**Note:** During download/update operations, you'll see real-time progress with spinner animation. Output clears when complete.
-
-#### Setup Cron Job
-
-> **Recommended:** Run manually once to verify configuration before adding to cron.
-
-Add to root crontab (runs every 2 minutes):
-
-```bash
-sudo crontab -e  # Or just 'crontab -e' if already root
-
-# With logging (recommended for monitoring)
-*/2 * * * * /root/update-cs2-centralized.sh >> /var/log/cs2-update.log 2>&1
-
-# Without logging (silent)
-*/2 * * * * /root/update-cs2-centralized.sh >/dev/null 2>&1
-```
-
-**Why frequent checks?** SteamCMD only downloads when updates exist. No update = quick check (~1 second).
-
-#### Monitor Updates
-
-```bash
-tail -f /var/log/cs2-update.log  # Real-time
-grep "DONE.*updated successfully" /var/log/cs2-update.log  # Check updates
-```
-
-### Step 4: Configure Pterodactyl System
-
-Edit `/etc/pterodactyl/config.yml` and add mount path to allowed list:
-
-```yaml
-allowed_mounts:
-  - /srv/cs2-shared
-```
-
-Restart Wings:
-
-```bash
-systemctl restart wings
-```
-
-### Step 5: Create Mount in Admin Panel
-
-Navigate to: **Admin Panel** → **Mounts** → **Create New**
-
-**Mount Configuration:**
-
-- **Name**: CS2 Shared Files
-- **Source**: `/srv/cs2-shared` (external path on node)
-- **Target**: `/tmp/cs2_ds` (internal path in container)
-- **Read Only**: **ON** (prevents servers from modifying shared files)
-- **Auto Mount**: **ON** (mounts automatically for assigned servers)
-- **Mount on Install**: **OFF** (k4ryuu egg has no intall part, and might result in unmounting after install, which we dont want)
-- **User Mountable**: We can block the users from changing this mount, so leave it **OFF**
-
-**Assign to Nodes and Eggs:**
-
-After saving, you'll see **Eggs** and **Nodes** panels on the right side:
-
-- Click **Add Eggs** → Select **KitsuneLab CS2 Egg**
-- Click **Add Nodes** → Select all nodes where you want VPK sync enabled
-
-> **Important:** Only servers on assigned nodes with assigned eggs will have this mount available. Make sure to add all relevant nodes where CS2 servers will run.
-
-Save the mount.
-
-### Step 6: Configure Egg-Level Environment Variable
-
-**This is critical** - setting at egg level ensures ALL new servers inherit the configuration.
-
-Navigate to: **Admin Panel** → **Nests** → **Your Nest** → **Eggs** → **KitsuneLab CS2**
-
-Go to **Variables** tab and find **VPK Sync**:
-
-- **Default Value**: `/tmp/cs2_ds` (must match the mount **Target** path from Step 5)
-- **User Editable**: You can leave this on if you want per-server control
-- **User Viewable**: No
-
-> **Important:** The SYNC_LOCATION value must match the mount's **Target** path (internal container path), not the Source path. The container accesses files through the Target path where they are mounted.
-
-Save changes.
-
-Now **all new servers** will automatically use VPK sync!
-
-### Step 7: Enable VPK Sync on Servers
-
-**For new servers:** Create as normal - VPK sync activates automatically on first start.
-
-**For existing servers:**
-
-> **No reinstall required!** Just restart the server - VPK sync activates immediately on startup and begins freeing up storage space.
-
-1. **Restart the server** (no reinstall/resize needed)
-2. VPK sync activates automatically during startup
-3. Storage space is freed immediately after sync completes
-
-Console output on successful sync:
-
-```
-[RUNNING] Syncing VPK files...
-[KitsuneLab] > VPK sync complete — linked 625 file(s), total VPK size 54.46 GB (approx. per-server saving)
-```
-
-## Maintenance
-
-### Updates
-
-**Automatic:** Cron job handles everything. When CS2 updates:
-
-1. Cron detects update and downloads to `/srv/cs2-shared`
-2. Servers automatically sync new files on next restart (no reinstall needed)
-3. No manual intervention needed
-
-**Manual trigger** (if needed, on the server node):
-
-```bash
-# Full update with CS2 download
-/root/update-cs2-centralized.sh
-
-# Test restart logic only (skip download)
-/root/update-cs2-centralized.sh --simulate
-```
-
-## Troubleshooting
-
-> **Auto-Fixed Issues**
->
-> The update script automatically handles most common problems:
->
-> - **SteamCMD missing** - Auto-installs with i386 architecture and 32-bit libraries
-> - **OS compatibility** - Detects Ubuntu/Debian version and uses correct packages (lib32gcc-s1 vs lib32gcc1)
-> - **Permission errors** - Runs `chown` and `chmod` after every update
-> - **Steam libraries** - Copies SDK files automatically
-> - **Directory creation** - Creates required directories if missing
-> - **Common errors** - Provides contextual help for SteamCMD errors (0x202, 0x402, 0x606)
->
-> If you encounter issues, check the error message first - the script provides specific solutions.
-
-### Mount Shows "Unmounted" Status
-
-**Issue:** Server doesn't recognize the mount path and shows **Unmounted** status, preventing VPK sync from working
-
-**Causes:**
-
-- Mount not assigned to the egg
-- Mount not assigned to the node where server is located
-- Server existed before mount was created (most common)
-- Auto Mount is disabled
-- Mount not manually activated on existing server
-
-**Quick Fix:**
-
-> **This is the most common issue for servers created before VPK sync was activated!**
-
-1. Go to your server in Pterodactyl
-2. Click **Mounts** tab
-3. Find the VPK sync mount showing **Unmounted** status
-4. Click the **green plus icon (+)** button next to the mount
-5. Mount will change to **Mounted** and stay mounted permanently
-6. Restart server to activate VPK sync
-
-**Full Fix (If Quick Fix Doesn't Work):**
-
-1. **Check Mount Assignment (Admin Panel):**
-
-   - Go to **Admin** → **Mounts** → **CS2 Shared Files**
-   - Verify **Eggs** panel includes **KitsuneLab CS2 Egg**
-   - Verify **Nodes** panel includes the node where your server runs
-   - If missing, click **Add Eggs** or **Add Nodes** and select appropriately
-
-2. **Verify Auto Mount:**
-
-   - In mount settings, ensure **Auto Mount** is **ON**
-
-3. **Apply to Servers:**
-
-   - Go to server → **Mounts** tab
-   - Click the **green plus (+)** icon next to the mount
-   - Restart server
-
-4. **Check Logs:**
-   - If still unmounted, check server console for errors
-   - Look for sync-related messages during startup
-
-**Why This Happens:**
-Servers created before the VPK sync mount was configured don't automatically recognize the mount even when it's assigned to the egg/node. You must manually activate it once by clicking the plus icon, then it stays mounted permanently.
-
-### Sync Location Not Found
-
-**Error:** `Sync location not found: /tmp/cs2_ds`
-
-**Cause:** Mount not configured or not assigned to egg.
-
-**Fix:**
-
-1. **Verify mount exists:** **Admin** → **Mounts** → Check CS2 Shared Files mount
-2. **Check mount assignment:** Mount must be assigned to both egg and node
-3. **Apply mount to server:** Go to server → **Mounts** tab → Click green (+) icon
-4. **Verify path exists:** `/srv/cs2-shared` must exist on node
-5. **Restart server** to activate VPK sync
-
-### Permission Denied
-
-**Error:** `Failed to sync base files`
-
-**Note:** The update script automatically fixes permissions after every update (`chown pterodactyl:pterodactyl` + `chmod 755`).
-
-**Manual fix (if needed immediately):**
-
-```bash
-chown -R pterodactyl:pterodactyl /srv/cs2-shared
-chmod -R 755 /srv/cs2-shared
-```
-
-### Cron Job Not Running
-
-```bash
-systemctl status cron  # Check service
-crontab -l  # Verify entry
-/root/update-cs2-centralized.sh  # Test manually
-```
+1. A cron job keeps one centralized CS2 installation updated via SteamCMD
+2. After each update, the script pushes game files directly into each server's volume - no Pterodactyl/Pelican mounts or manual configuration required
+3. VPK files are shared via symlinks (default), hardlinks, or full copies depending on your `VPK_PUSH_METHOD` setting
+4. A daemon watches for new containers and pushes files instantly on first start
+
+> **No Pterodactyl/Pelican Panel modifications required.** The script works directly with Docker and Wings - no PR patches, no mount setup, no egg variable configuration.
 
 ## Storage Savings
 
@@ -510,37 +25,136 @@ crontab -l  # Verify entry
 | 20      | 1.1TB        | 115GB     | 1025GB (86%) |
 | 50      | 2.75TB       | 205GB     | 2.6TB (87%)  |
 
-**Per server:** ~55GB → ~3GB (~52GB VPK files shared)
+## Prerequisites
+
+- Root access to the node
+- Docker (standard on Pterodactyl/Pelican nodes)
+- `rsync` - `apt-get install -y rsync`
+- ~56GB free storage for one complete CS2 installation
+- For `hardlink` mode: `CS2_DIR` and panel volumes must be on the same filesystem
+
+## Installation
+
+Run the installer as root - it handles everything:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/K4ryuu/CS2-Egg/main/misc/install-cs2-update.sh | sudo bash
+```
+
+The installer will:
+
+1. Walk you through configuration (paths, push method, restart behavior)
+2. Download the update script to `/usr/local/bin/update-cs2-centralized.sh`
+3. Install and start the VPK push daemon as a systemd service
+4. Register a cron job that runs every minute (rate-limited by `UPDATE_CHECK_INTERVAL`)
+
+After installation, edit the config section at the top of the script to adjust any settings:
+
+```bash
+nano /usr/local/bin/update-cs2-centralized.sh
+```
+
+## Push Methods
+
+| Method     | Panel disk usage | Writable       | Requirements                                |
+| ---------- | ---------------- | -------------- | ------------------------------------------- |
+| `symlink`  | ~0 per server    | No (read-only) | None - CS2_DIR auto-mounted into containers |
+| `hardlink` | ~53GB per server | No (read-only) | Same filesystem as CS2_DIR                  |
+| `copy`     | ~52GB per server | Yes            | None                                        |
+| `off`      | -                | -              | -                                           |
+
+**Symlink** (default) - symlinks from each server's volume to CS2_DIR. Panel sees near-zero disk usage. CS2_DIR is automatically bind-mounted read-only into each container so symlinks resolve correctly inside.
+
+**Hardlink** - no extra physical disk space, but panel disk quota counts the full VPK size (~53GB) per server. Requires CS2_DIR on the same filesystem as panel volumes.
+
+**Copy** - each server gets its own independent copy. Useful if servers need write access to game files.
+
+## Quick Reference
+
+```bash
+# Run update manually
+# If cron is currently running you'll get a lock error - wait a moment and retry
+/usr/local/bin/update-cs2-centralized.sh
+
+# Test push and restart logic (skip SteamCMD download)
+/usr/local/bin/update-cs2-centralized.sh --simulate
+
+# Daemon status
+systemctl status cs2-vpk-daemon
+
+# Daemon logs (live)
+journalctl -u cs2-vpk-daemon -f
+
+# Update logs
+tail -f /var/log/cs2-update.log
+```
+
+## Maintenance
+
+### Script Self-Update
+
+Enabled by default. The script checks GitHub for newer versions, preserves your configuration, validates syntax, and atomically replaces itself. Keeps last 3 backups in `.script-backups/`. Disable with `AUTO_UPDATE_SCRIPT="false"`.
+
+### Monitoring
+
+```bash
+tail -f /var/log/cs2-update.log
+journalctl -u cs2-vpk-daemon --since "1 hour ago"
+```
+
+## Troubleshooting
+
+> The script automatically handles: SteamCMD installation, 32-bit library setup, permissions, Steam SDK libraries, and directory creation.
+
+> **Something broken?** Re-run the installer - it resets config to working defaults while offering your current values as starting points:
+>
+> ```bash
+> curl -fsSL https://raw.githubusercontent.com/K4ryuu/CS2-Egg/main/misc/install-cs2-update.sh | sudo bash
+> ```
+
+### Cross-Filesystem Hardlink Error
+
+**Error:** `Cross-filesystem hardlink not possible for ptero-xxxx`
+
+`CS2_DIR` and panel volumes are on different partitions.
+
+```bash
+# Check filesystems
+df -h /srv/cs2-shared
+df -h /var/lib/pterodactyl/volumes
+df -h /var/lib/pelican/volumes
+
+# Option A: move CS2_DIR onto the same partition as volumes
+# Option B: switch to copy mode - edit VPK_PUSH_METHOD="copy" in the script
+```
+
+### Cron Job Not Running
+
+```bash
+systemctl status cron
+cat /etc/cron.d/cs2-update
+/usr/local/bin/update-cs2-centralized.sh  # test manually
+```
 
 ## FAQ
 
-**Q: Can servers modify shared files?**
-A: No if mounted read-only (recommended). Modifications are server-specific.
+**Q: Do I need to modify Pterodactyl/Pelican Panel or apply any patches?**
+No. The script works directly with Docker and Wings.
+
+**Q: Do I need to configure anything on individual servers?**
+No. Files are pushed directly into each server's volume from the host.
 
 **Q: What if the cron job fails?**
-A: Servers continue using existing files. Update manually if needed.
+Servers continue using existing files. The daemon still handles new containers. Run manually to trigger a push: `/usr/local/bin/update-cs2-centralized.sh --simulate`.
 
-**Q: How often should cron run?**
-A: Every 1-2 minutes is safe - SteamCMD only downloads when updates exist.
+**Q: What's the difference between the cron job and the daemon?**
+The cron job handles CS2 updates and pushes to all existing servers. The daemon handles new servers - it reacts instantly when a container starts so game files are present before the startup script runs.
 
-**Q: Why does my server show "Unmounted" in the Mounts tab?**
-A: Most common for servers created before VPK sync. **Quick fix:** Go to server → **Mounts** tab → Click the **green plus (+)** icon next to the mount → Restart server. The mount will stay permanently mounted. See [Mount Shows "Unmounted" Status](#mount-shows-unmounted-status) for detailed fix.
-
-**Q: Do I need to reinstall servers to enable VPK sync?**
-A: No! Just configure the mount, assign it to the egg/node, and restart the server. VPK sync activates immediately.
-
-**Q: How do I test auto-restart without downloading CS2 updates?**
-A: Use the `--simulate` flag: `/root/update-cs2-centralized.sh --simulate`. This skips the SteamCMD download but triggers all restart logic (Wings API detection, container detection, restart execution). Perfect for testing configuration changes or Wings API integration.
-
-## Related Documentation
-
-- [Installation Guide](../getting-started/installation.md)
-- [Configuration Files](../configuration/configuration-files.md)
-- [Building from Source](../advanced/building.md)
+**Q: Can I use VPK sync without the daemon?**
+Yes. Without the daemon, new servers receive files on the next cron cycle (~2 minutes). For most setups this is fine since CS2 startup takes longer than that anyway.
 
 ## Support
 
-Need help with VPK sync?
-
 - [Report Issue](https://github.com/K4ryuu/CS2-Egg/issues)
 - [View Update Script](https://github.com/K4ryuu/CS2-Egg/blob/main/misc/update-cs2-centralized.sh)
+- [View Installer](https://github.com/K4ryuu/CS2-Egg/blob/main/misc/install-cs2-update.sh)

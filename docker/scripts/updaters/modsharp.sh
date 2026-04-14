@@ -9,6 +9,7 @@ source /utils/updater_common.sh
 MODSHARP_DIR="/home/container/game/sharp"
 DOTNET_VERSION="10.0.0"
 CONFIG_BACKUP="$TEMP_DIR/core.json.backup"
+ADMINS_BACKUP="$TEMP_DIR/admins.jsonc.backup"
 
 # Install or update .NET runtime
 install_dotnet_runtime() {
@@ -112,10 +113,14 @@ update_modsharp() {
 
     log_message "Update available: $latest_version (current: ${current_version:-none})" "info"
 
-    # Step 3: Backup core.json if exists
+    # Step 3: Backup user configs if they exist
     if [ -f "$MODSHARP_DIR/configs/core.json" ]; then
         cp "$MODSHARP_DIR/configs/core.json" "$CONFIG_BACKUP"
         log_message "Backed up core.json" "debug"
+    fi
+    if [ -f "$MODSHARP_DIR/configs/admins.jsonc" ]; then
+        cp "$MODSHARP_DIR/configs/admins.jsonc" "$ADMINS_BACKUP"
+        log_message "Backed up admins.jsonc" "debug"
     fi
 
     # Step 4: Download and install core (extract to /game/)
@@ -130,12 +135,18 @@ update_modsharp() {
         # Continue anyway, extensions are not critical
     fi
 
-    # Step 6: Restore core.json if we backed it up
+    # Step 6: Restore user configs if we backed them up
     if [ -f "$CONFIG_BACKUP" ]; then
         mkdir -p "$MODSHARP_DIR/configs"
         cp "$CONFIG_BACKUP" "$MODSHARP_DIR/configs/core.json"
         log_message "Restored core.json config" "success"
         rm -f "$CONFIG_BACKUP"
+    fi
+    if [ -f "$ADMINS_BACKUP" ]; then
+        mkdir -p "$MODSHARP_DIR/configs"
+        cp "$ADMINS_BACKUP" "$MODSHARP_DIR/configs/admins.jsonc"
+        log_message "Restored admins.jsonc config" "success"
+        rm -f "$ADMINS_BACKUP"
     fi
 
     # Step 8: Update version file
