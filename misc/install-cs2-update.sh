@@ -41,6 +41,14 @@ if [[ $EUID -ne 0 ]]; then
     exec sudo bash "$0" "$@"
 fi
 
+# ── Stdin reopen (curl|bash fix) ──────────────────────────────────────────────
+# When invoked via `curl ... | sudo bash`, stdin is the pipe, not the terminal.
+# All `read` calls would receive EOF → silently use defaults or abort.
+# Reopen stdin from /dev/tty so interactive prompts actually work.
+if [ ! -t 0 ] && [ -r /dev/tty ]; then
+    exec < /dev/tty
+fi
+
 # ── Welcome ───────────────────────────────────────────────────────────────────
 
 clear
