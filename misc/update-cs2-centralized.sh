@@ -851,6 +851,8 @@ _sync_to_volume() {
     human_size=$(format_bytes "$vpk_size")
     log_info "  ${DIM}→ $container: $vpk_count VPK(s), ${human_size}${RESET}"
 
+    chown -R pterodactyl:pterodactyl "$dest/game" 2>/dev/null || true
+
     return 0
 }
 
