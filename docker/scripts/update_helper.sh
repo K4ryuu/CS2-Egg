@@ -17,6 +17,11 @@ detect_daemon_vpk() {
         return 0
     fi
 
+    local marker="/home/container/egg/.daemon-managed"
+    local mount="/tmp/cs2-shared"
+    local ttl="${DAEMON_MARKER_TTL:-600}"
+    local max_wait="${DAEMON_WAIT_SECS:-15}"
+
     _vpk_info() {
         local n s
         n=$(find -L /home/container/game/csgo -maxdepth 3 -name "*.vpk" -type f 2>/dev/null | wc -l)
@@ -24,38 +29,51 @@ detect_daemon_vpk() {
             | awk '{s+=$1} END {printf "%.1f GB", s/1073741824}')
         echo "${n} files, ${s}"
     }
+    _is_mounted() { awk -v m="$1" '$5 == m {f=1} END {exit !f}' /proc/self/mountinfo 2>/dev/null; }
+    _has_vpk_symlinks() { find /home/container/game/csgo -maxdepth 3 -name "*.vpk" -type l 2>/dev/null | grep -q .; }
 
-    # No VPK files or symlinks at all → not in daemon mode
-    if ! find /home/container/game/csgo -maxdepth 3 -name "*.vpk" 2>/dev/null | grep -q .; then
-        return 0
-    fi
+    # Race protection: only wait if prior-daemon evidence exists.
+    # Clean local install → no symlinks, no marker → instant return.
+    local has_symlinks=0
+    _has_vpk_symlinks && has_symlinks=1
+    [ "$has_symlinks" -eq 0 ] && [ ! -f "$marker" ] && return 0
 
-    # VPK symlinks exist - wait for daemon to mount CS2_DIR.
-    # Daemon and entrypoint start concurrently; mount may take a few seconds.
-    local _waited=0
-    while [ $_waited -lt 60 ]; do
-        if find -L /home/container/game/csgo -maxdepth 3 -name "*.vpk" -type f 2>/dev/null | grep -q .; then
-            log_message "Daemon ready ($(_vpk_info)) - centrally managed, skipping internal updates" "info"
+    local waited=0
+    while :; do
+        # Signal 1: mount (mandatory for symlink mode - re-mounted on docker start event)
+        if _is_mounted "$mount"; then
+            log_message "Daemon-managed ($(_vpk_info))" "info"
             SRCDS_STOP_UPDATE=1
             return 0
         fi
-        sleep 1; ((_waited++)) || true
-        [ $((_waited % 10)) -eq 0 ] && log_message "Waiting for daemon mount... (${_waited}s)" "info"
+        # Signal 2: heartbeat marker - only trusted when no broken symlinks await mount
+        if [ "$has_symlinks" -eq 0 ] && [ -f "$marker" ]; then
+            local age=$(( $(date +%s) - $(stat -c %Y "$marker" 2>/dev/null || echo 0) ))
+            if [ "$age" -lt "$ttl" ]; then
+                log_message "Daemon-managed (heartbeat: ${age}s/${ttl}s, $(_vpk_info))" "info"
+                SRCDS_STOP_UPDATE=1
+                return 0
+            fi
+            log_message "Daemon marker stale (${age}s > ${ttl}s) - daemon dead? falling back to SteamCMD" "warning"
+            log_message "  → Check: journalctl -u cs2-vpk-daemon -n 50" "warning"
+            return 0
+        fi
+        [ "$waited" -ge "$max_wait" ] && break
+        sleep 1; ((waited++)) || true
     done
 
-    log_message "Daemon mount timed out after 60s - daemon not running or mount failed." "warning"
+    log_message "Daemon detection timed out after ${max_wait}s" "warning"
+    [ "$has_symlinks" -eq 1 ] && log_message "  → Symlink VPKs without mount - server WILL fail to load game files" "error"
     log_message "  → Check: journalctl -u cs2-vpk-daemon -n 50" "warning"
-    log_message "  → Install: curl -fsSL https://raw.githubusercontent.com/K4ryuu/CS2-Egg/main/misc/install-cs2-update.sh | sudo bash" "warning"
 }
 
-# Removes local SteamCMD only when daemon VPKs are confirmed accessible.
+# Removes local SteamCMD only when daemon detection confirmed it.
 cleanup_daemon_mode() {
     [ "${SYNC_LOCATION+defined}" = "defined" ] && return 0
+    [ "${SRCDS_STOP_UPDATE:-0}" -eq 1 ] || return 0
     [ -d "/home/container/steamcmd" ] || return 0
-    if find -L /home/container/game/csgo -maxdepth 3 -name "*.vpk" -type f 2>/dev/null | grep -q .; then
-        log_message "Daemon mode active - removing local SteamCMD (not needed, saves ~200MB)" "info"
-        rm -rf /home/container/steamcmd /home/container/steamapps /home/container/Steam
-    fi
+    log_message "Daemon mode active - removing local SteamCMD (saves ~200MB)" "info"
+    rm -rf /home/container/steamcmd /home/container/steamapps /home/container/Steam
 }
 
 export -f detect_daemon_vpk cleanup_daemon_mode

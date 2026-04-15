@@ -1,3 +1,8 @@
+-- update - 2026.04.15
+
+- fix(update_helper): Local SteamCMD installs were misdetected as daemon-managed → updates silently disabled and steamcmd dir deleted on restart. Detection rewritten to mount + heartbeat marker (10min TTL).
+- feat(centralized): Daemon writes .daemon-managed marker before sync and on every container start event - reliable signal for all push methods (symlink/hardlink/copy).
+
 -- update - 2026.04.14
 
 - feat: Pelican panel support

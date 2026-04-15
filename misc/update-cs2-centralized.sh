@@ -10,7 +10,7 @@
 #                 a CS2 container starts (new server or restart). Install as a
 #                 systemd service for automatic startup.
 #
-# Version: 1.0.40
+# Version: 1.0.41
 
 set -euo pipefail
 
@@ -736,6 +736,11 @@ _sync_to_volume() {
 
     local container_mount_dst="/tmp/cs2-shared"
 
+    # Heartbeat marker - touch BEFORE sync so concurrent entrypoint detect_daemon_vpk
+    # sees a fresh mtime immediately and doesn't fall through to SteamCMD while we work.
+    mkdir -p "$dest/egg" 2>/dev/null && touch "$dest/egg/.daemon-managed" 2>/dev/null
+    chown -R pterodactyl:pterodactyl "$dest/egg" 2>/dev/null || true
+
     # Sync non-VPK base files; exclude per-server configs and gameinfo.gi
     # --no-o --no-g: don't overwrite ownership (preserve volume root owner = pterodactyl)
     rsync -aKz --no-o --no-g \
@@ -1008,6 +1013,9 @@ run_event_daemon() {
             if [ "$event" = "start" ]; then
                 # skip push if working VPKs already present (create event already handled it)
                 if find -L "$volume_path" -maxdepth 6 -name "*.vpk" -type f 2>/dev/null | grep -q .; then
+                    # Heartbeat refresh - container's detect_daemon_vpk uses mtime to verify daemon alive
+                    mkdir -p "$volume_path/egg" 2>/dev/null && touch "$volume_path/egg/.daemon-managed" 2>/dev/null
+                    chown -R pterodactyl:pterodactyl "$volume_path/egg" 2>/dev/null || true
                     rmdir "$lock_file" 2>/dev/null || true
                     continue
                 fi
