@@ -123,7 +123,7 @@ log_message "Starting server: ${LOGGED_STARTUP}" "info"
 
 # GDB mode: use Valve's built-in GAME_DEBUGGER support (cs2.sh line 106)
 # gdbserver launches cs2 as parent process, so no SYS_PTRACE capability needed
-if [ -n "${GDB_DEBUG_PORT}" ]; then
+if [ -n "${GDB_DEBUG_PORT}" ] && [ "${GDB_DEBUG_PORT}" != "0" ]; then
     export GAME_DEBUGGER="gdbserver --no-disable-randomization :${GDB_DEBUG_PORT}"
     log_message "GDB mode: Server will start under gdbserver on port ${GDB_DEBUG_PORT}" "info"
     log_message "Server will wait for debugger connection before starting" "warning"
