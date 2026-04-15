@@ -19,15 +19,15 @@ VPK Sync allows multiple CS2 servers to share game files from a single centraliz
 
 With the centralized script and VPK sync, new server startup is near-instant:
 
-| Step | Time |
-|------|------|
-| Daemon detects container start | ~0s |
-| Daemon mounts CS2_DIR into container | 1–3s |
-| Entrypoint detects VPKs, skips SteamCMD | ~0s |
-| CS2 server process starts | ~2s |
-| **Total (new server, first boot)** | **~5 seconds** |
+| Step                                    | Time           |
+| --------------------------------------- | -------------- |
+| Daemon detects container start          | ~0s            |
+| Daemon mounts CS2_DIR into container    | 1-3s           |
+| Entrypoint detects VPKs, skips SteamCMD | ~0s            |
+| CS2 server process starts               | ~2s            |
+| **Total (new server, first boot)**      | **~5 seconds** |
 
-This replaces what would otherwise be a 10–30 minute SteamCMD download on first boot.
+This replaces what would otherwise be a 10-30 minute SteamCMD download on first boot.
 
 ## Storage Savings
 
