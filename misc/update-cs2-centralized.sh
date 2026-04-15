@@ -851,11 +851,7 @@ _sync_to_volume() {
     human_size=$(format_bytes "$vpk_size")
     log_info "  ${DIM}→ $container: $vpk_count VPK(s), ${human_size}${RESET}"
 
-    local vol_owner
-    vol_owner=$(stat -c "%u:%g" "$dest" 2>/dev/null)
-    if [[ -n "$vol_owner" && "$vol_owner" != "0:0" ]]; then
-        chown -R "$vol_owner" "$dest/game" 2>/dev/null || true
-    fi
+    chown -R pterodactyl:pterodactyl "$dest/game" 2>/dev/null || true
 
     return 0
 }
