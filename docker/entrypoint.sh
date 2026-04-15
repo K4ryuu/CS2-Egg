@@ -29,20 +29,14 @@ cleanup_daemon_mode
 if [ ${SRCDS_STOP_UPDATE:-0} -eq 0 ]; then
     sync_files
     sync_cfg_files
-
-    # Legacy VPK sync ran - game files managed externally, SteamCMD not needed
-    if [ "${SYNC_LOCATION+defined}" = "defined" ]; then
-        log_message "Legacy VPK sync complete - game files managed externally, skipping SteamCMD" "info"
-        SRCDS_STOP_UPDATE=1
-        rm -rf /home/container/steamcmd /home/container/steamapps /home/container/Steam
-    fi
 fi
 
 # SteamCMD install and cleanup (skip if VPKs managed externally)
 if [ ${SRCDS_STOP_UPDATE:-0} -eq 0 ]; then
     install_steamcmd
-    clean_old_logs
 fi
+
+rotate_logs
 
 # Server update process
 if [ -n "${SRCDS_APPID}" ] && [ "${SRCDS_STOP_UPDATE:-0}" -eq 0 ]; then
