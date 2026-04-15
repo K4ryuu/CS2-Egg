@@ -52,7 +52,7 @@ This replaces what would otherwise be a 10–30 minute SteamCMD download on firs
 Run the installer as root - it handles everything:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/K4ryuu/CS2-Egg/main/misc/install-cs2-update.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/K4ryuu/CS2-Egg/main/misc/install-cs2-update.sh -o /tmp/install-cs2-update.sh && sudo bash /tmp/install-cs2-update.sh
 ```
 
 The installer will:
@@ -123,7 +123,7 @@ journalctl -u cs2-vpk-daemon --since "1 hour ago"
 > **Something broken?** Re-run the installer - it resets config to working defaults while offering your current values as starting points:
 >
 > ```bash
-> curl -fsSL https://raw.githubusercontent.com/K4ryuu/CS2-Egg/main/misc/install-cs2-update.sh | sudo bash
+> curl -fsSL https://raw.githubusercontent.com/K4ryuu/CS2-Egg/main/misc/install-cs2-update.sh -o /tmp/install-cs2-update.sh && sudo bash /tmp/install-cs2-update.sh
 > ```
 
 ### Cross-Filesystem Hardlink Error

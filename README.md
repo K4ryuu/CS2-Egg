@@ -61,7 +61,7 @@ Run CS2 on multiple servers without storing 55GB per server. One installation, s
 A guided **installation wizard** handles everything - download, configuration, systemd daemon, and cron setup. Default options work for most setups.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/K4ryuu/CS2-Egg/main/misc/install-cs2-update.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/K4ryuu/CS2-Egg/main/misc/install-cs2-update.sh -o /tmp/install-cs2-update.sh && sudo bash /tmp/install-cs2-update.sh
 ```
 
 > **Recommended:** run with default options. Just press Enter through the wizard.
