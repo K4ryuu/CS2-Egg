@@ -13,7 +13,7 @@ detect_daemon_vpk() {
         log_message "⚠️  DEPRECATION WARNING ⚠️" "warning"
         log_message "SYNC_LOCATION is deprecated and will be removed after 2026-10-01!" "warning"
         log_message "  → Import the latest egg - it will clean this up automatically." "warning"
-        log_message "  → Install daemon: curl -fsSL https://raw.githubusercontent.com/K4ryuu/CS2-Egg/main/misc/install-cs2-update.sh | sudo bash" "warning"
+        log_message "  → Install daemon: curl -fsSL https://raw.githubusercontent.com/K4ryuu/CS2-Egg/main/misc/install-cs2-update.sh -o /tmp/install-cs2-update.sh && sudo bash /tmp/install-cs2-update.sh" "warning"
         return 0
     fi
 
