@@ -20,7 +20,7 @@ detect_daemon_vpk() {
     local marker="/home/container/egg/.daemon-managed"
     local mount="/tmp/cs2-shared"
     local ttl="${DAEMON_MARKER_TTL:-600}"
-    local max_wait="${DAEMON_WAIT_SECS:-15}"
+    local max_wait="${DAEMON_WAIT_SECS:-60}"
 
     _vpk_info() {
         local n s
@@ -37,6 +37,9 @@ detect_daemon_vpk() {
     local has_symlinks=0
     _has_vpk_symlinks && has_symlinks=1
     [ "$has_symlinks" -eq 0 ] && [ ! -f "$marker" ] && return 0
+
+    log_message "Waiting for centralized VPK daemon (up to ${max_wait}s)..." "info"
+    log_message "  → First boot after fresh create may take 15-20s while daemon pushes game files." "info"
 
     local waited=0
     while :; do
@@ -60,6 +63,7 @@ detect_daemon_vpk() {
         fi
         [ "$waited" -ge "$max_wait" ] && break
         sleep 1; ((waited++)) || true
+        [ $((waited % 10)) -eq 0 ] && log_message "  Still waiting for daemon... (${waited}s/${max_wait}s)" "info"
     done
 
     log_message "Daemon detection timed out after ${max_wait}s" "warning"
