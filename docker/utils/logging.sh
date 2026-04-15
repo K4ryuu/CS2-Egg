@@ -24,7 +24,7 @@ PREFIX="${PREFIX:=${RED}[${PREFIX_TEXT}]${WHITE} > }"
 init_egg_directories() {
     mkdir -p "${EGG_DIR}"
     mkdir -p "${EGG_CONFIGS_DIR}"
-    
+
     # Only create logs directory if logging is actually enabled
     if [[ "${LOG_FILE_ENABLED}" == "1" ]] || [[ "${LOG_FILE_ENABLED}" == "true" ]]; then
         mkdir -p "${EGG_LOGS_DIR}"
@@ -99,7 +99,7 @@ rotate_logs() {
     if [[ ${LOG_MAX_SIZE_MB} -gt 0 ]]; then
         local dir_size_kb=$(du -sk "${EGG_LOGS_DIR}" | cut -f1)
         local max_size_kb=$((LOG_MAX_SIZE_MB * 1024))
-        
+
         while [[ ${dir_size_kb} -gt ${max_size_kb} ]]; do
             local oldest_log=$(find "${EGG_LOGS_DIR}" -name "*.log" -type f -printf '%T+ %p\n' | sort | head -n 1 | cut -d' ' -f2-)
             [[ -z "${oldest_log}" ]] && break
@@ -107,10 +107,6 @@ rotate_logs() {
             dir_size_kb=$(du -sk "${EGG_LOGS_DIR}" | cut -f1)
         done
     fi
-}
-
-clean_old_logs() {
-    rotate_logs
 }
 
 log_message() {
