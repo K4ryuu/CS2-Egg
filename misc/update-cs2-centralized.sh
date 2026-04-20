@@ -736,8 +736,9 @@ _sync_to_volume() {
 
     local container_mount_dst="/tmp/cs2-shared"
 
-    # Heartbeat marker - touch BEFORE sync so concurrent entrypoint detect_daemon_vpk
-    # sees a fresh mtime immediately and doesn't fall through to SteamCMD while we work.
+    # CRITICAL: marker MUST be touched before any push work.
+    # The container's detect_daemon_vpk() uses marker presence as the sole daemon-detection signal,
+    # so a marker that lags the push would cause entrypoint to race past it and fall through to SteamCMD.
     mkdir -p "$dest/egg" 2>/dev/null && touch "$dest/egg/.daemon-managed" 2>/dev/null
     chown -R pterodactyl:pterodactyl "$dest/egg" 2>/dev/null || true
 

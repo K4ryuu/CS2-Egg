@@ -31,6 +31,9 @@ format_bytes() {
 
 # ! TODO: Remove sync_files() and sync_cfg_files() after 2026-10-01 (SYNC_LOCATION deprecated)
 sync_files() {
+    # Daemon takes priority - never overwrite daemon-managed files with legacy sync
+    [ "${DAEMON_EVIDENCE_FOUND:-0}" -eq 1 ] && return 0
+
     # Bail early if sync isn't configured
     if [ ! "${SYNC_LOCATION+defined}" = "defined" ] || [ -z "${SYNC_LOCATION}" ]; then
         return 0
@@ -103,6 +106,9 @@ sync_files() {
 }
 
 sync_cfg_files() {
+    # Daemon takes priority - never overwrite daemon-managed files with legacy sync
+    [ "${DAEMON_EVIDENCE_FOUND:-0}" -eq 1 ] && return 0
+
     # Skip if sync isn't set up
     if [ ! "${SYNC_LOCATION+defined}" = "defined" ] || [ -z "${SYNC_LOCATION}" ]; then
         return 0

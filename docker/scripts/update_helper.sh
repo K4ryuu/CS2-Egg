@@ -2,25 +2,37 @@
 
 source /utils/logging.sh
 
-# ! TODO: Remove this entire file after 2026-10-01 (SYNC_LOCATION support dropped)
+# ! TODO: Remove SYNC_LOCATION fallback after 2026-10-01 (legacy sync deprecated)
 
-# Detects daemon-managed VPK files and sets SRCDS_STOP_UPDATE=1 if found.
-# If SYNC_LOCATION is defined (legacy egg), shows deprecation warning and skips daemon detection.
+# Priority: daemon marker > SYNC_LOCATION > local SteamCMD
+# Detects daemon-managed VPK files via the heartbeat marker and sets SRCDS_STOP_UPDATE=1
+# when the daemon is active. If daemon evidence is found, SYNC_LOCATION is ignored
+# (a leftover variable should not disable the daemon path).
 detect_daemon_vpk() {
     [ "${SRCDS_STOP_UPDATE:-0}" -eq 1 ] && return 0
-
-    if [ "${SYNC_LOCATION+defined}" = "defined" ]; then
-        log_message "⚠️  DEPRECATION WARNING ⚠️" "warning"
-        log_message "SYNC_LOCATION is deprecated and will be removed after 2026-10-01!" "warning"
-        log_message "  → Import the latest egg - it will clean this up automatically." "warning"
-        log_message "  → Install daemon: curl -fsSL https://raw.githubusercontent.com/K4ryuu/CS2-Egg/main/misc/install-cs2-update.sh -o /tmp/install-cs2-update.sh && sudo bash /tmp/install-cs2-update.sh" "warning"
-        return 0
-    fi
 
     local marker="/home/container/egg/.daemon-managed"
     local mount="/tmp/cs2-shared"
     local ttl="${DAEMON_MARKER_TTL:-600}"
     local max_wait="${DAEMON_WAIT_SECS:-60}"
+
+    # No daemon marker → no daemon present. Fall back to SYNC_LOCATION (legacy) or local SteamCMD.
+    if [ ! -f "$marker" ]; then
+        if [ "${SYNC_LOCATION+defined}" = "defined" ]; then
+            log_message "⚠️  DEPRECATION WARNING ⚠️" "warning"
+            log_message "SYNC_LOCATION is deprecated and will be removed after 2026-10-01!" "warning"
+            log_message "  → Import the latest egg - it will clean this up automatically." "warning"
+            log_message "  → Install daemon: curl -fsSL https://raw.githubusercontent.com/K4ryuu/CS2-Egg/main/misc/install-cs2-update.sh -o /tmp/install-cs2-update.sh && sudo bash /tmp/install-cs2-update.sh" "warning"
+        fi
+        return 0
+    fi
+
+    # Daemon marker present → daemon is authoritative, ignore SYNC_LOCATION even if set.
+    export DAEMON_EVIDENCE_FOUND=1
+    if [ "${SYNC_LOCATION+defined}" = "defined" ]; then
+        log_message "Daemon detected - ignoring deprecated SYNC_LOCATION variable" "info"
+        log_message "  → Remove SYNC_LOCATION from startup variables to silence this notice" "info"
+    fi
 
     _vpk_info() {
         local n s
@@ -32,48 +44,39 @@ detect_daemon_vpk() {
     _is_mounted() { awk -v m="$1" '$5 == m {f=1} END {exit !f}' /proc/self/mountinfo 2>/dev/null; }
     _has_vpk_symlinks() { find /home/container/game/csgo -maxdepth 3 -name "*.vpk" -type l 2>/dev/null | grep -q .; }
 
-    # Race protection: only wait if prior-daemon evidence exists.
-    # Clean local install → no symlinks, no marker → instant return.
-    local has_symlinks=0
-    _has_vpk_symlinks && has_symlinks=1
-    [ "$has_symlinks" -eq 0 ] && [ ! -f "$marker" ] && return 0
+    # Stale marker → daemon likely dead. Fall through to SteamCMD so the server still boots.
+    local age=$(( $(date +%s) - $(stat -c %Y "$marker" 2>/dev/null || echo 0) ))
+    if [ "$age" -ge "$ttl" ]; then
+        log_message "Daemon marker stale (${age}s > ${ttl}s) - daemon dead? falling back to SteamCMD" "warning"
+        log_message "  → Check: journalctl -u cs2-vpk-daemon -n 50" "warning"
+        return 0
+    fi
 
-    log_message "Waiting for centralized VPK daemon (up to ${max_wait}s)..." "info"
-    log_message "  → First boot after fresh create may take 15-20s while daemon pushes game files." "info"
+    # Symlink mode: VPK symlinks point into /tmp/cs2-shared which the daemon bind-mounts on the
+    # docker `start` event. That mount can race with entrypoint, so wait for it before proceeding.
+    if _has_vpk_symlinks; then
+        log_message "Waiting for daemon bind mount (up to ${max_wait}s)..." "info"
+        log_message "  → First boot after fresh create may take 15-20s while daemon pushes game files." "info"
 
-    local waited=0
-    while :; do
-        # Signal 1: mount (mandatory for symlink mode - re-mounted on docker start event)
-        if _is_mounted "$mount"; then
-            log_message "Daemon-managed ($(_vpk_info))" "info"
-            SRCDS_STOP_UPDATE=1
-            return 0
-        fi
-        # Signal 2: heartbeat marker - only trusted when no broken symlinks await mount
-        if [ "$has_symlinks" -eq 0 ] && [ -f "$marker" ]; then
-            local age=$(( $(date +%s) - $(stat -c %Y "$marker" 2>/dev/null || echo 0) ))
-            if [ "$age" -lt "$ttl" ]; then
-                log_message "Daemon-managed (heartbeat: ${age}s/${ttl}s, $(_vpk_info))" "info"
-                SRCDS_STOP_UPDATE=1
+        local waited=0
+        while ! _is_mounted "$mount"; do
+            if [ "$waited" -ge "$max_wait" ]; then
+                log_message "Daemon mount wait timed out after ${max_wait}s" "warning"
+                log_message "  → Symlink VPKs without mount - server WILL fail to load game files" "error"
+                log_message "  → Check: journalctl -u cs2-vpk-daemon -n 50" "warning"
                 return 0
             fi
-            log_message "Daemon marker stale (${age}s > ${ttl}s) - daemon dead? falling back to SteamCMD" "warning"
-            log_message "  → Check: journalctl -u cs2-vpk-daemon -n 50" "warning"
-            return 0
-        fi
-        [ "$waited" -ge "$max_wait" ] && break
-        sleep 1; ((waited++)) || true
-        [ $((waited % 10)) -eq 0 ] && log_message "  Still waiting for daemon... (${waited}s/${max_wait}s)" "info"
-    done
+            sleep 1; ((waited++)) || true
+            [ $((waited % 10)) -eq 0 ] && log_message "  Still waiting for daemon mount... (${waited}s/${max_wait}s)" "info"
+        done
+    fi
 
-    log_message "Daemon detection timed out after ${max_wait}s" "warning"
-    [ "$has_symlinks" -eq 1 ] && log_message "  → Symlink VPKs without mount - server WILL fail to load game files" "error"
-    log_message "  → Check: journalctl -u cs2-vpk-daemon -n 50" "warning"
+    log_message "Daemon-managed (heartbeat: ${age}s/${ttl}s, $(_vpk_info))" "info"
+    SRCDS_STOP_UPDATE=1
 }
 
 # Removes local SteamCMD only when daemon detection confirmed it.
 cleanup_daemon_mode() {
-    [ "${SYNC_LOCATION+defined}" = "defined" ] && return 0
     [ "${SRCDS_STOP_UPDATE:-0}" -eq 1 ] || return 0
     [ -d "/home/container/steamcmd" ] || return 0
     log_message "Daemon mode active - removing local SteamCMD (saves ~200MB)" "info"
