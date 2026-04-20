@@ -14,9 +14,31 @@ detect_daemon_vpk() {
     local marker="/home/container/egg/.daemon-managed"
     local mount="/tmp/cs2-shared"
     local ttl="${DAEMON_MARKER_TTL:-600}"
-    local max_wait="${DAEMON_WAIT_SECS:-60}"
+    local silent_secs="${DAEMON_WAIT_SECS:-2}"
+    local silent_ticks=$((silent_secs * 10))
+    local mount_max_secs="${DAEMON_MOUNT_WAIT_SECS:-30}"
 
-    # No daemon marker → no daemon present. Fall back to SYNC_LOCATION (legacy) or local SteamCMD.
+    _is_mounted() { awk -v m="$1" '$5 == m {f=1} END {exit !f}' /proc/self/mountinfo 2>/dev/null; }
+    _has_vpk_symlinks() { find /home/container/game/csgo -maxdepth 3 -name "*.vpk" -type l 2>/dev/null | grep -q .; }
+    _vpk_info() {
+        local n s
+        n=$(find -L /home/container/game/csgo -maxdepth 3 -name "*.vpk" -type f 2>/dev/null | wc -l)
+        s=$(find -L /home/container/game/csgo -maxdepth 3 -name "*.vpk" -type f -printf "%s\n" 2>/dev/null \
+            | awk '{s+=$1} END {printf "%.1f GB", s/1073741824}')
+        echo "${n} files, ${s}"
+    }
+
+    # Silent probe for daemon signal (first-boot race). Skip: legacy SYNC_LOCATION or =0.
+    if [ "${SYNC_LOCATION+defined}" != "defined" ] && [ ! -f "$marker" ] && ! _is_mounted "$mount"; then
+        local t=0
+        while [ "$t" -lt "$silent_ticks" ]; do
+            [ -f "$marker" ] && break
+            _is_mounted "$mount" && break
+            sleep 0.1
+            ((t++)) || true
+        done
+    fi
+
     if [ ! -f "$marker" ]; then
         if [ "${SYNC_LOCATION+defined}" = "defined" ]; then
             log_message "⚠️  DEPRECATION WARNING ⚠️" "warning"
@@ -27,24 +49,12 @@ detect_daemon_vpk() {
         return 0
     fi
 
-    # Daemon marker present → daemon is authoritative, ignore SYNC_LOCATION even if set.
     export DAEMON_EVIDENCE_FOUND=1
     if [ "${SYNC_LOCATION+defined}" = "defined" ]; then
         log_message "Daemon detected - ignoring deprecated SYNC_LOCATION variable" "info"
         log_message "  → Remove SYNC_LOCATION from startup variables to silence this notice" "info"
     fi
 
-    _vpk_info() {
-        local n s
-        n=$(find -L /home/container/game/csgo -maxdepth 3 -name "*.vpk" -type f 2>/dev/null | wc -l)
-        s=$(find -L /home/container/game/csgo -maxdepth 3 -name "*.vpk" -type f -printf "%s\n" 2>/dev/null \
-            | awk '{s+=$1} END {printf "%.1f GB", s/1073741824}')
-        echo "${n} files, ${s}"
-    }
-    _is_mounted() { awk -v m="$1" '$5 == m {f=1} END {exit !f}' /proc/self/mountinfo 2>/dev/null; }
-    _has_vpk_symlinks() { find /home/container/game/csgo -maxdepth 3 -name "*.vpk" -type l 2>/dev/null | grep -q .; }
-
-    # Stale marker → daemon likely dead. Fall through to SteamCMD so the server still boots.
     local age=$(( $(date +%s) - $(stat -c %Y "$marker" 2>/dev/null || echo 0) ))
     if [ "$age" -ge "$ttl" ]; then
         log_message "Daemon marker stale (${age}s > ${ttl}s) - daemon dead? falling back to SteamCMD" "warning"
@@ -52,22 +62,24 @@ detect_daemon_vpk() {
         return 0
     fi
 
-    # Symlink mode: VPK symlinks point into /tmp/cs2-shared which the daemon bind-mounts on the
-    # docker `start` event. That mount can race with entrypoint, so wait for it before proceeding.
-    if _has_vpk_symlinks; then
-        log_message "Waiting for daemon bind mount (up to ${max_wait}s)..." "info"
-        log_message "  → First boot after fresh create may take 15-20s while daemon pushes game files." "info"
-
-        local waited=0
+    # Mount wait: announce only after silent window → fast mounts stay quiet.
+    if _has_vpk_symlinks && ! _is_mounted "$mount"; then
+        local t=0 max_t=$((mount_max_secs * 10)) announced=false
         while ! _is_mounted "$mount"; do
-            if [ "$waited" -ge "$max_wait" ]; then
-                log_message "Daemon mount wait timed out after ${max_wait}s" "warning"
+            if [ "$t" -ge "$max_t" ]; then
+                log_message "Daemon mount wait timed out after $((t/10))s" "warning"
                 log_message "  → Symlink VPKs without mount - server WILL fail to load game files" "error"
                 log_message "  → Check: journalctl -u cs2-vpk-daemon -n 50" "warning"
                 return 0
             fi
-            sleep 1; ((waited++)) || true
-            [ $((waited % 10)) -eq 0 ] && log_message "  Still waiting for daemon mount... (${waited}s/${max_wait}s)" "info"
+            sleep 0.1
+            ((t++)) || true
+            if ! $announced && [ "$t" -ge "$silent_ticks" ]; then
+                log_message "Waiting for daemon synchronization..." "info"
+                announced=true
+            fi
+            $announced && [ $((t % 50)) -eq 0 ] \
+                && log_message "  Still waiting for daemon mount... ($((t/10))s/${mount_max_secs}s)" "info"
         done
     fi
 
