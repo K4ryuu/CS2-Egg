@@ -743,7 +743,7 @@ _sync_to_volume() {
 
     # Sync non-VPK base files; exclude per-server configs and gameinfo.gi
     # --no-o --no-g: don't overwrite ownership (preserve volume root owner = pterodactyl)
-    rsync -aKz --no-o --no-g \
+    rsync -aK --no-o --no-g \
         --exclude '*.vpk' \
         --exclude 'cfg/' \
         --exclude 'game/csgo/gameinfo.gi' \
