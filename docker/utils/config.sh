@@ -3,7 +3,7 @@
 source /utils/logging.sh
 
 # Current config version - bump this when changing fields
-CONFIG_VERSION="1.0.1"
+CONFIG_VERSION="1.1.0"
 
 # Use organized egg directory structure
 CONFIG_DIR="${EGG_CONFIGS_DIR:-/home/container/egg/configs}"
@@ -166,40 +166,80 @@ create_cleanup_config() {
 {
   "version": "$CONFIG_VERSION",
   "_description": [
-    "Cleanup Configuration",
+    "Cleanup Configuration — rule-based",
     "",
-    "Automatic cleanup of old logs, demos, and backup files.",
+    "Every entry in 'rules' is an independent cleanup target. You can edit,",
+    "disable, add, or remove rules without touching any code.",
     "",
-    "Settings:",
-    "  - intervals.backup_rounds_hours: Delete backup_round*.txt files older than X hours",
-    "  - intervals.demos_hours: Delete *.dem demo files older than X hours",
-    "  - intervals.css_logs_hours: Delete CounterStrikeSharp logs older than X hours",
-    "  - intervals.accelerator_dumps_hours: Delete Accelerator crash dumps older than X hours",
+    "Rule fields:",
+    "  - name: Stat category shown in log output (e.g. 'demos', 'backup_rounds')",
+    "  - description: Free-text comment (ignored by the engine)",
+    "  - directories: Array of paths to search (relative to /home/container or absolute)",
+    "  - patterns: Array of filename globs (e.g. '*.dem', 'core.[0-9]*')",
+    "  - hours: File must be older than this many hours (0 = delete on every run)",
+    "  - recursive: true = walk subdirectories, false = only the directory root",
+    "  - enabled: false disables the rule without deleting it",
     "",
-    "Paths:",
-    "  - paths.game_directory: Base game directory (usually ./game/csgo)",
-    "  - paths.accelerator_dumps: AcceleratorCS2 dumps directory",
-    "",
-    "Default intervals:",
-    "  - Backup rounds: 24 hours (1 day)",
-    "  - Demos: 168 hours (7 days)",
-    "  - CSS logs: 72 hours (3 days)",
-    "  - Accelerator dumps: 168 hours (7 days)",
-    "",
-  "Enable this feature by setting CLEANUP_ENABLED=1 in the Pterodactyl egg.",
+    "Enable cleanup by setting CLEANUP_ENABLED=1 in the Pterodactyl egg.",
     "",
     "Config location: /home/container/egg/configs/cleanup.json"
   ],
-  "intervals": {
-    "backup_rounds_hours": 24,
-    "demos_hours": 168,
-    "css_logs_hours": 72,
-    "accelerator_dumps_hours": 168
-  },
-  "paths": {
-    "game_directory": "./game/csgo",
-    "accelerator_dumps": "./game/csgo/addons/AcceleratorCS2/dumps"
-  }
+  "rules": [
+    {
+      "name": "backup_rounds",
+      "description": "CS2 match backup round snapshots",
+      "directories": ["./game/csgo"],
+      "patterns": ["backup_round*.txt"],
+      "hours": 24,
+      "recursive": true,
+      "enabled": true
+    },
+    {
+      "name": "demos",
+      "description": "SourceTV demo recordings",
+      "directories": ["./game/csgo"],
+      "patterns": ["*.dem"],
+      "hours": 168,
+      "recursive": true,
+      "enabled": true
+    },
+    {
+      "name": "css_logs",
+      "description": "CounterStrikeSharp log files",
+      "directories": ["./game/csgo/addons/counterstrikesharp/logs"],
+      "patterns": ["*.txt"],
+      "hours": 72,
+      "recursive": true,
+      "enabled": true
+    },
+    {
+      "name": "swiftly_logs",
+      "description": "SwiftlyS2 log files",
+      "directories": ["./game/csgo/addons/swiftlys2/logs"],
+      "patterns": ["*.log"],
+      "hours": 72,
+      "recursive": true,
+      "enabled": true
+    },
+    {
+      "name": "accelerator_dumps",
+      "description": "AcceleratorCS2 crash dumps and reports",
+      "directories": ["./game/csgo/addons/AcceleratorCS2/dumps"],
+      "patterns": ["*.dmp", "*.dmp.txt"],
+      "hours": 168,
+      "recursive": true,
+      "enabled": true
+    },
+    {
+      "name": "core_dumps",
+      "description": "Linux core dumps (delete on every run)",
+      "directories": ["./game/bin/linuxsteamrt64", "/home/container"],
+      "patterns": ["core", "core.[0-9]*"],
+      "hours": 0,
+      "recursive": false,
+      "enabled": true
+    }
+  ]
 }
 EOF
 
@@ -282,16 +322,6 @@ load_configs() {
     # Load console filter config if enabled via environment variable
     if [ "${ENABLE_FILTER:-0}" -eq 1 ]; then
         export FILTER_PREVIEW_MODE=$(get_config_value "console-filter.json" ".preview_mode" "false")
-    fi
-
-  # Load cleanup config if enabled (supports CLEANUP_ENABLED, fallback ENABLE_CLEANUP)
-  if [ "${CLEANUP_ENABLED:-${ENABLE_CLEANUP:-0}}" -eq 1 ]; then
-        export CLEANUP_BACKUP_HOURS=$(get_config_value "cleanup.json" ".intervals.backup_rounds_hours" "24")
-        export CLEANUP_DEMOS_HOURS=$(get_config_value "cleanup.json" ".intervals.demos_hours" "168")
-        export CLEANUP_LOGS_HOURS=$(get_config_value "cleanup.json" ".intervals.css_logs_hours" "72")
-        export CLEANUP_DUMPS_HOURS=$(get_config_value "cleanup.json" ".intervals.accelerator_dumps_hours" "168")
-        export CLEANUP_GAME_DIR=$(get_config_value "cleanup.json" ".paths.game_directory" "./game/csgo")
-        export CLEANUP_DUMPS_DIR=$(get_config_value "cleanup.json" ".paths.accelerator_dumps" "./game/csgo/addons/AcceleratorCS2/dumps")
     fi
 
     # Load logging config (always available, not feature-gated)

@@ -56,123 +56,112 @@ format_size() {
 }
 
 cleanup() {
-    # Grab config values (already loaded by config.sh)
-    local GAME_DIRECTORY="${CLEANUP_GAME_DIR:-./game/csgo}"
-    local BACKUP_ROUND_PURGE_INTERVAL="${CLEANUP_BACKUP_HOURS:-24}"
-    local DEMO_PURGE_INTERVAL="${CLEANUP_DEMOS_HOURS:-168}"
-    local CSS_JUNK_PURGE_INTERVAL="${CLEANUP_LOGS_HOURS:-72}"
-    local ACCELERATOR_DUMP_PURGE_INTERVAL="${CLEANUP_DUMPS_HOURS:-168}"
-    local ACCELERATOR_DUMPS_DIR="${CLEANUP_DUMPS_DIR:-./game/csgo/addons/AcceleratorCS2/dumps}"
+    local config_file="${EGG_CONFIGS_DIR:-/home/container/egg/configs}/cleanup.json"
 
-    # Make sure the game dir actually exists
-    if [ ! -d "$GAME_DIRECTORY" ]; then
-        log_message "Game directory not found: $GAME_DIRECTORY" "error"
+    if [ ! -f "$config_file" ]; then
+        log_message "Cleanup config missing at $config_file" "warning"
         return 1
     fi
 
-    # Check filesystem before proceeding
-    if ! check_filesystem "$GAME_DIRECTORY"; then
-        log_message "Filesystem check failed" "error"
-        return 1
+    local rule_count
+    rule_count=$(jq '.rules | length // 0' "$config_file" 2>/dev/null)
+    if [ -z "$rule_count" ] || [ "$rule_count" -eq 0 ]; then
+        log_message "No cleanup rules defined in cleanup.json" "debug"
+        return 0
     fi
 
-    # Track how much stuff we delete
-    declare -A stats=(
-        ["backup_rounds"]=0
-        ["demos"]=0
-        ["css_logs"]=0
-        ["swiftly_logs"]=0
-        ["accelerator_logs"]=0
-        ["accelerator_dumps"]=0
-        ["core_dumps"]=0
-    )
-
-    local start_time
+    declare -A stats=()
+    local start_time total_size deleted_count
     start_time=$(date +%s)
-    local total_size=0
-    local deleted_count=0
+    total_size=0
+    deleted_count=0
 
-    # Enhanced log deletion function with error handling
     log_deletion() {
         local file="$1"
         local category="$2"
 
         if [ ! -f "$file" ]; then
-            log_message "File not found: $file" "warning"
             return 1
         fi
 
         local size
         size=$($STAT_CMD "$file" 2>/dev/null)
-
         if [ $? -ne 0 ] || [[ ! "$size" =~ ^[0-9]+$ ]]; then
-            log_message "Failed to get file size for: $file" "warning"
             size=0
         fi
 
         if rm -f "$file"; then
             total_size=$((total_size + size))
-            ((stats[$category]++))
+            stats[$category]=$((${stats[$category]:-0} + 1))
             ((deleted_count++))
         else
             log_message "Failed to delete: $file" "error"
         fi
     }
 
-    # Process files with error handling
-    while IFS= read -r -d '' file; do
-        if [[ "$file" == *"backup_round"* ]]; then
-            log_deletion "$file" "backup_rounds"
-        elif [[ "$file" == *.dem ]]; then
-            log_deletion "$file" "demos"
-        elif [[ "$file" == */addons/counterstrikesharp/logs/* ]]; then
-            log_deletion "$file" "css_logs"
-        elif [[ "$file" == */addons/swiftlys2/logs/* ]]; then
-            log_deletion "$file" "swiftly_logs"
-        fi
-    done < <(find "$GAME_DIRECTORY" \( \
-        -name "backup_round*.txt" -mmin "+$((BACKUP_ROUND_PURGE_INTERVAL*60))" -o \
-        -name "*.dem" -mmin "+$((DEMO_PURGE_INTERVAL*60))" -o \
-        \( -path "*/addons/counterstrikesharp/logs/*.txt" -mmin "+$((CSS_JUNK_PURGE_INTERVAL*60))" \) -o \
-        \( -path "*/addons/swiftlys2/logs/*.log" -mmin "+$((CSS_JUNK_PURGE_INTERVAL*60))" \) \
-        \) -print0 2>/dev/null)
+    local i
+    for ((i = 0; i < rule_count; i++)); do
+        local name enabled hours recursive
+        name=$(jq -r ".rules[$i].name // empty" "$config_file")
+        enabled=$(jq -r ".rules[$i].enabled // true" "$config_file")
 
-    # Handle Accelerator logs with proper error checking
-    if [ -d "$ACCELERATOR_DUMPS_DIR" ]; then
-        while IFS= read -r -d '' file; do
-            if [[ "$file" == *.dmp.txt ]]; then
-                log_deletion "$file" "accelerator_logs"
-            else
-                log_deletion "$file" "accelerator_dumps"
-            fi
-        done < <(find "$ACCELERATOR_DUMPS_DIR" \( \
-            -name "*.dmp.txt" -o \
-            -name "*.dmp" \
-            \) -mmin "+$((ACCELERATOR_DUMP_PURGE_INTERVAL*60))" -print0 2>/dev/null)
-    fi
-
-    # Clean up core dumps (deleted on every restart). CS2 writes them to the game bin
-    # dir; some crashes also drop one at /home/container/core from the container root.
-    local core_dump_dirs=(
-        "./game/bin/linuxsteamrt64"
-        "/home/container"
-    )
-    for core_dir in "${core_dump_dirs[@]}"; do
-        if [ ! -d "$core_dir" ]; then
+        if [ -z "$name" ] || [ "$enabled" != "true" ]; then
             continue
         fi
-        while IFS= read -r -d '' file; do
-            log_deletion "$file" "core_dumps"
-        done < <(find "$core_dir" -maxdepth 1 -type f \( -name "core" -o -name "core.[0-9]*" \) -print0 2>/dev/null)
+
+        hours=$(jq -r ".rules[$i].hours // 0" "$config_file")
+        recursive=$(jq -r ".rules[$i].recursive // true" "$config_file")
+
+        local -a dirs=() patterns=()
+        mapfile -t dirs < <(jq -r ".rules[$i].directories[]?" "$config_file")
+        mapfile -t patterns < <(jq -r ".rules[$i].patterns[]?" "$config_file")
+
+        if [ ${#dirs[@]} -eq 0 ] || [ ${#patterns[@]} -eq 0 ]; then
+            continue
+        fi
+
+        # Build `-name A -o -name B` expression for find
+        local -a pat_expr=()
+        local first=true
+        local p
+        for p in "${patterns[@]}"; do
+            if $first; then
+                first=false
+            else
+                pat_expr+=("-o")
+            fi
+            pat_expr+=("-name" "$p")
+        done
+
+        local dir
+        for dir in "${dirs[@]}"; do
+            if [ ! -d "$dir" ]; then
+                continue
+            fi
+
+            local -a find_cmd=(find "$dir")
+            if [ "$recursive" != "true" ]; then
+                find_cmd+=(-maxdepth 1)
+            fi
+            find_cmd+=(-type f '(' "${pat_expr[@]}" ')')
+            if [ "$hours" -gt 0 ]; then
+                find_cmd+=(-mmin "+$((hours * 60))")
+            fi
+            find_cmd+=(-print0)
+
+            while IFS= read -r -d '' file; do
+                log_deletion "$file" "$name"
+            done < <("${find_cmd[@]}" 2>/dev/null)
+        done
     done
 
-    local end_time
+    local end_time duration
     end_time=$(date +%s)
-    local duration=$((end_time - start_time))
+    duration=$((end_time - start_time))
 
-    # Final status report
     if ((deleted_count > 0)); then
         log_message "Cleaned up $deleted_count file(s), freed $(format_size "$total_size") in ${duration}s" "success"
+        local category
         for category in "${!stats[@]}"; do
             if ((stats[$category] > 0)); then
                 log_message "  ${category}: ${stats[$category]} file(s)" "debug"
