@@ -60,7 +60,7 @@ if [ -n "${SRCDS_APPID}" ] && [ "${SRCDS_STOP_UPDATE:-0}" -eq 0 ]; then
 
     if [ "${SRCDS_VALIDATE}" -eq 1 ]; then
         STEAMCMD+=" validate"
-        log_message "⚠ VALIDATION ENABLED: THIS MAY WIPE CUSTOM CONFIGURATIONS!" "error"
+        log_message "!!! VALIDATION ENABLED: THIS MAY WIPE CUSTOM CONFIGURATIONS!" "error"
         log_message "  → Starting in 5 seconds — stop the server NOW to abort." "warning"
         sleep 5
     fi
