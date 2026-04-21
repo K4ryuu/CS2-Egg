@@ -193,6 +193,28 @@ ls -la "$SYNC_LOCATION"
 
 ## KL-SRV — Server runtime
 
+### KL-SRV-02 — Steam GSLT token invalid or expired
+
+**Symptom**: `[KL-SRV-02] Steam GSLT token invalid or expired` (preceded by `Cert request for invalid failed with reason code 5005` or `We're not logged into Steam`)
+
+**Meaning**: Steam rejected the Game Server Login Token (`STEAM_ACC`) at connect time. Common causes: token expired from inactivity, revoked by Steam, or registered against the wrong App ID.
+
+**Auto-recovery**: None — the server runs unranked (no public listing, Steam masterserver not reachable) until a valid token is set.
+
+**Diagnose**:
+1. Open [Steam Game Server Account Management](https://steamcommunity.com/dev/managegameservers) while logged into the Steam account that owns the token.
+2. Find the token value from `STEAM_ACC` in the list. Check "Last Logon" and "Memo" columns.
+3. If missing, expired, or revoked → generate a new one.
+
+**Fix**:
+1. Create a new token at https://steamcommunity.com/dev/managegameservers with App ID **730** (CS2).
+2. In Pterodactyl/Pelican panel → Startup → update `STEAM_ACC` with the new token.
+3. Restart the server.
+
+**Alternative** (temporary, rarely needed): set `ALLOW_TOKENLESS=1` in startup variables and restart — the server launches without a token but is unranked and not publicly listed. Use only while you generate a fresh token.
+
+---
+
 ### KL-SRV-01 — Server crashed
 
 **Symptom**: `[KL-SRV-01] Server crash detected` (follows `./game/cs2.sh: ... Aborted (core dumped)`)

@@ -120,6 +120,17 @@ eval "$START_CMD" | while IFS= read -r line; do
         continue
     fi
 
+    # GSLT token rejection — CS2 spams these lines, append our hint after each so it
+    # pairs up visually in the log regardless of where the user scrolls.
+    if [[ "$line" == *"Cert request for invalid failed"* ]] || \
+       [[ "$line" == *"We're not logged into Steam"* ]]; then
+        handle_server_output "$line"
+        log_warn_code "KL-SRV-02" "Steam GSLT token invalid or expired" \
+            "Regenerate at https://steamcommunity.com/dev/managegameservers (App ID 730)" \
+            "Update STEAM_ACC in panel startup variables and restart the server"
+        continue
+    fi
+
     handle_server_output "$line"
 done
 
