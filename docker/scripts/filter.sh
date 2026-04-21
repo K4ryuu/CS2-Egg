@@ -41,7 +41,7 @@ setup_message_filter() {
         done <<< "$patterns"
     fi
 
-    log_message "Console filter active: $pattern_count patterns (${#EXACT_PATTERNS[@]} exact, ${#CONTAINS_BLOCK[@]} contains)" "info"
+    log_message "Console filter active: $pattern_count patterns (${#EXACT_PATTERNS[@]} exact, ${#CONTAINS_BLOCK[@]} contains)" "success"
 }
 
 handle_server_output() {

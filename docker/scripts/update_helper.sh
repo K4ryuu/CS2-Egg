@@ -82,7 +82,7 @@ detect_daemon_vpk() {
             sleep 0.1
             ((t++)) || true
             if ! $announced && [ "$t" -ge "$silent_ticks" ]; then
-                log_message "Waiting for daemon synchronization..." "info"
+                log_message "Waiting for daemon synchronization..." "running"
                 announced=true
             fi
             $announced && [ $((t % 50)) -eq 0 ] \
