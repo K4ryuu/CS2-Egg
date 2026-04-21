@@ -65,34 +65,39 @@ Files are automatically created on first startup with default values and detaile
 
 ### `cleanup.json`
 
-**Purpose:** Automatic cleanup of old files
+**Purpose:** Automatic cleanup of old files — rule-based, user-extensible.
 
-**Enable:** Set `CLEANUP_ENABLED=1` in Pterodactyl egg
+**Enable:** Set `CLEANUP_ENABLED=1` in Pterodactyl egg.
 
 ```json
 {
-  "intervals": {
-    "backup_rounds_hours": 24,
-    "demos_hours": 168,
-    "css_logs_hours": 72,
-    "accelerator_dumps_hours": 168
-  },
-  "paths": {
-    "game_directory": "./game/csgo",
-    "accelerator_dumps": "./game/csgo/addons/AcceleratorCS2/dumps"
-  }
+  "version": "1.1.0",
+  "rules": [
+    {
+      "name": "demos",
+      "description": "SourceTV demo recordings",
+      "directories": ["./game/csgo"],
+      "patterns": ["*.dem"],
+      "hours": 168,
+      "recursive": true,
+      "enabled": true
+    }
+  ]
 }
 ```
 
-**Key Settings:**
+**Rule fields:**
 
-- `intervals` - Hours to keep files
-  - `backup_rounds_hours` - Round backups (default: 24h)
-  - `demos_hours` - Demo files (default: 168h = 7 days)
-  - `css_logs_hours` - CounterStrikeSharp logs (default: 72h = 3 days)
-  - `accelerator_dumps_hours` - Crash dumps (default: 168h = 7 days)
+- `name` - Stat category shown in log output
+- `directories` - Array of paths to search (relative to `/home/container` or absolute)
+- `patterns` - Array of filename globs (e.g. `*.dem`, `core.[0-9]*`)
+- `hours` - Delete files older than N hours (`0` = delete on every run)
+- `recursive` - `true` = walk subdirectories, `false` = only the directory root
+- `enabled` - `false` disables the rule without deleting it
 
-Cleanup runs every hour automatically.
+Default rules: `backup_rounds`, `demos`, `css_logs`, `swiftly_logs`, `accelerator_dumps`, `core_dumps`.
+
+Full guide with custom rule examples → [features/cleanup.md](../features/cleanup.md).
 
 ---
 
