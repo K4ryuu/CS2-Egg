@@ -94,12 +94,31 @@ detect_daemon_vpk() {
     SRCDS_STOP_UPDATE=1
 }
 
-# Removes local SteamCMD only when daemon detection confirmed it.
+# Remove local SteamCMD artifacts when daemon is authoritative — saves ~200MB + cleans
+# stale dirs left over from a previous non-daemon boot.
 cleanup_daemon_mode() {
     [ "${SRCDS_STOP_UPDATE:-0}" -eq 1 ] || return 0
-    [ -d "/home/container/steamcmd" ] || return 0
-    log_message "Daemon mode active - removing local SteamCMD (saves ~200MB)" "info"
-    rm -rf /home/container/steamcmd /home/container/steamapps /home/container/Steam
+
+    # steamcmd/ is the big one (~200MB); Steam/ and steamapps/ are smaller leftovers
+    # with no purpose in daemon mode (game files come from the shared CS2_DIR mount).
+    local targets=(
+        /home/container/steamcmd
+        /home/container/Steam
+        /home/container/steamapps
+    )
+    local existing=()
+    for t in "${targets[@]}"; do
+        if [ -e "$t" ]; then
+            existing+=("$t")
+        fi
+    done
+
+    if [ ${#existing[@]} -eq 0 ]; then
+        return 0
+    fi
+
+    log_message "Daemon mode active - removing ${#existing[@]} stale artifact(s)" "info"
+    rm -rf "${existing[@]}" 2>/dev/null || true
 }
 
 export -f detect_daemon_vpk cleanup_daemon_mode
