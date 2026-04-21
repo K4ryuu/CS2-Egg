@@ -151,13 +151,20 @@ cleanup() {
             \) -mmin "+$((ACCELERATOR_DUMP_PURGE_INTERVAL*60))" -print0 2>/dev/null)
     fi
 
-    # Clean up core dumps (deleted on every restart)
-    local core_dumps_dir="./game/bin/linuxsteamrt64"
-    if [ -d "$core_dumps_dir" ]; then
+    # Clean up core dumps (deleted on every restart). CS2 writes them to the game bin
+    # dir; some crashes also drop one at /home/container/core from the container root.
+    local core_dump_dirs=(
+        "./game/bin/linuxsteamrt64"
+        "/home/container"
+    )
+    for core_dir in "${core_dump_dirs[@]}"; do
+        if [ ! -d "$core_dir" ]; then
+            continue
+        fi
         while IFS= read -r -d '' file; do
             log_deletion "$file" "core_dumps"
-        done < <(find "$core_dumps_dir" -maxdepth 1 -type f \( -name "core" -o -name "core.[0-9]*" \) -print0 2>/dev/null)
-    fi
+        done < <(find "$core_dir" -maxdepth 1 -type f \( -name "core" -o -name "core.[0-9]*" \) -print0 2>/dev/null)
+    done
 
     local end_time
     end_time=$(date +%s)
