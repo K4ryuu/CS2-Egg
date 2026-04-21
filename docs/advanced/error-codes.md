@@ -1,15 +1,14 @@
 # Error Codes
 
 > **Can't find your error here, or the fix didn't work?**
-> Open a [bug report](https://github.com/K4ryuu/CS2-Egg/issues/new/choose) — include the `KL-XXX-NN` code, the full log output, your egg version, Docker image tag, and (if host-side) the daemon status.
+> Open a [bug report](https://github.com/K4ryuu/CS2-Egg/issues/new/choose) — include the `KL-XXX-NN` code, the full log output, your egg version, and Docker image tag.
 
-Every fatal error in the KitsuneLab egg and the centralized update daemon emits a stable code. Look it up here to see what it means, how to diagnose it, and how to fix it.
+Every fatal error in the KitsuneLab egg emits a stable code. Look it up here to see what it means, how to diagnose it, and how to fix it.
 
 ## Index
 
 - [KL-DMN — Daemon / VPK Sync](#kl-dmn--daemon--vpk-sync)
 - [KL-STM — SteamCMD](#kl-stm--steamcmd)
-- [KL-HOST — Host-side daemon installer](#kl-host--host-side-daemon-installer)
 - [KL-SRV — Server runtime](#kl-srv--server-runtime)
 
 ---
@@ -37,7 +36,6 @@ sudo journalctl -u cs2-vpk-daemon -n 100 --no-pager
    curl -fsSL https://raw.githubusercontent.com/K4ryuu/CS2-Egg/main/misc/install-cs2-update.sh -o /tmp/install-cs2-update.sh
    sudo bash /tmp/install-cs2-update.sh
    ```
-3. Don't want the daemon anymore? Stop it (`sudo systemctl disable --now cs2-vpk-daemon`) and delete `.daemon-managed` from every server volume.
 
 ---
 
@@ -49,15 +47,15 @@ sudo journalctl -u cs2-vpk-daemon -n 100 --no-pager
 
 **Diagnose (on host)**:
 ```bash
+uname -r                 # must be 5.2+ for open_tree/move_mount syscalls
+python3 --version        # daemon uses python3 to invoke the syscalls
 sudo journalctl -u cs2-vpk-daemon -n 100 --no-pager | grep nsenter
-python3 -c "import ctypes; print(ctypes.CDLL(None).syscall)"   # open_tree/move_mount syscalls need python3
 ```
 
 **Fix**:
-1. Ensure `python3` is installed on the host: `apt-get install -y python3`
-2. Ensure kernel ≥ 5.2 (Ubuntu 20.04+): `uname -r`
+1. Ensure kernel ≥ 5.2 (Ubuntu 20.04+). Older kernels cannot bind-mount into an already-running container namespace — upgrade the host or switch `VPK_PUSH_METHOD` to `hardlink` / `copy` in the daemon config.
+2. Ensure `python3` is installed on the host: `apt-get install -y python3`
 3. Restart the daemon: `sudo systemctl restart cs2-vpk-daemon`
-4. Increase budget if the host is under heavy load: set env `DAEMON_MOUNT_WAIT_SECS=60` on the server.
 
 ---
 
@@ -98,21 +96,26 @@ ls -la "$SYNC_LOCATION"
 
 ## KL-STM — SteamCMD
 
-### KL-STM-01 — SteamCMD exit code 8 (connection error)
+### KL-STM-01 — SteamCMD exit code 8
 
 **Symptom**: `[KL-STM-01] SteamCMD connection error (exit code 8)`
 
-**Meaning**: SteamCMD couldn't reach Steam servers or was rejected (TCP reset, DNS failure, or Steam is down).
+**Meaning**: SteamCMD failed with exit 8. The name "connection error" is misleading — in practice this is almost always **disk space / filesystem** failure that cascades into a login/state failure.
+
+**Most common cause — not enough disk space.**
 
 **Diagnose**:
-1. Check Steam server status: [steamstat.us](https://steamstat.us/)
-2. From the host: `curl -sI https://steamcdn-a.akamaihd.net/` — should return `HTTP/2 200` or similar.
-3. Check for VPN / proxy that might blackhole Steam CDN.
+1. `df -h /home/container` — CS2 needs ~60 GB free (3 GB with VPK-sync daemon).
+2. Look at the SteamCMD output ABOVE the code line for `state is 0x...`:
+   - `state is 0x202` → disk or filesystem issue → see [KL-STM-03](#kl-stm-03--state-0x202-disk-space--filesystem)
+   - `Please use force_install_dir before logon!` → egg arg order bug
+3. Only if disk is fine: check Steam status at [steamstat.us](https://steamstat.us/) and try `curl -sI https://steamcdn-a.akamaihd.net/`.
 
 **Fix**:
-1. Ensure ≥ 60-70 GB free disk (3 GB if daemon-synced). Run `df -h /home/container`.
-2. Disable any VPN/proxy in the container's egress path.
-3. Retry — if Steam itself is in outage, there's nothing the egg can do.
+1. Free disk space on the host's panel volume directory.
+2. Ensure quota isn't capped (Pterodactyl/Pelican server disk limit).
+3. Retry — transient CDN issues self-resolve.
+4. If persistent: collect the full SteamCMD output, [open a bug report](https://github.com/K4ryuu/CS2-Egg/issues/new/choose) with the `state is 0x...` code.
 
 ---
 
@@ -188,151 +191,6 @@ ls -la "$SYNC_LOCATION"
 
 ---
 
-## KL-HOST — Host-side daemon installer
-
-### KL-HOST-01 — Not root
-
-**Symptom**: `[KL-HOST-01] Requires root. Re-executing with sudo...` (or similar permission-denied)
-
-**Fix**: Run the installer with `sudo`:
-```bash
-sudo bash install-cs2-update.sh
-```
-
----
-
-### KL-HOST-02 — Installer download failed
-
-**Symptom**: `[KL-HOST-02] Download failed - check internet access`
-
-**Meaning**: `curl` / `wget` couldn't reach `raw.githubusercontent.com` to fetch the update script.
-
-**Fix**:
-1. Verify outbound HTTPS to GitHub: `curl -sI https://raw.githubusercontent.com/`
-2. Check proxy / corporate firewall.
-3. If Cloudflare-blocked, try `curl -fsSL <URL>` with `--resolve` mapped to a specific IP, or install manually from a git clone.
-
----
-
-### KL-HOST-03 — i386 architecture install failed
-
-**Symptom**: `[KL-HOST-03] Failed to add i386 architecture`
-
-**Meaning**: `dpkg --add-architecture i386` or the follow-up `apt-get update` failed. SteamCMD needs 32-bit libs to run.
-
-**Fix**:
-1. Manually: `sudo dpkg --add-architecture i386 && sudo apt-get update`
-2. If APT fails: check `/etc/apt/sources.list` for bad entries. Fix them and retry.
-
----
-
-### KL-HOST-04 — lib32gcc install failed
-
-**Symptom**: `[KL-HOST-04] Failed to install 32-bit libraries (tried both lib32gcc-s1 and lib32gcc1)`
-
-**Fix**:
-1. Refresh APT: `sudo apt-get update`
-2. Manually: `sudo apt-get install -y lib32gcc-s1 lib32stdc++6` (or `lib32gcc1` on older distros)
-3. If repos are broken, fix them first.
-
----
-
-### KL-HOST-05 — SteamCMD validation failed
-
-**Symptom**: `[KL-HOST-05] SteamCMD extraction validation failed (steamcmd.sh not found)`
-
-**Fix**: Delete `$STEAMCMD_DIR` and re-run the updater. If it keeps failing, download manually:
-```bash
-curl -sqL 'https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz' | tar -xz -C /root/steamcmd
-```
-
----
-
-### KL-HOST-06 — Wings API token missing
-
-**Symptom**: `[KL-HOST-06] Wings API not available - cannot restart servers`
-
-**Meaning**: The updater couldn't read a token from `/etc/pterodactyl/config.yml`. Either Wings isn't on this node or the config file is missing / unreadable.
-
-**Fix**:
-1. Confirm Wings is installed: `systemctl status wings`
-2. Confirm the config exists: `ls -la /etc/pterodactyl/config.yml`
-3. If Wings is on a different node, run the updater there — it must run on the same node as the servers it restarts.
-
----
-
-### KL-HOST-07 — Wings restart failed
-
-**Symptom**: `[KL-HOST-07] Failed to restart <container> via Wings API (HTTP <code>)`
-
-**Common HTTP codes**:
-- `401` — token invalid / expired
-- `404` — server UUID doesn't exist in this Wings
-- `500` — Wings internal error; check Wings logs
-
-**Fix**:
-1. Check Wings logs: `sudo journalctl -u wings -n 100 --no-pager`
-2. Verify the container name matches a real Pterodactyl server UUID.
-3. If token is stale, restart Wings: `sudo systemctl restart wings`
-
----
-
-### KL-HOST-08 — nsenter bind-mount failed
-
-**Symptom**: `[KL-HOST-08] nsenter[<container>]: mount failed: <error>`
-
-**Meaning**: The daemon couldn't inject `/tmp/cs2-shared` into the container's mount namespace. Symlink-mode VPK push requires kernel ≥ 5.2 (`open_tree` / `move_mount` syscalls).
-
-**Fix**:
-1. Check kernel version: `uname -r` — must be 5.2+.
-2. Install `python3` on the host: `apt-get install -y python3`
-3. Fall back to `hardlink` or `copy` mode: edit `VPK_PUSH_METHOD` in `/usr/local/bin/update-cs2-centralized.sh`.
-
----
-
-### KL-HOST-09 — VPK push rsync failed
-
-**Symptom**: `[KL-HOST-09] rsync failed for <container>`
-
-**Fix**:
-1. Check disk space on the server's volume path.
-2. Verify the volume path is writable by root: `ls -la /var/lib/pterodactyl/volumes/<uuid>/`
-3. If one server is corrupted, delete the affected volume contents and let the daemon re-push.
-
----
-
-### KL-HOST-10 — Self-update download failed
-
-**Symptom**: `[KL-HOST-10] Failed to download update from GitHub`
-
-**Meaning**: The updater couldn't fetch its own new version from GitHub.
-
-**Fix**: Transient — next cron run will retry. If persistent, set `AUTO_UPDATE_SCRIPT="false"` in the script to pin the current version, then update manually.
-
----
-
-### KL-HOST-11 — Self-update syntax check failed
-
-**Symptom**: `[KL-HOST-11] Downloaded script has syntax errors`
-
-**Meaning**: The newly downloaded script failed `bash -n`. Likely a partial download or mid-flight GitHub outage.
-
-**Auto-recovery**: The old script continues running. Backup is retained in `.script-backups/`.
-
-**Fix**: Wait for the next scheduled check, or trigger manually: `sudo bash /usr/local/bin/update-cs2-centralized.sh`
-
----
-
-### KL-HOST-12 — Lock busy (concurrent run)
-
-**Symptom**: `[KL-HOST-12] Another CS2 update instance is already running`
-
-**Meaning**: The cron schedule fired while the previous run is still executing. Normal during long SteamCMD updates.
-
-**Fix**: Wait. If truly stuck (> 30 min, no SteamCMD activity): `sudo rm /var/lock/cs2-update.lock` and re-run.
-
----
-
 ## KL-SRV — Server runtime
 
 ### KL-SRV-01 — Server crashed
@@ -364,4 +222,4 @@ If the fix above didn't resolve your issue:
    - Full log output (container console + `/home/container/egg/logs/*.log` if file logging is on)
    - Egg version (check `pterodactyl/kitsunelab-cs2-egg.json` → `meta.version`)
    - Docker image tag (`ghcr.io/k4ryuu/cs2-egg:latest` or `:dev`)
-   - For host-side errors: `systemctl status cs2-vpk-daemon` output and recent `journalctl -u cs2-vpk-daemon` lines
+   - If the issue relates to the centralized VPK daemon, ask your node admin for `systemctl status cs2-vpk-daemon` output
