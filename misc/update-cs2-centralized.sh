@@ -2,10 +2,12 @@
 # KitsuneLab CS2 Centralized Update Script
 # Automatically updates CS2 files and pushes them to all server containers
 #
-# Usage: ./update-cs2-centralized.sh [--simulate]
+# Usage: ./update-cs2-centralized.sh [--simulate] [--validate]
 #        ./update-cs2-centralized.sh --daemon
 #
 #   --simulate    Skip SteamCMD update, simulate update and trigger restart logic
+#   --validate    Force one-shot file validation (steamcmd validate) for this run
+#                 only. Configured VALIDATE_INSTALL value is not touched.
 #   --daemon      Run as event listener daemon - pushes game files instantly when
 #                 a CS2 container starts (new server or restart). Install as a
 #                 systemd service for automatic startup.
@@ -1299,23 +1301,29 @@ main() {
                 SIMULATE_MODE=true
                 shift
                 ;;
+            --validate)
+                VALIDATE_INSTALL="true"
+                log_warn "One-shot validate requested — steamcmd will verify every file this run"
+                shift
+                ;;
             --daemon)
                 validate_config
-                [ "$VPK_PUSH_METHOD" = "off" ] && {
+                if [ "$VPK_PUSH_METHOD" = "off" ]; then
                     log_error "Daemon mode requires VPK_PUSH_METHOD to be set (not \"off\")"
                     exit 1
-                }
+                fi
                 run_event_daemon
                 exit 0
                 ;;
             *)
                 log_error "Unknown argument: $1"
                 echo ""
-                echo "Usage: $0 [--simulate]"
+                echo "Usage: $0 [--simulate] [--validate]"
                 echo "       $0 --daemon"
                 echo ""
                 echo "Options:"
                 echo "  --simulate    Simulate update mode (skip SteamCMD, trigger restart logic)"
+                echo "  --validate    Force one-shot file validation (steamcmd validate) — does not persist"
                 echo "  --daemon      Run as event listener - push game files on container start"
                 echo ""
                 exit 1
