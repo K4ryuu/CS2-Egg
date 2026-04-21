@@ -4,7 +4,13 @@
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+MAGENTA='\033[0;35m'
+CYAN='\033[0;36m'
 WHITE='\033[0;37m'
+GRAY='\033[0;90m'
+DIM='\033[2m'
+BOLD='\033[1m'
 NC='\033[0m'
 
 # Organized directory structure for all egg-related files
@@ -18,7 +24,6 @@ LOG_MAX_SIZE_MB="${LOG_MAX_SIZE_MB:=100}"
 LOG_MAX_FILES="${LOG_MAX_FILES:=30}"
 LOG_MAX_DAYS="${LOG_MAX_DAYS:=7}"
 PREFIX_TEXT="${PREFIX_TEXT:-KitsuneLab}"
-PREFIX="${PREFIX:=${RED}[${PREFIX_TEXT}]${WHITE} > }"
 
 # Set up the directory structure
 init_egg_directories() {
@@ -129,15 +134,28 @@ log_message() {
         message="$(mask_secrets "$message")"
     fi
 
-    # Print to console with appropriate color
+    # Enterprise-style table output:  PREFIX | LEVEL | message
+    # Level tag padded to 5 chars via printf %-5s — aligns columns across levels.
+    local level_tag level_color
     case "$type" in
-        running) printf "%b%s%b\n" "${PREFIX}${YELLOW}" "$message" "${NC}" ;;
-        error)   printf "%b%s%b\n" "${PREFIX}${RED}" "$message" "${NC}" ;;
-        success) printf "%b%s%b\n" "${PREFIX}${GREEN}" "$message" "${NC}" ;;
-        warning) printf "%b[WARNING] %s%b\n" "${PREFIX}${YELLOW}" "$message" "${NC}" ;;
-        debug)   printf "%b[DEBUG] %s%b\n" "${PREFIX}${WHITE}" "$message" "${NC}" ;;
-        *)       printf "%b%s%b\n" "${PREFIX}${WHITE}" "$message" "${NC}" ;;
+        info)     level_tag="INFO";  level_color="$CYAN" ;;
+        success)  level_tag="OK";    level_color="$GREEN" ;;
+        warning)  level_tag="WARN";  level_color="$YELLOW" ;;
+        error)    level_tag="ERROR"; level_color="$RED" ;;
+        debug)    level_tag="DEBUG"; level_color="$GRAY" ;;
+        running)  level_tag="RUN";   level_color="$YELLOW" ;;
+        *)        level_tag="INFO";  level_color="$WHITE" ;;
     esac
+
+    local sep
+    sep=$(printf '%b|%b' "$GRAY" "$NC")
+
+    printf "%b%s%b %s %b%-5s%b %s %b%s%b\n" \
+        "$RED" "$PREFIX_TEXT" "$NC" \
+        "$sep" \
+        "$level_color" "$level_tag" "$NC" \
+        "$sep" \
+        "$level_color" "$message" "$NC"
 
     # Also write to file if logging is enabled
     if [[ "${LOG_FILE_ENABLED}" == "1" ]]; then

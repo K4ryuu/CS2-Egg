@@ -65,7 +65,7 @@ detect_daemon_vpk() {
         local cleaned
         cleaned=$(find /home/container/game/csgo -type l -lname '/tmp/cs2-shared/*' -print -delete 2>/dev/null | wc -l)
         if [ "${cleaned:-0}" -gt 0 ]; then
-            log_message "  → Removed ${cleaned} broken VPK symlink(s)" "warning"
+            log_message "  → Removed ${cleaned} broken VPK symlink(s)" "success"
         fi
         return 0
     fi

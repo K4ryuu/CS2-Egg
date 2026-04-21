@@ -59,7 +59,7 @@ cleanup() {
     local config_file="${EGG_CONFIGS_DIR:-/home/container/egg/configs}/cleanup.json"
 
     if [ ! -f "$config_file" ]; then
-        log_message "Cleanup config missing at $config_file" "warning"
+        log_message "Cleanup config missing at $config_file" "error"
         return 1
     fi
 

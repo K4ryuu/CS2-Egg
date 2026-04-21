@@ -262,7 +262,7 @@ ensure_metamod_first() {
 
     # Verify
     if grep -q "Game.*csgo/addons/metamod" "$GAMEINFO_FILE"; then
-        log_message "MetaMod repositioned successfully" "info"
+        log_message "MetaMod repositioned successfully" "success"
         rm -f "$GAMEINFO_FILE.bak"
         return 0
     else

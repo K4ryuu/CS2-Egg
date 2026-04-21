@@ -101,7 +101,7 @@ update_modsharp() {
         semver_compare "$latest_version" "$current_version"
         case $? in
             0) # Equal
-                log_message "ModSharp is up-to-date ($current_version)" "info"
+                log_message "ModSharp is up-to-date ($current_version)" "success"
                 return 0
                 ;;
             2) # new < current
