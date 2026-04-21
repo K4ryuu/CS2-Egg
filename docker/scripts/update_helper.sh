@@ -59,6 +59,12 @@ detect_daemon_vpk() {
     if [ "$age" -ge "$ttl" ]; then
         log_message "Daemon marker stale (${age}s > ${ttl}s) - daemon dead? falling back to SteamCMD" "warning"
         log_message "  → Check: journalctl -u cs2-vpk-daemon -n 50" "warning"
+        # Purge daemon artifacts — broken VPK symlinks → /tmp/cs2-shared crash CS2 on load.
+        unset DAEMON_EVIDENCE_FOUND
+        rm -f "$marker" 2>/dev/null || true
+        local cleaned
+        cleaned=$(find /home/container/game/csgo -type l -lname '/tmp/cs2-shared/*' -print -delete 2>/dev/null | wc -l)
+        [ "${cleaned:-0}" -gt 0 ] && log_message "  → Removed ${cleaned} broken VPK symlink(s)" "warning"
         return 0
     fi
 
