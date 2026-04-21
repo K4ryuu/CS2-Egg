@@ -34,6 +34,22 @@ log_error() { echo -e "  ${RED}✗${RESET}  $*" >&2; }
 section()   { echo -e "\n${BOLD}${BLUE}── $* ${GRAY}$(printf '─%.0s' {1..40})${RESET}"; }
 die()       { log_error "$*"; exit 1; }
 
+# Prompt for yes/no; re-ask on anything else. Empty input uses the default (N).
+# Returns 0 for yes, 1 for no.
+ask_yes_no() {
+    local prompt="$1"
+    local reply
+    while true; do
+        read -rp "$prompt" reply
+        reply="${reply:-n}"
+        case "$reply" in
+            [yY]|[yY][eE][sS]) return 0 ;;
+            [nN]|[nN][oO])     return 1 ;;
+            *) log_warn "Please answer yes or no." ;;
+        esac
+    done
+}
+
 # ── Root check ────────────────────────────────────────────────────────────────
 
 if [[ $EUID -ne 0 ]]; then
@@ -66,8 +82,10 @@ printf "    ${CYAN}%s${RESET} %-30s ${CYAN}→${RESET}  ${GRAY}%s${RESET}\n"  "2
 printf "    ${CYAN}%s${RESET} %-30s ${CYAN}→${RESET}  ${BOLD}%s${RESET}\n" "3." "Install the VPK push daemon" "$SERVICE_DEST"
 printf "    ${CYAN}%s${RESET} %-30s ${CYAN}→${RESET}  ${BOLD}%s${RESET}\n" "4." "Register a root cron job"   "$CRON_FILE"
 echo ""
-read -rp "  Proceed? [y/N] " _confirm
-[[ "$_confirm" =~ ^[Yy]$ ]] || { echo "  Aborted."; exit 0; }
+if ! ask_yes_no "  Proceed? [y/N] "; then
+    echo "  Aborted."
+    exit 0
+fi
 
 # ── Read existing config (if reinstalling) ────────────────────────────────────
 
@@ -185,8 +203,10 @@ for key in STEAMCMD_DIR CS2_DIR VPK_PUSH_METHOD AUTO_RESTART_SERVERS VALIDATE_IN
     printf "    ${CYAN}%-26s${RESET} %s\n" "$key" "${CFG[$key]}"
 done
 echo ""
-read -rp "  Install with these settings? [y/N] " _final
-[[ "$_final" =~ ^[Yy]$ ]] || { echo "  Aborted."; exit 0; }
+if ! ask_yes_no "  Install with these settings? [y/N] "; then
+    echo "  Aborted."
+    exit 0
+fi
 
 # ── Install ───────────────────────────────────────────────────────────────────
 
