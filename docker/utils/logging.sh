@@ -123,6 +123,12 @@ log_message() {
     timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
     message="${message%[[:space:]]}"
 
+    # mask_secrets lives in filter.sh; call only when that module is loaded
+    # (container entrypoint always loads it; updater subshells don't and don't need it).
+    if declare -F mask_secrets >/dev/null 2>&1; then
+        message="$(mask_secrets "$message")"
+    fi
+
     # Print to console with appropriate color
     case "$type" in
         running) printf "%b%s%b\n" "${PREFIX}${YELLOW}" "$message" "${NC}" ;;
@@ -140,6 +146,27 @@ log_message() {
         echo "[$timestamp] [$type] $message" >> "${log_file}"
     fi
 }
+
+# Emit an error/warning with a stable code + docs pointer.
+# Optional trailing args become "→ <hint>" lines between the code line and the docs link.
+# Usage: log_error_code "KL-STM-01" "SteamCMD connection error" "Check: steamstat.us"
+ERROR_DOCS_URL="${ERROR_DOCS_URL:-https://github.com/K4ryuu/CS2-Egg/blob/main/docs/advanced/error-codes.md}"
+
+_log_code_common() {
+    local severity="$1"; shift
+    local code="$1"; shift
+    local msg="$1"; shift
+    local anchor
+    anchor=$(printf '%s' "$code" | tr '[:upper:]' '[:lower:]')
+    log_message "[$code] $msg" "$severity"
+    for hint in "$@"; do
+        log_message "  → $hint" "$severity"
+    done
+    log_message "  → Docs: ${ERROR_DOCS_URL}#${anchor}" "$severity"
+}
+
+log_error_code() { _log_code_common "error" "$@"; }
+log_warn_code()  { _log_code_common "warning" "$@"; }
 
 handle_error() {
     local exit_code=$?

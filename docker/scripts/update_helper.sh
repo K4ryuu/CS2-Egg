@@ -57,14 +57,16 @@ detect_daemon_vpk() {
 
     local age=$(( $(date +%s) - $(stat -c %Y "$marker" 2>/dev/null || echo 0) ))
     if [ "$age" -ge "$ttl" ]; then
-        log_message "Daemon marker stale (${age}s > ${ttl}s) - daemon dead? falling back to SteamCMD" "warning"
-        log_message "  → Check: journalctl -u cs2-vpk-daemon -n 50" "warning"
+        log_warn_code "KL-DMN-01" "Daemon marker stale (${age}s > ${ttl}s) - daemon dead? falling back to SteamCMD" \
+            "Check: journalctl -u cs2-vpk-daemon -n 50"
         # Purge daemon artifacts — broken VPK symlinks → /tmp/cs2-shared crash CS2 on load.
         unset DAEMON_EVIDENCE_FOUND
         rm -f "$marker" 2>/dev/null || true
         local cleaned
         cleaned=$(find /home/container/game/csgo -type l -lname '/tmp/cs2-shared/*' -print -delete 2>/dev/null | wc -l)
-        [ "${cleaned:-0}" -gt 0 ] && log_message "  → Removed ${cleaned} broken VPK symlink(s)" "warning"
+        if [ "${cleaned:-0}" -gt 0 ]; then
+            log_message "  → Removed ${cleaned} broken VPK symlink(s)" "warning"
+        fi
         return 0
     fi
 
@@ -73,9 +75,8 @@ detect_daemon_vpk() {
         local t=0 max_t=$((mount_max_secs * 10)) announced=false
         while ! _is_mounted "$mount"; do
             if [ "$t" -ge "$max_t" ]; then
-                log_message "Daemon mount wait timed out after $((t/10))s" "warning"
-                log_message "  → Symlink VPKs without mount - server WILL fail to load game files" "error"
-                log_message "  → Check: journalctl -u cs2-vpk-daemon -n 50" "warning"
+                log_error_code "KL-DMN-02" "Daemon mount wait timed out after $((t/10))s - server WILL fail to load game files" \
+                    "Check: journalctl -u cs2-vpk-daemon -n 50"
                 return 0
             fi
             sleep 0.1

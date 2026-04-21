@@ -3,20 +3,24 @@
 source /utils/logging.sh
 source /utils/config.sh
 
-setup_message_filter() {
-    if [ "${ENABLE_FILTER:-0}" -ne 1 ]; then
-        return 0
+# Universal secret masker
+mask_secrets() {
+    local text="$1"
+    if [ -n "${STEAM_ACC:-}" ] && [[ "$text" == *"${STEAM_ACC}"* ]]; then
+        local mask
+        mask=$(printf '%*s' "${#STEAM_ACC}" '' | tr ' ' '*')
+        text="${text//${STEAM_ACC}/$mask}"
     fi
+    printf '%s' "$text"
+}
 
-    # Separate exact matches, blocking patterns, and masking patterns for faster lookup
+setup_message_filter() {
+    # Pattern filter is opt-in via ENABLE_FILTER. Secret masking is always on
     declare -gA EXACT_PATTERNS=()
     declare -gA CONTAINS_BLOCK=()
-    declare -gA CONTAINS_MASK=()
 
-    # STEAM_ACC is for masking, not blocking
-    if [ -n "${STEAM_ACC}" ]; then
-        local mask=$(printf '%*s' "${#STEAM_ACC}" '' | tr ' ' '*')
-        CONTAINS_MASK["${STEAM_ACC}"]="$mask"
+    if [ "${ENABLE_FILTER:-0}" -ne 1 ]; then
+        return 0
     fi
 
     local config_file="${EGG_CONFIGS_DIR:-/home/container/egg/configs}/console-filter.json"
@@ -43,52 +47,31 @@ setup_message_filter() {
 handle_server_output() {
     local line="$1"
 
-    # Early exit for empty lines
-    [[ -z "$line" ]] && {
-        printf '%s\n' "$line"
-        return
-    }
-
-    # Early exit if filter disabled
-    if [ "${ENABLE_FILTER:-0}" -ne 1 ]; then
+    if [[ -z "$line" ]]; then
         printf '%s\n' "$line"
         return
     fi
 
-    # O(1) hash lookup for exact matches (much faster than iteration)
-    if [[ -n "${EXACT_PATTERNS[$line]}" ]]; then
-        if [[ "${FILTER_PREVIEW_MODE:-false}" == "true" ]]; then
-            log_message "Blocked message: $line" "debug"
+    # Mask secrets always (STEAM_ACC etc.) — independent of ENABLE_FILTER.
+    line="$(mask_secrets "$line")"
+
+    # Pattern-based blocking is opt-in.
+    if [ "${ENABLE_FILTER:-0}" -eq 1 ]; then
+        if [[ -n "${EXACT_PATTERNS[$line]}" ]]; then
+            if [[ "${FILTER_PREVIEW_MODE:-false}" == "true" ]]; then
+                log_message "Blocked message: $line" "debug"
+            fi
+            return
         fi
-        return
-    fi
-
-    local blocked=false
-    local modified_line="$line"
-
-    # Check blocking patterns (separate from masking for performance)
-    for pattern in "${!CONTAINS_BLOCK[@]}"; do
-        if [[ $line == *"$pattern"* ]]; then
-            blocked=true
-            break
-        fi
-    done
-
-    # Apply masking patterns (like STEAM_ACC) if not blocked
-    if [[ "$blocked" == false ]]; then
-        for pattern in "${!CONTAINS_MASK[@]}"; do
-            if [[ $modified_line == *"$pattern"* ]]; then
-                modified_line=${modified_line//$pattern/${CONTAINS_MASK[$pattern]}}
+        for pattern in "${!CONTAINS_BLOCK[@]}"; do
+            if [[ $line == *"$pattern"* ]]; then
+                if [[ "${FILTER_PREVIEW_MODE:-false}" == "true" ]]; then
+                    log_message "Blocked message: $line" "debug"
+                fi
+                return
             fi
         done
     fi
 
-    # Output or log blocked message
-    if [[ "$blocked" == true ]]; then
-        if [[ "${FILTER_PREVIEW_MODE:-false}" == "true" ]]; then
-            log_message "Blocked message: $line" "debug"
-        fi
-    else
-        printf '%s\n' "$modified_line"
-    fi
+    printf '%s\n' "$line"
 }

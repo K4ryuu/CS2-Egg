@@ -27,19 +27,19 @@ install_steamcmd() {
     done
 
     if [ $retry -eq $max_retries ]; then
-        log_message "Failed to download SteamCMD after $max_retries attempts" "error"
+        log_error_code "KL-STM-05" "Failed to download SteamCMD after $max_retries attempts"
         return 1
     fi
 
     # Extract steamcmd
     if ! tar -xzvf steamcmd.tar.gz -C ./steamcmd; then
-        log_message "Failed to extract SteamCMD" "error"
+        log_error_code "KL-STM-06" "Failed to extract SteamCMD"
         return 1
     fi
     rm steamcmd.tar.gz
     # Set up required environment
     if [ ! -d "./steamcmd" ]; then
-        log_message "steamcmd directory does not exist" "error"
+        log_error_code "KL-STM-07" "steamcmd directory does not exist"
         return 1
     fi
 

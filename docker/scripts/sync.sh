@@ -44,8 +44,8 @@ sync_files() {
 
     # Make sure the source directory actually exists
     if [ ! -d "$src_dir" ]; then
-        log_message "SYNC_LOCATION directory not found: $src_dir - skipping VPK sync" "warning"
-        log_message "If using centralized VPK push, clear the SYNC_LOCATION variable on this server." "warning"
+        log_warn_code "KL-DMN-05" "SYNC_LOCATION directory not found: $src_dir - skipping VPK sync" \
+            "If using centralized VPK push, clear the SYNC_LOCATION variable on this server."
         return 0
     fi
 
@@ -57,7 +57,7 @@ sync_files() {
     if rsync -aKLz --exclude '*.vpk' --exclude 'cfg/' --exclude 'game/csgo/gameinfo.gi' "$src_dir/" "$dest_dir" 2>/dev/null; then
         : # base files synced silently
     else
-        log_message "Failed to sync base files" "error"
+        log_error_code "KL-DMN-06" "Failed to sync base files"
         return 1
     fi
 
