@@ -1,3 +1,22 @@
+-- update - 2026.04.21
+
+- feat(cleanup): Cleanup is fully customizable now — add, disable, or retarget rules per directory, pattern, and age right in `cleanup.json`. No code edit needed.
+- feat(centralized): New `--validate` flag runs a one-shot SteamCMD file check without changing your saved config.
+- feat(installer): Daemon installer re-asks if you mistype yes/no instead of quietly aborting.
+- feat(logging): Cleaner log output — level tag in a fixed column (`INFO`, `OK`, `WARN`, `ERROR`, `DEBUG`), message colored per severity.
+- feat(logging): Every fatal error now prints a short code with a docs link. Skim the new error reference instead of scrolling the log.
+- feat(logging): Your Steam account token is automatically hidden from every log line, not just the startup command.
+- fix(daemon): First-boot race fixed — the egg no longer accidentally triggers a full SteamCMD download while the daemon is still pushing game files.
+- fix(daemon): If the central daemon goes down, servers recover cleanly on the next restart and rebuild from SteamCMD instead of crashing on missing files.
+- fix(daemon): Wait-for-daemon messages only appear when the wait actually lasts longer than a couple of seconds — fast starts stay quiet.
+- fix(centralized): Permissions on pushed game files are correct again (files stay at 644, not marked as executable). Prevents Pterodactyl's file manager from flagging them as anomalies.
+- fix(centralized): SteamCMD-only directories (`Steam/`, `steamapps/`) are no longer pushed into server volumes — they served no runtime purpose and were getting deleted each boot.
+- fix(entrypoint): `VALIDATE_INSTALL=1` always shows the "may wipe configs" warning and waits 5 seconds before running, giving you time to stop the server and cancel.
+- fix(entrypoint): SteamCMD failures no longer print the same error line twice.
+- fix(cleanup): Core dump files at the container root are now cleaned up alongside the ones in the game binary directory.
+- docs(error-codes): New reference page (`docs/advanced/error-codes.md`) lists every egg error code with symptom, cause, and fix.
+- docs(cleanup): New guide (`docs/features/cleanup.md`) with custom rule examples — longer demo retention, per-plugin log sweeps, and how to disable a rule without losing it.
+
 -- update - 2026.04.15
 
 - fix(update_helper): Local SteamCMD installs were misdetected as daemon-managed → updates silently disabled and steamcmd dir deleted on restart. Detection rewritten to mount + heartbeat marker (10min TTL).
