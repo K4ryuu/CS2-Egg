@@ -10,7 +10,7 @@
 #                 a CS2 container starts (new server or restart). Install as a
 #                 systemd service for automatic startup.
 #
-# Version: 1.0.42
+# Version: 1.0.43
 
 set -euo pipefail
 
@@ -742,12 +742,16 @@ _sync_to_volume() {
     mkdir -p "$dest/egg" 2>/dev/null && touch "$dest/egg/.daemon-managed" 2>/dev/null
     chown -R pterodactyl:pterodactyl "$dest/egg" 2>/dev/null || true
 
-    # Sync non-VPK base files; exclude per-server configs and gameinfo.gi
+    # Sync non-VPK base files; exclude per-server configs, gameinfo.gi, and
+    # SteamCMD-only dirs (Steam/, steamapps/) — the CS2 server doesn't need them at
+    # runtime, and the container-side cleanup would just delete them each boot.
     # --no-o --no-g: don't overwrite ownership (preserve volume root owner = pterodactyl)
     rsync -aK --no-o --no-g \
         --exclude '*.vpk' \
         --exclude 'cfg/' \
         --exclude 'game/csgo/gameinfo.gi' \
+        --exclude 'Steam/' \
+        --exclude 'steamapps/' \
         "$src/" "$dest" 2>/dev/null || {
         log_warn "rsync failed for $container"
         return 1
