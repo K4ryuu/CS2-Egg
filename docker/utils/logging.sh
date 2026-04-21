@@ -173,7 +173,6 @@ handle_error() {
     local line_number="${1:-}"
     local last_command="${2:-$BASH_COMMAND}"
 
-    # Give better error messages based on exit code
     case $exit_code in
         127)
             log_message "Command not found: $last_command" "error"
@@ -183,11 +182,8 @@ handle_error() {
             return 0
             ;;
         *)
-            # Don't spam errors from steamcmd - it's noisy enough already
-            if [[ $last_command != *"eval ${STEAMCMD}"* ]]; then
-                log_message "Error on line $line_number: $last_command" "error"
-                log_message "Exit code: $exit_code" "error"
-            fi
+            log_message "Error on line $line_number: $last_command" "error"
+            log_message "Exit code: $exit_code" "error"
             ;;
     esac
 

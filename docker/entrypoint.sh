@@ -90,8 +90,11 @@ if [ -n "${SRCDS_APPID}" ] && [ "${SRCDS_STOP_UPDATE:-0}" -eq 0 ]; then
     fi
 
     log_message "SteamCMD command: $(echo "$STEAMCMD" | sed -E 's/(\+login [^ ]+ )[^ ]+/\1****/')" "debug"
+
+    trap - ERR
     eval ${STEAMCMD}
     STEAM_EXIT_CODE=$?
+    trap 'handle_error ${LINENO} "$BASH_COMMAND"' ERR
 
     if [ $STEAM_EXIT_CODE -eq 8 ]; then
         log_error_code "KL-STM-01" "SteamCMD connection error (exit code 8)"
