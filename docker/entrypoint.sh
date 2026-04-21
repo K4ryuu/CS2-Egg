@@ -40,54 +40,32 @@ rotate_logs
 
 # Server update process
 if [ -n "${SRCDS_APPID}" ] && [ "${SRCDS_STOP_UPDATE:-0}" -eq 0 ]; then
-    STEAMCMD=""
-    if [ -n "${SRCDS_BETAID}" ]; then
-        if [ -n "${SRCDS_BETAPASS}" ]; then
-            if [ "${SRCDS_VALIDATE}" -eq 1 ]; then
-                log_message "Validation enabled: THIS MAY WIPE CUSTOM CONFIGURATIONS!" "error"
-                if [ -n "${SRCDS_LOGIN}" ]; then
-                    STEAMCMD="./steamcmd/steamcmd.sh +login ${SRCDS_LOGIN} ${SRCDS_LOGIN_PASS} +force_install_dir /home/container +app_update ${SRCDS_APPID} -beta ${SRCDS_BETAID} -betapassword ${SRCDS_BETAPASS} validate +quit"
-                else
-                    STEAMCMD="./steamcmd/steamcmd.sh +login anonymous +force_install_dir /home/container +app_update ${SRCDS_APPID} -beta ${SRCDS_BETAID} -betapassword ${SRCDS_BETAPASS} validate +quit"
-                fi
-            else
-                if [ -n "${SRCDS_LOGIN}" ]; then
-                    STEAMCMD="./steamcmd/steamcmd.sh +login ${SRCDS_LOGIN} ${SRCDS_LOGIN_PASS} +force_install_dir /home/container +app_update ${SRCDS_APPID} -beta ${SRCDS_BETAID} -betapassword ${SRCDS_BETAPASS} +quit"
-                else
-                    STEAMCMD="./steamcmd/steamcmd.sh +login anonymous +force_install_dir /home/container +app_update ${SRCDS_APPID} -beta ${SRCDS_BETAID} -betapassword ${SRCDS_BETAPASS} +quit"
-                fi
-            fi
-        else
-            if [ "${SRCDS_VALIDATE}" -eq 1 ]; then
-                if [ -n "${SRCDS_LOGIN}" ]; then
-                    STEAMCMD="./steamcmd/steamcmd.sh +login ${SRCDS_LOGIN} ${SRCDS_LOGIN_PASS} +force_install_dir /home/container +app_update ${SRCDS_APPID} -beta ${SRCDS_BETAID} validate +quit"
-                else
-                    STEAMCMD="./steamcmd/steamcmd.sh +login anonymous +force_install_dir /home/container +app_update ${SRCDS_APPID} -beta ${SRCDS_BETAID} validate +quit"
-                fi
-            else
-                if [ -n "${SRCDS_LOGIN}" ]; then
-                    STEAMCMD="./steamcmd/steamcmd.sh +login ${SRCDS_LOGIN} ${SRCDS_LOGIN_PASS} +force_install_dir /home/container +app_update ${SRCDS_APPID} -beta ${SRCDS_BETAID} +quit"
-                else
-                    STEAMCMD="./steamcmd/steamcmd.sh +login anonymous +force_install_dir /home/container +app_update ${SRCDS_APPID} -beta ${SRCDS_BETAID} +quit"
-                fi
-            fi
-        fi
+    # Build SteamCMD command from optional parts — login, beta, validate.
+    STEAMCMD="./steamcmd/steamcmd.sh"
+
+    if [ -n "${SRCDS_LOGIN}" ]; then
+        STEAMCMD+=" +login ${SRCDS_LOGIN} ${SRCDS_LOGIN_PASS}"
     else
-        if [ "${SRCDS_VALIDATE}" -eq 1 ]; then
-            log_message "Validation enabled: THIS MAY WIPE CUSTOM CONFIGURATIONS!" "error"
-            if [ -n "${SRCDS_LOGIN}" ]; then
-                STEAMCMD="./steamcmd/steamcmd.sh +login ${SRCDS_LOGIN} ${SRCDS_LOGIN_PASS} +force_install_dir /home/container +app_update ${SRCDS_APPID} validate +quit"
-            else
-                STEAMCMD="./steamcmd/steamcmd.sh +login anonymous +force_install_dir /home/container +app_update ${SRCDS_APPID} validate +quit"
-            fi
-        else
-            if [ -n "${SRCDS_LOGIN}" ]; then
-                STEAMCMD="./steamcmd/steamcmd.sh +login ${SRCDS_LOGIN} ${SRCDS_LOGIN_PASS} +force_install_dir /home/container +app_update ${SRCDS_APPID} +quit"
-            else
-                STEAMCMD="./steamcmd/steamcmd.sh +login anonymous +force_install_dir /home/container +app_update ${SRCDS_APPID} +quit"
-            fi
+        STEAMCMD+=" +login anonymous"
+    fi
+
+    STEAMCMD+=" +force_install_dir /home/container +app_update ${SRCDS_APPID}"
+
+    if [ -n "${SRCDS_BETAID}" ]; then
+        STEAMCMD+=" -beta ${SRCDS_BETAID}"
+        if [ -n "${SRCDS_BETAPASS}" ]; then
+            STEAMCMD+=" -betapassword ${SRCDS_BETAPASS}"
         fi
     fi
+
+    if [ "${SRCDS_VALIDATE}" -eq 1 ]; then
+        STEAMCMD+=" validate"
+        log_message "⚠ VALIDATION ENABLED: THIS MAY WIPE CUSTOM CONFIGURATIONS!" "error"
+        log_message "  → Starting in 5 seconds — stop the server NOW to abort." "warning"
+        sleep 5
+    fi
+
+    STEAMCMD+=" +quit"
 
     log_message "SteamCMD command: $(echo "$STEAMCMD" | sed -E 's/(\+login [^ ]+ )[^ ]+/\1****/')" "debug"
 
