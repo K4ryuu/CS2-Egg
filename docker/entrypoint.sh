@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# wipe stale marker first thing — must happen before daemon's start event lands
+rm -f /home/container/egg/.daemon-managed 2>/dev/null || true
+
 source /utils/logging.sh
 source /utils/config.sh
 source /scripts/install.sh

@@ -12,7 +12,7 @@
 #                 a CS2 container starts (new server or restart). Install as a
 #                 systemd service for automatic startup.
 #
-# Version: 1.0.44
+# Version: 1.0.46
 
 set -euo pipefail
 
@@ -738,10 +738,8 @@ _sync_to_volume() {
 
     local container_mount_dst="/tmp/cs2-shared"
 
-    # CRITICAL: marker MUST be touched before any push work.
-    # The container's detect_daemon_vpk() uses marker presence as the sole daemon-detection signal,
-    # so a marker that lags the push would cause entrypoint to race past it and fall through to SteamCMD.
-    mkdir -p "$dest/egg" 2>/dev/null && touch "$dest/egg/.daemon-managed" 2>/dev/null
+    # marker is touched at the END of push (last-touch design)
+    mkdir -p "$dest/egg" 2>/dev/null
     chown -R pterodactyl:pterodactyl "$dest/egg" 2>/dev/null || true
 
     # Sync non-VPK base files; exclude per-server configs, gameinfo.gi, and
@@ -860,6 +858,47 @@ _sync_to_volume() {
 
     chown -R pterodactyl:pterodactyl "$dest/game" 2>/dev/null || true
 
+    # push done — touch marker (signals "daemon alive + files ready")
+    # symlink mode: marker is touched on start event after nsenter mount, not here
+    if [ "$VPK_PUSH_METHOD" != "symlink" ]; then
+        touch "$dest/egg/.daemon-managed" 2>/dev/null || true
+        chown pterodactyl:pterodactyl "$dest/egg/.daemon-managed" 2>/dev/null || true
+    fi
+
+    return 0
+}
+
+# Verify every VPK present in CS2_DIR is properly placed on a server volume.
+# Returns 0 if all VPKs look good, 1 if any is missing/broken.
+# Self-heal trigger: caller should re-push when this returns non-zero.
+_verify_volume_vpks() {
+    local volume_path="$1"
+    local container_mount_dst="/tmp/cs2-shared"
+
+    [ "$VPK_PUSH_METHOD" = "off" ] && return 0
+
+    while IFS= read -r -d '' src_file; do
+        local rel="${src_file#$CS2_DIR/}"
+        local vol_file="$volume_path/$rel"
+
+        case "$VPK_PUSH_METHOD" in
+            symlink)
+                # must be a symlink pointing at the in-container mount path
+                local expected="${container_mount_dst}/${rel}"
+                [ -L "$vol_file" ] || return 1
+                [ "$(readlink "$vol_file" 2>/dev/null)" = "$expected" ] || return 1
+                ;;
+            hardlink|copy)
+                # must be a real file with matching size
+                [ -f "$vol_file" ] || return 1
+                local src_size dst_size
+                src_size=$(stat -c %s "$src_file" 2>/dev/null || echo 0)
+                dst_size=$(stat -c %s "$vol_file" 2>/dev/null || echo 0)
+                [ "$src_size" = "$dst_size" ] || return 1
+                ;;
+        esac
+    done < <(find "$CS2_DIR" -type f -name "*.vpk" -print0 2>/dev/null)
+
     return 0
 }
 
@@ -970,30 +1009,46 @@ run_event_daemon() {
 
     # Outer loop: reconnect if the docker events stream drops (daemon restart, etc.)
     while true; do
-        # Listen for both create (new server) and start (fallback for missed creates)
+        # Listen for create (new server), start (boot), and restart (in-place restart).
+        # restart can fire without a preceding create on `docker restart`, so it must be
+        # handled identically to start - quick restarts also need full marker refresh.
         docker events \
             --filter type=container \
             --filter event=create \
             --filter event=start \
+            --filter event=restart \
             "${filter_args[@]}" \
             --format '{{.Action}} {{.Actor.Attributes.name}}' 2>/dev/null | \
         while IFS=' ' read -r event container; do
             [[ -z "$container" ]] && continue
 
-            # symlink mode: nsenter-mount on EVERY start event, before debounce/lock
-            # start fires after create (which may still be pushing) - mount must happen regardless
+            # Treat restart identically to start for all downstream logic.
+            [ "$event" = "restart" ] && event="start"
+
+            # symlink mode: nsenter-mount on every start event, before debounce/lock.
+            # marker is touched here (after mount) — entrypoint waits for it.
             if [ "$event" = "start" ] && [ "$VPK_PUSH_METHOD" = "symlink" ]; then
                 if _nsenter_mount "$container" "$CS2_DIR" "/tmp/cs2-shared"; then
                     log_info "CS2_DIR mounted into ${BOLD}$container${RESET} at /tmp/cs2-shared"
+                    local _vol_path
+                    _vol_path=$(docker inspect "$container" \
+                        --format '{{range .Mounts}}{{if eq .Destination "/home/container"}}{{.Source}}{{end}}{{end}}' \
+                        2>/dev/null)
+                    if [ -n "$_vol_path" ] && [ -d "$_vol_path/egg" ]; then
+                        touch "$_vol_path/egg/.daemon-managed" 2>/dev/null || true
+                        chown pterodactyl:pterodactyl "$_vol_path/egg/.daemon-managed" 2>/dev/null || true
+                    fi
                 else
                     log_warn "nsenter mount failed for $container - symlinks may not resolve"
                 fi
             fi
 
-            # Debounce: skip push if this container was pushed within the last 30s
-            # (Wings fires create + start together; mount above already handled, push can skip)
+            # Debounce: only applied to create events (Wings fires create+start together,
+            # so create handles initial push and start can skip the heavy work).
+            # Start events MUST always run verify + marker refresh, otherwise quick
+            # restarts (<10s) leave stale/missing markers and the entrypoint times out.
             local debounce_file="/tmp/cs2-vpk-pushed-${container}"
-            if [ -f "$debounce_file" ]; then
+            if [ "$event" != "start" ] && [ -f "$debounce_file" ]; then
                 local last_push
                 last_push=$(cat "$debounce_file" 2>/dev/null || echo 0)
                 local now
@@ -1020,15 +1075,16 @@ run_event_daemon() {
             fi
 
             if [ "$event" = "start" ]; then
-                # skip push if working VPKs already present (create event already handled it)
-                if find -L "$volume_path" -maxdepth 6 -name "*.vpk" -type f 2>/dev/null | grep -q .; then
-                    # Heartbeat refresh - container's detect_daemon_vpk uses mtime to verify daemon alive
-                    mkdir -p "$volume_path/egg" 2>/dev/null && touch "$volume_path/egg/.daemon-managed" 2>/dev/null
+                # self-heal: verify VPKs are properly placed; re-push if not
+                if _verify_volume_vpks "$volume_path"; then
+                    # all good — refresh marker as heartbeat
+                    mkdir -p "$volume_path/egg" 2>/dev/null
+                    touch "$volume_path/egg/.daemon-managed" 2>/dev/null || true
                     chown -R pterodactyl:pterodactyl "$volume_path/egg" 2>/dev/null || true
                     rmdir "$lock_file" 2>/dev/null || true
                     continue
                 fi
-                log_info "Container started without VPK files: ${BOLD}$container${RESET} - pushing now..."
+                log_warn "Container has missing/broken VPKs: ${BOLD}$container${RESET} - self-healing push..."
             else
                 log_info "Container started: ${BOLD}$container${RESET} - pushing game files before first start..."
             fi
@@ -1181,6 +1237,15 @@ apply_update() {
 
     # Update timestamp
     echo "$(date +%s)" > "$UPDATE_CHECK_TIMESTAMP_FILE"
+
+    # Restart the daemon service (if running) so it picks up the new script.
+    # The cron-driven invocation runs in a separate process from the systemd daemon,
+    # so the daemon would otherwise keep executing the old in-memory code until manual
+    # restart. systemctl restart loads the fresh script from disk.
+    if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet cs2-vpk-daemon 2>/dev/null; then
+        log_info "Restarting cs2-vpk-daemon service to load new code..."
+        systemctl restart cs2-vpk-daemon 2>/dev/null || log_warn "Daemon restart failed - run: systemctl restart cs2-vpk-daemon"
+    fi
 
     # Exec restart (preserves PID, lock file)
     # Use ORIGINAL_ARGS to pass the script's command-line arguments, not function args
