@@ -13,7 +13,6 @@ source /scripts/update_helper.sh
 trap 'handle_error ${LINENO} "$BASH_COMMAND"' ERR
 
 cd /home/container
-sleep 1
 
 # Initialize and load configurations
 init_configs
