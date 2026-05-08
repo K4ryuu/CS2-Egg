@@ -11,7 +11,7 @@ detect_daemon_vpk() {
     # skipping daemon detection. Daemon path must always run.
     # entrypoint.sh deletes the marker at boot, so marker presence = fresh daemon push
     local marker="/home/container/egg/.daemon-managed"
-    local wait_max_secs="${DAEMON_WAIT_MAX_SECS:-10}"
+    local wait_max_secs="${DAEMON_WAIT_MAX_SECS:-30}"
     local announce_after_secs="${DAEMON_WAIT_SECS:-2}"
     local announce_ticks=$((announce_after_secs * 10))
 
