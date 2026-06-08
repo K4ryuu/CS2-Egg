@@ -31,11 +31,20 @@ get_github_release() {
     ' 2>/dev/null
 }
 
+# Detect SemVer-style prerelease tags (e.g. 1.3.6-beta.5, 2.0.0-rc.1, 1.0.0-alpha)
+# Intentionally narrow: ignores non-SemVer formats like MetaMod's "git1391" or CS#'s "v300"
+is_prerelease_version() {
+    [[ "$1" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+-[A-Za-z0-9.-]+$ ]]
+}
+
 # Compare two semantic versions (semver)
 # Returns:
 #   0: if v1 == v2
 #   1: if v1 > v2
 #   2: if v1 < v2
+# When PRERELEASE!=1, any SemVer prerelease is treated as strictly older than
+# any stable version so disabling prereleases reverts a beta install to stable
+# even when the prerelease has a higher numeric version (e.g. 1.3.6-beta.5 -> 1.3.5).
 semver_compare() {
     local v1=$(echo "$1" | sed 's/v//')
     local v2=$(echo "$2" | sed 's/v//')
@@ -43,6 +52,17 @@ semver_compare() {
     # Handle equality first for performance
     if [ "$v1" = "$v2" ]; then
         return 0
+    fi
+
+    if [ "${PRERELEASE:-0}" != "1" ]; then
+        local v1_pre=0 v2_pre=0
+        is_prerelease_version "$v1" && v1_pre=1
+        is_prerelease_version "$v2" && v2_pre=1
+        if [ "$v1_pre" -eq 0 ] && [ "$v2_pre" -eq 1 ]; then
+            return 1 # stable > prerelease
+        elif [ "$v1_pre" -eq 1 ] && [ "$v2_pre" -eq 0 ]; then
+            return 2 # prerelease < stable
+        fi
     fi
 
     # Use sort -V to find the "largest" version
