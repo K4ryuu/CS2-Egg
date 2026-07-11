@@ -70,6 +70,9 @@ cleanup() {
         local file="$1"
         local category="$2"
         local rule_root="$3"
+        # normalize trailing slashes: dirname never emits one, and a mismatch here
+        # would defeat the root-protection compare below
+        while [[ "$rule_root" == */ && "$rule_root" != "/" ]]; do rule_root="${rule_root%/}"; done
         local parent
         parent=$(dirname "$file")
 
