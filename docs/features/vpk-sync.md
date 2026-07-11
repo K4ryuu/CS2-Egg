@@ -177,7 +177,7 @@ Run the installer with the branch override, and use the matching image tag on th
 curl -fsSL https://raw.githubusercontent.com/K4ryuu/CS2-Egg/dev/misc/install-cs2-update.sh -o /tmp/install-cs2-update.sh && sudo CS2_EGG_BRANCH=dev bash /tmp/install-cs2-update.sh
 ```
 
-Set the server's Docker image to `docker.io/sples1/k4ryuu-cs2:dev` (or `ghcr.io/k4ryuu/cs2-egg:dev`) in the panel. The installed script's self-update tracks the same branch, so it won't overwrite itself with the stable version. To go back, rerun the installer without `CS2_EGG_BRANCH` and switch the image back to `:latest`.
+Set the server's Docker image to `docker.io/sples1/k4ryuu-cs2:dev` in the panel (the dev image is only published to Docker Hub). The installed script's self-update tracks the same branch, so it won't overwrite itself with the stable version. To go back, rerun the installer without `CS2_EGG_BRANCH` and switch the image back to `:latest`.
 
 ## Support
 
