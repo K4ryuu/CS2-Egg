@@ -63,17 +63,23 @@ update_swiftly() {
 
             if [ -d "$target_dir" ]; then
                 # Update: only overwrite bin/ and gamedata/ (preserve user configs and plugins)
-                cp -rf "$swiftly_dir/bin" "$target_dir/" && \
-                cp -rf "$swiftly_dir/gamedata" "$target_dir/" && \
-                log_message "SwiftlyS2 updated to $new_version (bin + gamedata)" "success"
+                if cp -rf "$swiftly_dir/bin" "$target_dir/" && cp -rf "$swiftly_dir/gamedata" "$target_dir/"; then
+                    update_version_file "Swiftly" "$new_version"
+                    log_message "SwiftlyS2 updated to $new_version (bin + gamedata)" "success"
+                    return 0
+                fi
             else
                 # Fresh install: copy everything
-                cp -rn "$swiftly_dir" "$OUTPUT_DIR/" && \
-                log_message "SwiftlyS2 installed $new_version" "success"
+                if cp -rf "$swiftly_dir" "$OUTPUT_DIR/"; then
+                    update_version_file "Swiftly" "$new_version"
+                    log_message "SwiftlyS2 installed $new_version" "success"
+                    return 0
+                fi
             fi
 
-            update_version_file "Swiftly" "$new_version"
-            return 0
+            # version file NOT bumped, so the updater retries next boot
+            log_message "SwiftlyS2 copy failed - keeping previous version" "error"
+            return 1
         else
             log_message "SwiftlyS2 directory not found in archive" "error"
             return 1

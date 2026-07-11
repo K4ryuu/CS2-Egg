@@ -1,41 +1,6 @@
 #!/bin/bash
 source /utils/logging.sh
 
-# Cache platform detection for stat command (performance optimization)
-STAT_PLATFORM=$(uname -s)
-if [[ "$STAT_PLATFORM" == "Darwin" ]]; then
-    STAT_CMD="stat -f %z"
-else
-    STAT_CMD="stat -c %s"
-fi
-
-# Quick check to make sure we have enough disk space
-check_filesystem() {
-    local dir="$1"
-    local required_space=1048576  # 1GB in KB
-
-    # Get filesystem info safely
-    local fs_info
-    if ! fs_info=$(df -k "$dir" 2>/dev/null | tail -n 1); then
-        log_message "Failed to get filesystem information for $dir" "error"
-        return 1
-    fi
-
-    # Parse available space safely
-    local available
-    available=$(echo "$fs_info" | awk '{print $4}')
-    if [[ ! "$available" =~ ^[0-9]+$ ]]; then
-        log_message "Invalid filesystem information received" "error"
-        return 1
-    fi
-
-    if [ "$available" -lt "$required_space" ]; then
-        log_message "Low disk space warning: Less than 1GB available" "warning"
-    fi
-
-    return 0
-}
-
 # Make file sizes readable for humans
 format_size() {
     local size="$1"
@@ -85,7 +50,7 @@ cleanup() {
         fi
 
         local size
-        size=$($STAT_CMD "$file" 2>/dev/null)
+        size=$(stat -c %s "$file" 2>/dev/null)
         if [ $? -ne 0 ] || [[ ! "$size" =~ ^[0-9]+$ ]]; then
             size=0
         fi

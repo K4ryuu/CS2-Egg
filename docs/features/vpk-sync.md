@@ -167,6 +167,18 @@ The cron job handles CS2 updates and pushes to all existing servers. The daemon 
 **Q: Can I use VPK sync without the daemon?**
 Yes. Without the daemon, new servers receive files on the next cron cycle (~2 minutes). For most setups this is fine since CS2 startup takes longer than that anyway.
 
+**Q: How many servers does the daemon handle in parallel?**
+File pushes run on a worker pool, 8 parallel workers by default. Symlink mounts are instant and unlimited. The installer asks for the pool size (`MAX_WORKERS`), or edit it later in `/usr/local/bin/update-cs2-centralized.sh` and restart the daemon.
+
+**Q: How do I test a prerelease (dev) version?**
+Run the installer with the branch override, and use the matching image tag on the server:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/K4ryuu/CS2-Egg/dev/misc/install-cs2-update.sh -o /tmp/install-cs2-update.sh && sudo CS2_EGG_BRANCH=dev bash /tmp/install-cs2-update.sh
+```
+
+Set the server's Docker image to `docker.io/sples1/k4ryuu-cs2:dev` (or `ghcr.io/k4ryuu/cs2-egg:dev`) in the panel. The installed script's self-update tracks the same branch, so it won't overwrite itself with the stable version. To go back, rerun the installer without `CS2_EGG_BRANCH` and switch the image back to `:latest`.
+
 ## Support
 
 - [Report Issue](https://github.com/K4ryuu/CS2-Egg/issues)

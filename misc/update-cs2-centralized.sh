@@ -12,7 +12,7 @@
 #                 a CS2 container starts (new server or restart). Install as a
 #                 systemd service for automatic startup.
 #
-# Version: 1.0.46
+# Version: 1.0.47
 
 set -euo pipefail
 
@@ -70,6 +70,11 @@ UPDATE_CHECK_INTERVAL="*"
 # "off"      = disable push, servers won't receive game files automatically
 VPK_PUSH_METHOD="symlink"
 
+# Optional: Max parallel file pushes in daemon mode (worker pool size)
+# Symlink mounts are instant and not limited by this. Raise if you mass-create
+# many servers at once and the host has disk/CPU headroom.
+MAX_WORKERS="8"
+
 # ! ============================================================================
 # ! DO NOT EDIT BELOW THIS LINE UNLESS YOU KNOW WHAT YOU'RE DOING
 # ! ============================================================================
@@ -79,6 +84,8 @@ SIMULATE_MODE=false
 
 # Store original arguments for self-update restart
 ORIGINAL_ARGS=("$@")
+
+_DAEMON_WORKER_FD=   # fd for worker pool token bucket; set by run_event_daemon
 
 # ============================================================================
 # INTERNAL CONSTANTS
@@ -102,20 +109,14 @@ UPDATE_KEEP_BACKUPS=3
 if [[ -t 1 ]] && [[ -z "${NO_COLOR:-}" ]]; then
     BOLD="\033[1m"; DIM="\033[2m"
     RED="\033[31m"; GREEN="\033[32m"; YELLOW="\033[33m"
-    BLUE="\033[34m"; MAGENTA="\033[35m"; CYAN="\033[36m"; GRAY="\033[90m"
+    BLUE="\033[34m"; MAGENTA="\033[35m"; CYAN="\033[36m"
     RESET="\033[0m"
 else
-    BOLD=""; DIM=""; RED=""; GREEN=""; YELLOW=""; BLUE=""; MAGENTA=""; CYAN=""; GRAY=""; RESET=""
+    BOLD=""; DIM=""; RED=""; GREEN=""; YELLOW=""; BLUE=""; MAGENTA=""; CYAN=""; RESET=""
 fi
 
 format_bytes() {
-    local size="$1"
-    if [[ ! "$size" =~ ^[0-9]+$ ]]; then echo "0 B"; return 1; fi
-    if   [ "$size" -ge 1099511627776 ]; then awk -v s="$size" 'BEGIN { printf "%.2f TB", s/1099511627776 }'
-    elif [ "$size" -ge 1073741824 ];    then awk -v s="$size" 'BEGIN { printf "%.2f GB", s/1073741824 }'
-    elif [ "$size" -ge 1048576 ];       then awk -v s="$size" 'BEGIN { printf "%.2f MB", s/1048576 }'
-    elif [ "$size" -ge 1024 ];          then awk -v s="$size" 'BEGIN { printf "%.2f KB", s/1024 }'
-    else echo "${size} B"; fi
+    numfmt --to=iec --suffix=B "${1:-0}" 2>/dev/null || echo "${1:-0} B"
 }
 
 log_info()    { echo -e "ℹ ${BOLD}${CYAN}INFO${RESET}  $*" >&2; }
@@ -141,27 +142,33 @@ validate_config() {
     if [[ ! "$CS2_DIR" =~ ^/[a-zA-Z0-9/_-]+$ ]]; then
         log_error "Invalid CS2_DIR path: $CS2_DIR"
         log_error "Path must be absolute and contain only alphanumeric, /, -, _ characters"
-        ((errors++))
+        errors=$((errors + 1))
     fi
 
     # Validate SteamCMD directory path
     if [[ ! "$STEAMCMD_DIR" =~ ^/[a-zA-Z0-9/_-]+$ ]]; then
         log_error "Invalid STEAMCMD_DIR path: $STEAMCMD_DIR"
         log_error "Path must be absolute and contain only alphanumeric, /, -, _ characters"
-        ((errors++))
+        errors=$((errors + 1))
     fi
 
     # Validate APP_ID is numeric
     if [[ ! "$APP_ID" =~ ^[0-9]+$ ]]; then
         log_error "Invalid APP_ID: $APP_ID (must be numeric)"
-        ((errors++))
+        errors=$((errors + 1))
+    fi
+
+    # Validate MAX_WORKERS is a positive integer (0 would deadlock the worker pool)
+    if [[ ! "$MAX_WORKERS" =~ ^[1-9][0-9]*$ ]]; then
+        log_error "Invalid MAX_WORKERS: $MAX_WORKERS (must be a positive number)"
+        errors=$((errors + 1))
     fi
 
     # Validate Docker configuration if auto-restart or VPK push is enabled
     if [ "$AUTO_RESTART_SERVERS" = "true" ] || [ "$VPK_PUSH_METHOD" != "off" ]; then
         if [ -z "$SERVER_IMAGE" ]; then
             log_error "SERVER_IMAGE is required when AUTO_RESTART_SERVERS=true or VPK_PUSH_METHOD is enabled"
-            ((errors++))
+            errors=$((errors + 1))
         fi
     fi
 
@@ -170,7 +177,7 @@ validate_config() {
         symlink|hardlink|copy|off) ;;
         *)
             log_error "Invalid VPK_PUSH_METHOD: $VPK_PUSH_METHOD (must be: symlink, hardlink, copy, off)"
-            ((errors++))
+            errors=$((errors + 1))
             ;;
     esac
 
@@ -210,107 +217,19 @@ release_lock() {
 # LIVE OUTPUT UTILITIES
 # ============================================================================
 
-run_with_live_tail() {
-    local label="$1"; shift
-    local cmd=("$@")
-    local display_lines=3
-    local start_ts=$(date +%s)
-    local log_file="/tmp/cs2-update.$$.$RANDOM.log"
-
-    echo -e "${BOLD}${MAGENTA}${label}${RESET}" >&2
-
-    # Run command in background
-    "${cmd[@]}" >"$log_file" 2>&1 &
-    local pid=$!
-
-    local last_line_count=0
-    local displayed_lines=0
-
-    # Monitor output in real-time
-    while kill -0 $pid 2>/dev/null; do
-        local current_line_count=$(wc -l < "$log_file" 2>/dev/null || echo 0)
-
-        if [ $current_line_count -gt $last_line_count ]; then
-            # Move cursor up if we have lines displayed
-            if [ $displayed_lines -gt 0 ]; then
-                tput cuu $displayed_lines 2>/dev/null || true
-            fi
-
-            # Get and display last N lines
-            local lines=$(tail -n $display_lines "$log_file" 2>/dev/null)
-            displayed_lines=0
-
-            while IFS= read -r line; do
-                tput el 2>/dev/null || true
-                # Truncate long lines to 100 chars
-                echo -e "${DIM}${line:0:100}${RESET}" >&2
-                ((displayed_lines++))
-            done <<< "$lines"
-
-            # Pad with empty lines if we have fewer than display_lines
-            while [ $displayed_lines -lt $display_lines ]; do
-                tput el 2>/dev/null || true
-                echo "" >&2
-                ((displayed_lines++))
-            done
-
-            last_line_count=$current_line_count
-        fi
-
-        sleep 0.2
-    done
-
-    wait $pid
-    local ec=$?
-    local end_ts=$(date +%s)
-    local dur=$((end_ts-start_ts))
-
-    # Clear the displayed lines
-    if [ $displayed_lines -gt 0 ]; then
-        tput cuu $displayed_lines 2>/dev/null || true
-        for i in $(seq 1 $displayed_lines); do
-            tput el 2>/dev/null || true
-            echo "" >&2
-        done
-        tput cuu $displayed_lines 2>/dev/null || true
-    fi
-
-    if [ $ec -eq 0 ]; then
-        log_ok "${label} finished in ${dur}s"
+# Friendly context for known SteamCMD failure codes found in a log file
+_steamcmd_error_hint() {
+    local error_code
+    error_code=$(grep -oP "state is \K0x[0-9a-fA-F]+" "$1" 2>/dev/null | head -n1)
+    [ -z "$error_code" ] && return 0
+    echo "" >&2
+    if [ "$error_code" = "0x202" ]; then
+        log_error "SteamCMD Error 0x202 - Disk space or filesystem issue"
+        log_info "CS2 requires ~60GB for initial installation"
+        log_info "Free up disk space and retry. Check: ${BOLD}df -h $(dirname "$CS2_DIR")${RESET}"
     else
-        log_error "${label} failed after ${dur}s (exit $ec)"
-        echo "${BOLD}Last 10 lines:${RESET}" >&2
-        tail -n 10 "$log_file" >&2 || true
-
-        # Check for specific SteamCMD errors and provide helpful context
-        if grep -q "state is 0x" "$log_file" 2>/dev/null; then
-            local error_code=$(grep -oP "state is \K0x[0-9a-fA-F]+" "$log_file" 2>/dev/null | head -n1)
-            echo "" >&2
-
-            case "$error_code" in
-                0x202)
-                    log_error "SteamCMD Error 0x202 - Disk space or filesystem issue"
-                    log_info "• CS2 requires ~60GB for initial installation"
-                    log_info "• After VPK sync, servers only use ~3-8GB each"
-                    log_info "• VPK files (~52GB) shared from centralized location"
-                    echo "" >&2
-                    log_info "Solution: Free up disk space and try again"
-                    log_info "Check space: ${BOLD}df -h $(dirname "$CS2_DIR")${RESET}"
-                    ;;
-                *)
-                    log_error "SteamCMD Error $error_code detected"
-                    log_info "• Check SteamCMD documentation for details"
-                    log_info "• Review full output above for more context"
-                    ;;
-            esac
-        fi
-
-        rm -f "$log_file"
-        return $ec
+        log_error "SteamCMD Error $error_code detected - review output above"
     fi
-
-    rm -f "$log_file"
-    return 0
 }
 
 run_with_spinner() {
@@ -344,6 +263,7 @@ run_with_spinner() {
         log_error "${label} failed after ${dur}s (exit $ec)"
         echo "${BOLD}Last 20 lines:${RESET}" >&2
         tail -n 20 "$log_file" >&2 || true
+        _steamcmd_error_hint "$log_file"
         rm -f "$log_file"
         return $ec
     fi
@@ -474,7 +394,7 @@ update_cs2() {
         validate_flag="validate"
     fi
 
-    if ! run_with_live_tail "Checking for updates and downloading" \
+    if ! run_with_spinner "Checking for updates and downloading" \
         "$STEAMCMD_DIR/steamcmd.sh" +force_install_dir "$CS2_DIR" +login anonymous +app_update "$APP_ID" $validate_flag +quit; then
         log_error "CS2 update failed"
         exit 1
@@ -548,40 +468,40 @@ get_wings_api_url() {
     echo "${protocol}://${host}:${port}"
 }
 
+# Print names of running containers using any configured SERVER_IMAGE, one per line
+_matching_containers() {
+    local images="${SERVER_IMAGE//,/ }"
+    local grep_pattern="" img escaped_img
+    for img in $images; do
+        escaped_img=$(printf '%s' "$img" | sed 's/[.[\*^$()+?{|\\]/\\&/g')
+        [ -z "$grep_pattern" ] && grep_pattern="$escaped_img" || grep_pattern="$grep_pattern|$escaped_img"
+    done
+    # || true: no match must not kill the script under pipefail + set -e
+    docker ps --format "{{.Names}}\t{{.Image}}" | grep -E "$grep_pattern" | cut -f1 || true
+}
+
+# Host path of a container's /home/container volume
+_volume_path() {
+    docker inspect "$1" \
+        --format '{{range .Mounts}}{{if eq .Destination "/home/container"}}{{.Source}}{{end}}{{end}}' \
+        2>/dev/null
+}
+
 restart_docker_containers() {
     section "Detecting and Restarting Servers"
 
-    # Normalize SERVER_IMAGE: replace commas with spaces for consistent processing
-    local images="${SERVER_IMAGE//,/ }"
-
-    # Build grep pattern for multiple images (escape special chars and join with |)
-    local grep_pattern=""
-    for img in $images; do
-        # Escape special regex characters in image name
-        local escaped_img=$(printf '%s' "$img" | sed 's/[.[\*^$()+?{|\\]/\\&/g')
-        if [ -z "$grep_pattern" ]; then
-            grep_pattern="$escaped_img"
-        else
-            grep_pattern="$grep_pattern|$escaped_img"
-        fi
-    done
-
-    # Find containers using any of the specified images
-    local containers=$(docker ps --format "{{.Names}}\t{{.Image}}" | grep -E "$grep_pattern" | cut -f1)
-
-    if [ -z "$containers" ]; then
-        log_info "No containers found using images: ${BOLD}$images${RESET}"
-        return 0
-    fi
-
-    # Convert to array for reliable counting and iteration
     local -a container_array=()
     while IFS= read -r line; do
         [[ -n "$line" ]] && container_array+=("$line")
-    done <<< "$containers"
+    done < <(_matching_containers)
+
+    if [ ${#container_array[@]} -eq 0 ]; then
+        log_info "No containers found using images: ${BOLD}${SERVER_IMAGE//,/ }${RESET}"
+        return 0
+    fi
 
     local count=${#container_array[@]}
-    log_info "Found ${BOLD}$count${RESET} container(s) using images: ${BOLD}$images${RESET}"
+    log_info "Found ${BOLD}$count${RESET} container(s) using images: ${BOLD}${SERVER_IMAGE//,/ }${RESET}"
 
     # List containers for visibility
     for c in "${container_array[@]}"; do
@@ -730,8 +650,27 @@ PYEOF
     log_info "nsenter[$container]: bind mount ok"
 }
 
-# Sync base files + VPK files from CS2_DIR into a single server volume
+# Sync base files + VPK files from CS2_DIR into a single server volume.
+# Wrapper keeps a push-active heartbeat alive: the container entrypoint extends
+# its marker wait while the file stays fresh, so SteamCMD never validates the
+# same tree concurrently with a long push. A crashed pusher stops the heartbeat.
 _sync_to_volume() {
+    local _hb_file="$2/egg/.daemon-push-active"
+    local _owner=$BASHPID
+    mkdir -p "$2/egg" 2>/dev/null
+    touch "$_hb_file" 2>/dev/null || true
+    ( while sleep 20; do kill -0 "$_owner" 2>/dev/null || exit; touch "$_hb_file" 2>/dev/null || true; done ) &
+    local _hb_pid=$!
+
+    local rc=0
+    _sync_to_volume_impl "$@" || rc=$?
+
+    kill "$_hb_pid" 2>/dev/null || true
+    rm -f "$_hb_file" 2>/dev/null || true
+    return $rc
+}
+
+_sync_to_volume_impl() {
     local container="$1"
     local dest="$2"
     local src="$CS2_DIR"
@@ -743,7 +682,7 @@ _sync_to_volume() {
     chown -R pterodactyl:pterodactyl "$dest/egg" 2>/dev/null || true
 
     # Sync non-VPK base files; exclude per-server configs, gameinfo.gi, and
-    # SteamCMD-only dirs (Steam/, steamapps/) — the CS2 server doesn't need them at
+    # SteamCMD-only dirs (Steam/, steamapps/): the CS2 server doesn't need them at
     # runtime, and the container-side cleanup would just delete them each boot.
     # --no-o --no-g: don't overwrite ownership (preserve volume root owner = pterodactyl)
     rsync -aK --no-o --no-g \
@@ -858,7 +797,7 @@ _sync_to_volume() {
 
     chown -R pterodactyl:pterodactyl "$dest/game" 2>/dev/null || true
 
-    # push done — touch marker (signals "daemon alive + files ready")
+    # push done: touch marker (signals "daemon alive + files ready")
     # symlink mode: marker is touched on start event after nsenter mount, not here
     if [ "$VPK_PUSH_METHOD" != "symlink" ]; then
         touch "$dest/egg/.daemon-managed" 2>/dev/null || true
@@ -917,27 +856,15 @@ push_vpk_to_containers() {
         return 1
     fi
 
-    # Build image grep pattern (same logic as restart_docker_containers)
-    local images="${SERVER_IMAGE//,/ }"
-    local grep_pattern=""
-    for img in $images; do
-        local escaped_img
-        escaped_img=$(printf '%s' "$img" | sed 's/[.[\*^$()+?{|\\]/\\&/g')
-        [ -z "$grep_pattern" ] && grep_pattern="$escaped_img" || grep_pattern="$grep_pattern|$escaped_img"
-    done
-
-    local containers
-    containers=$(docker ps --format "{{.Names}}\t{{.Image}}" | grep -E "$grep_pattern" | cut -f1)
-
-    if [ -z "$containers" ]; then
-        log_info "No running containers found for VPK push"
-        return 0
-    fi
-
     local -a container_array=()
     while IFS= read -r line; do
         [[ -n "$line" ]] && container_array+=("$line")
-    done <<< "$containers"
+    done < <(_matching_containers)
+
+    if [ ${#container_array[@]} -eq 0 ]; then
+        log_info "No running containers found for VPK push"
+        return 0
+    fi
 
     log_info "Pushing game files to ${BOLD}${#container_array[@]}${RESET} container(s) [method: ${BOLD}$VPK_PUSH_METHOD${RESET}]"
 
@@ -946,11 +873,25 @@ push_vpk_to_containers() {
 
     for container in "${container_array[@]}"; do
         local volume_path
-        volume_path=$(docker inspect "$container" \
-            --format '{{range .Mounts}}{{if eq .Destination "/home/container"}}{{.Source}}{{end}}{{end}}' 2>/dev/null)
+        volume_path=$(_volume_path "$container")
 
         if [ -z "$volume_path" ] || [ ! -d "$volume_path" ]; then
             log_warn "Could not get volume path for $container, skipping"
+            ((failed++)) || true
+            continue
+        fi
+
+        # Same per-container mutex as the daemon workers, so a cron push and a
+        # daemon self-heal never write the same volume concurrently.
+        local lock_file="/var/lock/cs2-vpk-push-${container}.lock"
+        local waited=0 got_lock=true
+        while ! mkdir "$lock_file" 2>/dev/null; do
+            if [ "$waited" -ge 120 ]; then got_lock=false; break; fi
+            sleep 2
+            waited=$((waited + 2))
+        done
+        if ! $got_lock; then
+            log_warn "Push lock busy for ${BOLD}$container${RESET} after ${waited}s, skipping"
             ((failed++)) || true
             continue
         fi
@@ -961,6 +902,7 @@ push_vpk_to_containers() {
             log_warn "Push failed for ${BOLD}$container${RESET}"
             ((failed++)) || true
         fi
+        rmdir "$lock_file" 2>/dev/null || true
     done
 
     # Hardlink mode: set VPK files in CS2_DIR to root:root 644
@@ -1007,33 +949,36 @@ run_event_daemon() {
     log_info "CS2 source: ${BOLD}$CS2_DIR${RESET}"
     echo "" >&2
 
+    local _max_workers="$MAX_WORKERS"
+    local _fifo
+    _fifo=$(mktemp -u /tmp/cs2-daemon-slots-XXXXXX)
+    mkfifo "$_fifo"
+    exec {_DAEMON_WORKER_FD}<>"$_fifo"
+    rm -f "$_fifo"
+    for _i in $(seq 1 "$_max_workers"); do echo >&"$_DAEMON_WORKER_FD"; done
+
+    log_info "Worker pool: ${BOLD}${_max_workers}${RESET} parallel workers (MAX_WORKERS)"
+    echo "" >&2
+
+    trap 'wait; exec {_DAEMON_WORKER_FD}>&-' EXIT
+    trap 'wait; exec {_DAEMON_WORKER_FD}>&-; exit 130' INT
+    trap 'wait; exec {_DAEMON_WORKER_FD}>&-; exit 143' TERM
+
     # Outer loop: reconnect if the docker events stream drops (daemon restart, etc.)
     while true; do
-        # Listen for create (new server), start (boot), and restart (in-place restart).
-        # restart can fire without a preceding create on `docker restart`, so it must be
-        # handled identically to start - quick restarts also need full marker refresh.
-        docker events \
-            --filter type=container \
-            --filter event=create \
-            --filter event=start \
-            --filter event=restart \
-            "${filter_args[@]}" \
-            --format '{{.Action}} {{.Actor.Attributes.name}}' 2>/dev/null | \
         while IFS=' ' read -r event container; do
             [[ -z "$container" ]] && continue
 
             # Treat restart identically to start for all downstream logic.
             [ "$event" = "restart" ] && event="start"
 
-            # symlink mode: nsenter-mount on every start event, before debounce/lock.
-            # marker is touched here (after mount) — entrypoint waits for it.
+            # symlink mode: nsenter-mount on every start event; stays in main thread
+            # (fast ~100ms per server; gives containers their marker signal immediately).
             if [ "$event" = "start" ] && [ "$VPK_PUSH_METHOD" = "symlink" ]; then
                 if _nsenter_mount "$container" "$CS2_DIR" "/tmp/cs2-shared"; then
                     log_info "CS2_DIR mounted into ${BOLD}$container${RESET} at /tmp/cs2-shared"
                     local _vol_path
-                    _vol_path=$(docker inspect "$container" \
-                        --format '{{range .Mounts}}{{if eq .Destination "/home/container"}}{{.Source}}{{end}}{{end}}' \
-                        2>/dev/null)
+                    _vol_path=$(_volume_path "$container")
                     if [ -n "$_vol_path" ] && [ -d "$_vol_path/egg" ]; then
                         touch "$_vol_path/egg/.daemon-managed" 2>/dev/null || true
                         chown pterodactyl:pterodactyl "$_vol_path/egg/.daemon-managed" 2>/dev/null || true
@@ -1043,61 +988,73 @@ run_event_daemon() {
                 fi
             fi
 
-            # Debounce: only applied to create events (Wings fires create+start together,
-            # so create handles initial push and start can skip the heavy work).
-            # Start events MUST always run verify + marker refresh, otherwise quick
-            # restarts (<10s) leave stale/missing markers and the entrypoint times out.
-            local debounce_file="/tmp/cs2-vpk-pushed-${container}"
-            if [ "$event" != "start" ] && [ -f "$debounce_file" ]; then
-                local last_push
-                last_push=$(cat "$debounce_file" 2>/dev/null || echo 0)
-                local now
-                now=$(date +%s)
-                if [ $((now - last_push)) -lt 30 ]; then
-                    continue
+            # Capture loop vars before spawning subshell (locals don't cross fork boundary).
+            local _event="$event" _container="$container" _fd="$_DAEMON_WORKER_FD"
+
+            {
+                local lock_file="/var/lock/cs2-vpk-push-${_container}.lock"
+                local _slot=0 _locked=0
+                # Release only what this worker actually holds, even on crash.
+                # Unconditional cleanup would free another worker's live lock.
+                trap '[ "$_locked" = 1 ] && rmdir "$lock_file" 2>/dev/null; [ "$_slot" = 1 ] && echo >&"$_fd"' EXIT
+
+                # Debounce: only applied to create events (Wings fires create+start together,
+                # so create handles initial push and start can skip the heavy work).
+                local debounce_file="/tmp/cs2-vpk-pushed-${_container}"
+                if [ "$_event" != "start" ] && [ -f "$debounce_file" ]; then
+                    local last_push now
+                    last_push=$(cat "$debounce_file" 2>/dev/null || echo 0)
+                    now=$(date +%s)
+                    [ $((now - last_push)) -lt 30 ] && exit 0
                 fi
-            fi
 
-            # Per-container lock to avoid overlapping pushes (e.g. create + start firing together)
-            local lock_file="/var/lock/cs2-vpk-push-${container}.lock"
-            if ! mkdir "$lock_file" 2>/dev/null; then
-                continue
-            fi
+                # Acquire a worker slot here, inside the subshell: the event loop
+                # must never block on a saturated pool, or symlink mounts for later
+                # events would stall and containers time out waiting on markers (#51).
+                read -r <&"$_fd" || exit 0
+                _slot=1
 
-            local volume_path
-            volume_path=$(docker inspect "$container" \
-                --format '{{range .Mounts}}{{if eq .Destination "/home/container"}}{{.Source}}{{end}}{{end}}' \
-                2>/dev/null)
-
-            if [ -z "$volume_path" ] || [ ! -d "$volume_path" ]; then
-                rmdir "$lock_file" 2>/dev/null || true
-                continue
-            fi
-
-            if [ "$event" = "start" ]; then
-                # self-heal: verify VPKs are properly placed; re-push if not
-                if _verify_volume_vpks "$volume_path"; then
-                    # all good — refresh marker as heartbeat
-                    mkdir -p "$volume_path/egg" 2>/dev/null
-                    touch "$volume_path/egg/.daemon-managed" 2>/dev/null || true
-                    chown -R pterodactyl:pterodactyl "$volume_path/egg" 2>/dev/null || true
-                    rmdir "$lock_file" 2>/dev/null || true
-                    continue
+                if ! mkdir "$lock_file" 2>/dev/null; then
+                    exit 0
                 fi
-                log_warn "Container has missing/broken VPKs: ${BOLD}$container${RESET} - self-healing push..."
-            else
-                log_info "Container started: ${BOLD}$container${RESET} - pushing game files before first start..."
-            fi
+                _locked=1
 
-            if _sync_to_volume "$container" "$volume_path"; then
-                date +%s > "$debounce_file"
-                log_ok "Game files pushed to ${BOLD}$container${RESET}"
-            else
-                log_warn "Push failed for ${BOLD}$container${RESET}"
-            fi
+                local volume_path
+                volume_path=$(_volume_path "$_container")
 
-            rmdir "$lock_file" 2>/dev/null || true
-        done
+                if [ -z "$volume_path" ] || [ ! -d "$volume_path" ]; then
+                    exit 0
+                fi
+
+                if [ "$_event" = "start" ]; then
+                    if _verify_volume_vpks "$volume_path"; then
+                        mkdir -p "$volume_path/egg" 2>/dev/null
+                        touch "$volume_path/egg/.daemon-managed" 2>/dev/null || true
+                        chown -R pterodactyl:pterodactyl "$volume_path/egg" 2>/dev/null || true
+                        exit 0
+                    fi
+                    log_warn "Container has missing/broken VPKs: ${BOLD}$_container${RESET} - self-healing push..."
+                else
+                    log_info "Container started: ${BOLD}$_container${RESET} - pushing game files before first start..."
+                fi
+
+                if _sync_to_volume "$_container" "$volume_path"; then
+                    date +%s > "$debounce_file"
+                    log_ok "Game files pushed to ${BOLD}$_container${RESET}"
+                else
+                    log_warn "Push failed for ${BOLD}$_container${RESET}"
+                fi
+            } &
+
+        done < <(
+            docker events \
+                --filter type=container \
+                --filter event=create \
+                --filter event=start \
+                --filter event=restart \
+                "${filter_args[@]}" \
+                --format '{{.Action}} {{.Actor.Attributes.name}}' 2>/dev/null
+        )
 
         log_warn "Docker event stream ended - reconnecting in 5s..."
         sleep 5
@@ -1109,7 +1066,10 @@ run_event_daemon() {
 # ============================================================================
 
 download_and_validate_update() {
-    local temp_script="/tmp/$(basename "$0").new.$$"
+    # Stage next to $0 so the final mv is an atomic same-filesystem rename;
+    # /tmp can be a separate tmpfs where mv degrades to copy (crash = broken script)
+    local temp_script
+    temp_script=$(mktemp "$(dirname "$0")/.$(basename "$0").new.XXXXXX") || return 1
 
     # Download with comprehensive options
     local download_error
@@ -1193,6 +1153,8 @@ preserve_user_config() {
         "AUTO_UPDATE_SCRIPT"
         "UPDATE_CHECK_INTERVAL"
         "VPK_PUSH_METHOD"
+        "MAX_WORKERS"
+        "GITHUB_BRANCH"
     )
 
     log_info "Preserving user configuration..."
@@ -1231,9 +1193,6 @@ apply_update() {
     # Atomic replace
     chmod +x "$new_script"
     mv "$new_script" "$0"
-
-    # Mark for health check
-    touch "$0.updated"
 
     # Update timestamp
     echo "$(date +%s)" > "$UPDATE_CHECK_TIMESTAMP_FILE"
@@ -1323,41 +1282,6 @@ check_and_apply_updates() {
     return 1
 }
 
-check_update_health() {
-    if [ -f "$0.updated" ]; then
-        section "Post-Update Health Check"
-        log_info "Performing health check after update..."
-
-        # Basic health checks
-        if ! command -v sha256sum >/dev/null 2>&1; then
-            log_error "Health check failed: required command 'sha256sum' not found"
-            rollback_from_failed_update "$@"
-            return 1
-        fi
-
-        rm "$0.updated"
-        log_ok "Health check passed, update successful"
-    fi
-}
-
-rollback_from_failed_update() {
-    log_error "Rolling back to previous version..."
-
-    local latest_backup=$(ls -t "$UPDATE_BACKUP_DIR"/* 2>/dev/null | head -n1)
-
-    if [ -n "$latest_backup" ]; then
-        cp "$latest_backup" "$0"
-        chmod +x "$0"
-        rm -f "$0.updated"
-        log_info "Rollback complete, restarting..."
-        exec "$0" "$@"
-    else
-        log_error "No backup found for rollback, manual intervention required"
-        log_error "Script location: $0"
-        exit 1
-    fi
-}
-
 main() {
     # Parse command line arguments
     while [[ $# -gt 0 ]]; do
@@ -1368,7 +1292,7 @@ main() {
                 ;;
             --validate)
                 VALIDATE_INSTALL="true"
-                log_warn "One-shot validate requested — steamcmd will verify every file this run"
+                log_warn "One-shot validate requested: steamcmd will verify every file this run"
                 shift
                 ;;
             --daemon)
@@ -1388,7 +1312,7 @@ main() {
                 echo ""
                 echo "Options:"
                 echo "  --simulate    Simulate update mode (skip SteamCMD, trigger restart logic)"
-                echo "  --validate    Force one-shot file validation (steamcmd validate) — does not persist"
+                echo "  --validate    Force one-shot file validation (steamcmd validate), does not persist"
                 echo "  --daemon      Run as event listener - push game files on container start"
                 echo ""
                 exit 1
@@ -1445,20 +1369,17 @@ main() {
         log_info "Skipping SteamCMD update (simulate mode)"
         log_ok "Simulated update complete - triggering push and restart logic"
         update_occurred=true
-
-        push_vpk_to_containers
-        if [ "$AUTO_RESTART_SERVERS" = "true" ]; then
-            restart_docker_containers
-        else
-            log_info "Auto-restart disabled, servers will pick up new files on next restart"
-        fi
     elif update_cs2; then
         update_occurred=true
-        # Push updated game files into server volumes
-        push_vpk_to_containers
-        # Restart servers if configured
+    fi
+
+    if [ "$update_occurred" = "true" ]; then
+        # A partial push must not abort the run: healthy servers still need their restart
+        if ! push_vpk_to_containers; then
+            log_warn "Some pushes failed - continuing so synced servers still restart"
+        fi
         if [ "$AUTO_RESTART_SERVERS" = "true" ]; then
-            restart_docker_containers
+            restart_docker_containers || log_warn "Some restarts failed - check output above"
         else
             log_info "Auto-restart disabled, servers will pick up new files on next restart"
         fi
@@ -1495,9 +1416,6 @@ main() {
     fi
     echo ""
 }
-
-# Check for post-update health (auto-rollback if needed)
-check_update_health "$@"
 
 # Run main program
 main "$@"

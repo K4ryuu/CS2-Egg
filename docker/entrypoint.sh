@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# wipe stale marker first thing — must happen before daemon's start event lands
+# wipe stale marker first thing; must happen before daemon's start event lands
 rm -f /home/container/egg/.daemon-managed 2>/dev/null || true
 
 source /utils/logging.sh
@@ -21,9 +21,6 @@ cd /home/container
 init_configs
 load_configs
 
-# Get internal Docker IP
-INTERNAL_IP=$(ip route get 1 | awk '{print $NF;exit}')
-
 detect_daemon_vpk
 cleanup_daemon_mode
 
@@ -42,7 +39,7 @@ rotate_logs
 
 # Server update process
 if [ -n "${SRCDS_APPID}" ] && [ "${SRCDS_STOP_UPDATE:-0}" -eq 0 ]; then
-    # Build SteamCMD command from optional parts — login, beta, validate.
+    # Build SteamCMD command from optional parts: login, beta, validate.
     STEAMCMD="./steamcmd/steamcmd.sh"
 
     if [ -n "${SRCDS_LOGIN}" ]; then
@@ -60,10 +57,10 @@ if [ -n "${SRCDS_APPID}" ] && [ "${SRCDS_STOP_UPDATE:-0}" -eq 0 ]; then
         fi
     fi
 
-    if [ "${SRCDS_VALIDATE}" -eq 1 ]; then
+    if [ "${SRCDS_VALIDATE:-0}" -eq 1 ]; then
         STEAMCMD+=" validate"
         log_message "!!! VALIDATION ENABLED: THIS MAY WIPE CUSTOM CONFIGURATIONS!" "warning"
-        log_message "  → Starting in 5 seconds — stop the server NOW to abort." "warning"
+        log_message "  → Starting in 5 seconds, stop the server NOW to abort." "warning"
         sleep 5
     fi
 
@@ -82,9 +79,11 @@ if [ -n "${SRCDS_APPID}" ] && [ "${SRCDS_STOP_UPDATE:-0}" -eq 0 ]; then
         log_error_code "KL-STM-02" "SteamCMD failed with exit code $STEAM_EXIT_CODE"
     fi
 
-    # Update steamclient.so files
-    cp -f ./steamcmd/linux32/steamclient.so ./.steam/sdk32/steamclient.so
-    cp -f ./steamcmd/linux64/steamclient.so ./.steam/sdk64/steamclient.so
+    # Update steamclient.so files (may not exist yet if first-ever SteamCMD run failed)
+    if [ -f ./steamcmd/linux32/steamclient.so ]; then
+        cp -f ./steamcmd/linux32/steamclient.so ./.steam/sdk32/steamclient.so
+        cp -f ./steamcmd/linux64/steamclient.so ./.steam/sdk64/steamclient.so
+    fi
 fi
 
 # Handle the addon installations based on the selection
@@ -122,7 +121,7 @@ eval "$START_CMD" | while IFS= read -r line; do
         continue
     fi
 
-    # GSLT token rejection — CS2 spams these lines, append our hint after each so it
+    # GSLT token rejection: CS2 spams these lines, append our hint after each so it
     # pairs up visually in the log regardless of where the user scrolls.
     if [[ "$line" == *"Cert request for invalid failed"* ]] || \
        [[ "$line" == *"We're not logged into Steam"* ]]; then

@@ -54,10 +54,13 @@ update_counterstrikesharp() {
     log_message "Update available for CSS: $new_version (current: ${current_version:-none})" "info"
 
     if handle_download_and_extract "$asset_url" "$temp_dir/download.zip" "$temp_dir" "zip"; then
-        cp -r "$temp_dir/addons/." "$OUTPUT_DIR" && \
-        update_version_file "CSS" "$new_version" && \
-        log_message "CounterStrikeSharp updated to $new_version" "success"
-        return 0
+        if cp -r "$temp_dir/addons/." "$OUTPUT_DIR"; then
+            update_version_file "CSS" "$new_version"
+            log_message "CounterStrikeSharp updated to $new_version" "success"
+            return 0
+        fi
+        # version file NOT bumped, so the updater retries next boot
+        log_message "CounterStrikeSharp copy failed - keeping previous version" "error"
     fi
 
     return 1

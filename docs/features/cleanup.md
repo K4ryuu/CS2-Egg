@@ -1,6 +1,6 @@
 # Automatic Cleanup
 
-Rule-based disk cleanup for demo files, logs, backups, and crash dumps. Every cleanup rule is declarative — you edit a JSON config, not code.
+Rule-based disk cleanup for demo files, logs, backups, and crash dumps. Every cleanup rule is declarative: you edit a JSON config, not code.
 
 ## Enable
 
@@ -81,7 +81,7 @@ Each entry in `rules` has:
   "enabled": false
 }
 ```
-`enabled: false` disables the rule without removing it — easy to flip back later.
+`enabled: false` disables the rule without removing it, easy to flip back later.
 
 ### Clean a custom plugin's logs
 
@@ -136,7 +136,7 @@ The default `core_dumps` rule already demonstrates this.
    KitsuneLab | DEBUG |   demos: 14 file(s)
    KitsuneLab | DEBUG |   core_dumps: 3 file(s)
    ```
-5. If nothing was deleted, no log appears — cleanup stays silent.
+5. If nothing was deleted, no log appears, cleanup stays silent.
 
 ## Caveats
 

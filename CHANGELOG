@@ -1,21 +1,44 @@
+-- update - 2026.07.11
+
+- feat(daemon): Worker pool for file pushes - heavy pushes now run on parallel workers (new MAX_WORKERS setting, default 8) while symlink mounts stay instant, so mass-starting dozens of servers no longer stalls the event loop and falls back to SteamCMD downloads (#51)
+- feat(daemon): Push heartbeat - a server boot now keeps waiting while a daemon push is actively running instead of giving up after 30s, so SteamCMD can never write the same game tree concurrently with a long push
+- feat(installer): MAX_WORKERS is asked in the install wizard and preserved across reinstalls and script self-updates
+- feat(installer): CS2_EGG_BRANCH override installs from any branch (e.g. dev) and points self-update at the same branch, so testers can run prereleases without being pulled back to stable
+- fix(swiftlys2): Version file is only bumped after a successful copy - a failed copy (full disk, IO error) now retries on next boot instead of silently keeping a corrupted install forever
+- fix(updaters): MetaMod and CounterStrikeSharp copy failures now log an error and skip the version bump instead of reporting success
+- fix(updaters): GitHub release-info requests got proper timeouts - an unreachable api.github.com no longer hangs server boot for minutes
+- fix(config): Config migration keeps the freshly generated config when the settings merge fails instead of overwriting it with an empty file (user settings were silently lost)
+- fix(logging): Warning-level messages were dropped when console_level was set to WARNING due to a missing priority mapping
+- fix(centralized): Update run no longer dies mid-flight when no server container is running
+- fix(centralized): A failed push on one volume no longer aborts the whole run - healthy servers still get their files and restart
+- fix(centralized): Cron push and daemon self-heal now share the same per-container lock, so the two can never write one volume at the same time
+- fix(centralized): Self-update stages the new script next to the installed one, making the final replace an atomic rename - a crash mid-update can no longer leave a half-written script behind
+- fix(centralized): Config validation reports every error at once, not just the first one
+- fix(entrypoint): SRCDS_VALIDATE handled safely when unset; steamclient.so copy skipped when SteamCMD never produced it
+- fix(installer): Script download is staged and syntax-checked before replacing the live script, so a dropped connection can't leave a truncated script for cron to execute
+- refactor(centralized): Removed the live-tail display and the no-op post-update health check + rollback (~170 lines); SteamCMD error hints (0x202 disk space etc.) moved into the spinner's failure output
+- refactor(centralized): Shared helpers for container matching and volume lookup, deduplicated simulate/real update flow, byte formatting via numfmt
+- refactor(docker): Removed dead code - unused check_version() and check_filesystem(), redundant config version pre-pass, macOS stat branch, unused INTERNAL_IP + iproute2 package, unreachable updater availability guards, log priority cache
+- refactor(update): ModSharp updater is invoked like the other updaters (direct function call instead of a bash subprocess)
+
 -- update - 2026.04.21
 
-- feat(cleanup): Cleanup is fully customizable now — add, disable, or retarget rules per directory, pattern, and age right in `cleanup.json`. No code edit needed.
+- feat(cleanup): Cleanup is fully customizable now: add, disable, or retarget rules per directory, pattern, and age right in `cleanup.json`. No code edit needed.
 - feat(centralized): New `--validate` flag runs a one-shot SteamCMD file check without changing your saved config.
 - feat(installer): Daemon installer re-asks if you mistype yes/no instead of quietly aborting.
-- feat(logging): Cleaner log output — level tag in a fixed column (`INFO`, `OK`, `WARN`, `ERROR`, `DEBUG`), message colored per severity.
+- feat(logging): Cleaner log output: level tag in a fixed column (`INFO`, `OK`, `WARN`, `ERROR`, `DEBUG`), message colored per severity.
 - feat(logging): Every fatal error now prints a short code with a docs link. Skim the new error reference instead of scrolling the log.
 - feat(logging): Your Steam account token is automatically hidden from every log line, not just the startup command.
-- fix(daemon): First-boot race fixed — the egg no longer accidentally triggers a full SteamCMD download while the daemon is still pushing game files.
+- fix(daemon): First-boot race fixed: the egg no longer accidentally triggers a full SteamCMD download while the daemon is still pushing game files.
 - fix(daemon): If the central daemon goes down, servers recover cleanly on the next restart and rebuild from SteamCMD instead of crashing on missing files.
-- fix(daemon): Wait-for-daemon messages only appear when the wait actually lasts longer than a couple of seconds — fast starts stay quiet.
+- fix(daemon): Wait-for-daemon messages only appear when the wait actually lasts longer than a couple of seconds, fast starts stay quiet.
 - fix(centralized): Permissions on pushed game files are correct again (files stay at 644, not marked as executable). Prevents Pterodactyl's file manager from flagging them as anomalies.
-- fix(centralized): SteamCMD-only directories (`Steam/`, `steamapps/`) are no longer pushed into server volumes — they served no runtime purpose and were getting deleted each boot.
+- fix(centralized): SteamCMD-only directories (`Steam/`, `steamapps/`) are no longer pushed into server volumes, they served no runtime purpose and were getting deleted each boot.
 - fix(entrypoint): `VALIDATE_INSTALL=1` always shows the "may wipe configs" warning and waits 5 seconds before running, giving you time to stop the server and cancel.
 - fix(entrypoint): SteamCMD failures no longer print the same error line twice.
 - fix(cleanup): Core dump files at the container root are now cleaned up alongside the ones in the game binary directory.
 - docs(error-codes): New reference page (`docs/advanced/error-codes.md`) lists every egg error code with symptom, cause, and fix.
-- docs(cleanup): New guide (`docs/features/cleanup.md`) with custom rule examples — longer demo retention, per-plugin log sweeps, and how to disable a rule without losing it.
+- docs(cleanup): New guide (`docs/features/cleanup.md`) with custom rule examples: longer demo retention, per-plugin log sweeps, and how to disable a rule without losing it.
 
 -- update - 2026.04.15
 

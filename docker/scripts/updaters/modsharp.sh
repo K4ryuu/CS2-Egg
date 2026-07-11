@@ -71,9 +71,9 @@ update_modsharp() {
     local release_info
 
     if [ "${PRERELEASE:-0}" -eq 1 ]; then
-        release_info=$(curl -s "$api_url" | jq '.[0] // empty')
+        release_info=$(curl -s --connect-timeout 10 -m 60 "$api_url" | jq '.[0] // empty')
     else
-        release_info=$(curl -s "$api_url/latest")
+        release_info=$(curl -s --connect-timeout 10 -m 60 "$api_url/latest")
     fi
 
     if [ -z "$release_info" ] || ! echo "$release_info" | jq -e . >/dev/null 2>&1; then

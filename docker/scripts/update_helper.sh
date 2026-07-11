@@ -25,9 +25,23 @@ detect_daemon_vpk() {
 
     # wait for daemon to touch marker (= push done)
     if [ ! -f "$marker" ]; then
-        local t=0 max_t=$((wait_max_secs * 10)) announced=false
+        local t=0 max_t=$((wait_max_secs * 10)) announced=false extended=false
+        local push_active="/home/container/egg/.daemon-push-active"
         while [ ! -f "$marker" ]; do
-            [ "$t" -ge "$max_t" ] && break
+            if [ "$t" -ge "$max_t" ]; then
+                # daemon push heartbeat still fresh: keep waiting instead of falling
+                # through to SteamCMD, which would write the same tree concurrently.
+                # A crashed daemon stops touching the file, so this can't wait forever.
+                if [ -n "$(find "$push_active" -mmin -2 2>/dev/null)" ]; then
+                    if ! $extended; then
+                        log_message "Daemon push still in progress - waiting for it to finish..." "running"
+                        extended=true
+                    fi
+                    t=0
+                else
+                    break
+                fi
+            fi
             sleep 0.1
             ((t++)) || true
             if ! $announced && [ "$t" -ge "$announce_ticks" ]; then
@@ -57,7 +71,7 @@ detect_daemon_vpk() {
     SRCDS_STOP_UPDATE=1
 }
 
-# Remove local SteamCMD artifacts when daemon is authoritative — saves ~200MB + cleans
+# Remove local SteamCMD artifacts when daemon is authoritative: saves ~200MB + cleans
 # stale dirs left over from a previous non-daemon boot.
 cleanup_daemon_mode() {
     [ "${SRCDS_STOP_UPDATE:-0}" -eq 1 ] || return 0

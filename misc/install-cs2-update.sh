@@ -16,7 +16,10 @@ INSTALL_DEST="/usr/local/bin/update-cs2-centralized.sh"
 SERVICE_DEST="/etc/systemd/system/cs2-vpk-daemon.service"
 CRON_FILE="/etc/cron.d/cs2-update"
 LOG_FILE="/var/log/cs2-update.log"
-GITHUB_SCRIPT="https://raw.githubusercontent.com/K4ryuu/CS2-Egg/main/misc/update-cs2-centralized.sh"
+# Branch to install from; testers can run e.g. CS2_EGG_BRANCH=dev to try a prerelease.
+# Self-update in the installed script is patched to track the same branch.
+INSTALL_BRANCH="${CS2_EGG_BRANCH:-main}"
+GITHUB_SCRIPT="https://raw.githubusercontent.com/K4ryuu/CS2-Egg/${INSTALL_BRANCH}/misc/update-cs2-centralized.sh"
 
 # ── Colors ────────────────────────────────────────────────────────────────────
 
@@ -54,7 +57,7 @@ ask_yes_no() {
 
 if [[ $EUID -ne 0 ]]; then
     log_warn "Requires root. Re-executing with sudo..."
-    exec sudo bash "$0" "$@"
+    exec sudo CS2_EGG_BRANCH="$INSTALL_BRANCH" bash "$0" "$@"
 fi
 
 # ── Stdin reopen (curl|bash fix) ──────────────────────────────────────────────
@@ -98,7 +101,7 @@ if [[ -f "$INSTALL_DEST" ]]; then
         val=$(grep "^${1}=" "$INSTALL_DEST" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '"') || true
         if [[ -n "$val" ]]; then EXISTING[$1]="$val"; fi
     }
-    for _k in STEAMCMD_DIR CS2_DIR VPK_PUSH_METHOD AUTO_RESTART_SERVERS VALIDATE_INSTALL AUTO_UPDATE_SCRIPT UPDATE_CHECK_INTERVAL; do
+    for _k in STEAMCMD_DIR CS2_DIR VPK_PUSH_METHOD MAX_WORKERS AUTO_RESTART_SERVERS VALIDATE_INSTALL AUTO_UPDATE_SCRIPT UPDATE_CHECK_INTERVAL; do
         _read_cfg "$_k"
     done
     # Normalize legacy "always check" values (0 or 1) → * for display in wizard
@@ -148,6 +151,12 @@ ask() {
             fi
         fi
 
+        # Numeric validation (0 workers would deadlock the daemon pool)
+        if [[ "$key" == "MAX_WORKERS" ]] && [[ ! "$input" =~ ^[1-9][0-9]*$ ]]; then
+            log_warn "Must be a positive number"
+            continue
+        fi
+
         CFG[$key]="$input"
         break
     done
@@ -172,6 +181,10 @@ ask "VPK_PUSH_METHOD" "$(_default VPK_PUSH_METHOD symlink)" \
   copy     = full copy per server, most disk usage
   off      = disable push entirely" \
     "symlink" "hardlink" "copy" "off"
+
+ask "MAX_WORKERS" "$(_default MAX_WORKERS 8)" \
+    "Max parallel file pushes in daemon mode. Symlink mounts are instant and not
+  limited by this. Raise if you mass-create many servers at once."
 
 ask "AUTO_RESTART_SERVERS" "$(_default AUTO_RESTART_SERVERS true)" \
     "Restart matching containers automatically after a CS2 update." \
@@ -199,7 +212,7 @@ printf "    ${GRAY}%-26s${RESET} %s\n" "Service:" "$SERVICE_DEST"
 printf "    ${GRAY}%-26s${RESET} %s  ${GRAY}(every minute)${RESET}\n" "Cron:" "$CRON_FILE"
 echo ""
 echo -e "  ${BOLD}Configuration:${RESET}"
-for key in STEAMCMD_DIR CS2_DIR VPK_PUSH_METHOD AUTO_RESTART_SERVERS VALIDATE_INSTALL AUTO_UPDATE_SCRIPT UPDATE_CHECK_INTERVAL; do
+for key in STEAMCMD_DIR CS2_DIR VPK_PUSH_METHOD MAX_WORKERS AUTO_RESTART_SERVERS VALIDATE_INSTALL AUTO_UPDATE_SCRIPT UPDATE_CHECK_INTERVAL; do
     printf "    ${CYAN}%-26s${RESET} %s\n" "$key" "${CFG[$key]}"
 done
 echo ""
@@ -212,18 +225,23 @@ fi
 
 section "Installing"
 
-# 1. Download script
-log_info "Downloading update script from ${BOLD}github.com/K4ryuu/CS2-Egg${RESET} ..."
+# 1. Download script (stage + atomic mv so a mid-transfer drop on reinstall
+# never leaves a truncated script at the path cron is already invoking)
+log_info "Downloading update script from ${BOLD}github.com/K4ryuu/CS2-Egg${RESET} (branch: ${BOLD}${INSTALL_BRANCH}${RESET}) ..."
+STAGE_DEST=$(mktemp "${INSTALL_DEST}.new.XXXXXX")
 if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$GITHUB_SCRIPT" -o "$INSTALL_DEST" \
-        || die "Download failed - check internet access and try again"
+    curl -fsSL "$GITHUB_SCRIPT" -o "$STAGE_DEST" \
+        || { rm -f "$STAGE_DEST"; die "Download failed - check internet access and try again"; }
 elif command -v wget >/dev/null 2>&1; then
-    wget -qO "$INSTALL_DEST" "$GITHUB_SCRIPT" \
-        || die "Download failed - check internet access and try again"
+    wget -qO "$STAGE_DEST" "$GITHUB_SCRIPT" \
+        || { rm -f "$STAGE_DEST"; die "Download failed - check internet access and try again"; }
 else
+    rm -f "$STAGE_DEST"
     die "Neither curl nor wget found - install one first"
 fi
-chmod +x "$INSTALL_DEST"
+bash -n "$STAGE_DEST" || { rm -f "$STAGE_DEST"; die "Downloaded script failed syntax check"; }
+chmod +x "$STAGE_DEST"
+mv "$STAGE_DEST" "$INSTALL_DEST"
 log_ok "Downloaded to $INSTALL_DEST"
 
 # 2. Patch config values
@@ -239,6 +257,13 @@ patch_config "VALIDATE_INSTALL"      "${CFG[VALIDATE_INSTALL]}"
 patch_config "AUTO_UPDATE_SCRIPT"    "${CFG[AUTO_UPDATE_SCRIPT]}"
 patch_config "UPDATE_CHECK_INTERVAL" "${CFG[UPDATE_CHECK_INTERVAL]}"
 patch_config "VPK_PUSH_METHOD"       "${CFG[VPK_PUSH_METHOD]}"
+patch_config "MAX_WORKERS"           "${CFG[MAX_WORKERS]}"
+
+# Non-main install: point self-update at the same branch so it doesn't pull main over it
+if [[ "$INSTALL_BRANCH" != "main" ]]; then
+    sed -i "s|^GITHUB_BRANCH=.*|GITHUB_BRANCH=\"${INSTALL_BRANCH}\"|" "$INSTALL_DEST"
+    log_warn "Installed from branch '${INSTALL_BRANCH}' - self-update will track this branch"
+fi
 log_ok "Configuration applied"
 
 # 3. Systemd service

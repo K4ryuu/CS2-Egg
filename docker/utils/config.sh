@@ -8,33 +8,9 @@ CONFIG_VERSION="1.1.0"
 # Use organized egg directory structure
 CONFIG_DIR="${EGG_CONFIGS_DIR:-/home/container/egg/configs}"
 
-# Check if any config needs migration
-check_config_versions() {
-    local needs_migration=false
-    local old_version=""
-
-    # Check all config files
-    for config_file in "$CONFIG_DIR/console-filter.json" "$CONFIG_DIR/cleanup.json" "$CONFIG_DIR/logging.json"; do
-        if [ -f "$config_file" ]; then
-            local current_version=$(jq -r '.version // "0.0.0"' "$config_file" 2>/dev/null)
-            if [ "$current_version" != "$CONFIG_VERSION" ]; then
-                needs_migration=true
-                old_version="$current_version"
-                break
-            fi
-        fi
-    done
-
-    # Log once if migration is needed
-    if [ "$needs_migration" = true ]; then
-        log_message "Migrating configs from v$old_version to v$CONFIG_VERSION" "info"
-    fi
-}
-
 # Migrate old config to new version (no logging, just migration)
 migrate_config() {
     local config_file="$1"
-    local config_name="$2"
 
     if [ ! -f "$config_file" ]; then
         return 0
@@ -87,7 +63,13 @@ apply_smart_merge() {
         smart_merge($old) | .version = "'"$CONFIG_VERSION"'"
     ' "$config_file" > "$temp_file"
 
-    mv "$temp_file" "$config_file"
+    # keep the freshly generated config if jq failed, never install an empty file
+    if [ $? -eq 0 ] && [ -s "$temp_file" ]; then
+        mv "$temp_file" "$config_file"
+    else
+        log_message "Config merge failed for $(basename "$config_file") - keeping new defaults" "warning"
+        rm -f "$temp_file"
+    fi
 }
 
 init_configs() {
@@ -95,9 +77,6 @@ init_configs() {
     init_egg_directories
 
     mkdir -p "$CONFIG_DIR"
-
-    # Check if migration is needed (logs once if yes)
-    check_config_versions
 
     create_console_filter_config
     create_cleanup_config
@@ -110,7 +89,7 @@ create_console_filter_config() {
 
   # Migrate if needed
     if [ -f "$config_file" ]; then
-        old_values=$(migrate_config "$config_file" "console-filter")
+        old_values=$(migrate_config "$config_file")
     fi
 
     if [ ! -f "$config_file" ]; then
@@ -158,7 +137,7 @@ create_cleanup_config() {
 
   # Migrate if needed
     if [ -f "$config_file" ]; then
-        old_values=$(migrate_config "$config_file" "cleanup")
+        old_values=$(migrate_config "$config_file")
     fi
 
     if [ ! -f "$config_file" ]; then
@@ -166,7 +145,7 @@ create_cleanup_config() {
 {
   "version": "$CONFIG_VERSION",
   "_description": [
-    "Cleanup Configuration — rule-based",
+    "Cleanup Configuration: rule-based",
     "",
     "Every entry in 'rules' is an independent cleanup target. You can edit,",
     "disable, add, or remove rules without touching any code.",
@@ -254,7 +233,7 @@ create_logging_config() {
 
   # Migrate if needed
     if [ -f "$config_file" ]; then
-        old_values=$(migrate_config "$config_file" "logging")
+        old_values=$(migrate_config "$config_file")
     fi
 
     if [ ! -f "$config_file" ]; then

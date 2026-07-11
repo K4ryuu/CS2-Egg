@@ -124,42 +124,14 @@ log_info "Validating shell scripts..."
 SCRIPT_DIR="$(dirname "$0")/docker"
 VALIDATION_FAILED=false
 
-# Find all .sh files in docker directory
+# Syntax-check all .sh files in docker directory (missing source files fail at
+# container start anyway, so only syntax is worth catching here)
 while IFS= read -r script; do
-    script_name="${script#$SCRIPT_DIR/}"
-
-    # Check bash syntax
     if ! bash -n "$script" 2>/dev/null; then
-        log_error "Syntax error in ${script_name}"
+        log_error "Syntax error in ${script#$SCRIPT_DIR/}"
         bash -n "$script" 2>&1 | sed 's/^/  /' >&2
         VALIDATION_FAILED=true
-        continue
     fi
-
-    # Check if sourced files exist
-    while IFS= read -r source_line; do
-        # Extract path from 'source /path/to/file.sh' or '. /path/to/file.sh'
-        source_path=$(echo "$source_line" | sed -E 's/^[[:space:]]*(source|\.)//;s/[[:space:]]+//' | tr -d '"' | tr -d "'")
-
-        # Skip variables and non-absolute paths
-        if [[ "$source_path" =~ ^/ ]]; then
-            # Check if file will exist in Docker container
-            # /utils/* maps to docker/utils/*
-            # /scripts/* maps to docker/scripts/*
-            local_path=""
-            if [[ "$source_path" =~ ^/utils/ ]]; then
-                local_path="$SCRIPT_DIR${source_path}"
-            elif [[ "$source_path" =~ ^/scripts/ ]]; then
-                local_path="$SCRIPT_DIR${source_path}"
-            fi
-
-            if [[ -n "$local_path" ]] && [[ ! -f "$local_path" ]]; then
-                log_error "Missing source file in ${script_name}: ${source_path}"
-                VALIDATION_FAILED=true
-            fi
-        fi
-    done < <(grep -E '^\s*(source|\.)' "$script" 2>/dev/null || true)
-
 done < <(find "$SCRIPT_DIR" -type f -name "*.sh")
 
 if [[ "$VALIDATION_FAILED" == true ]]; then

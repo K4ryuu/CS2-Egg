@@ -56,10 +56,13 @@ update_metamod() {
     log_message "Update available for Metamod: $new_version (current: ${current_version:-none})" "info"
 
     if handle_download_and_extract "$asset_url" "$TEMP_DIR/metamod.tar.gz" "$TEMP_DIR/metamod" "tar.gz"; then
-        cp -rf "$TEMP_DIR/metamod/addons/." "$OUTPUT_DIR/" && \
-        update_version_file "Metamod" "$new_version" && \
-        log_message "Metamod updated to $new_version" "success"
-        return 0
+        if cp -rf "$TEMP_DIR/metamod/addons/." "$OUTPUT_DIR/"; then
+            update_version_file "Metamod" "$new_version"
+            log_message "Metamod updated to $new_version" "success"
+            return 0
+        fi
+        # version file NOT bumped, so the updater retries next boot
+        log_message "Metamod copy failed - keeping previous version" "error"
     fi
 
     return 1
