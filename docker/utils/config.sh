@@ -204,12 +204,21 @@ create_cleanup_config() {
     },
     {
       "name": "swiftly_crash_reports",
-      "description": "SwiftlyS2 crash report bundles (minidump + crashinfo per UUID dir)",
+      "description": "SwiftlyS2 crash reports: loose .dmp files and per-UUID bundle dirs",
       "directories": ["./game/csgo/addons/swiftlys2/dumps/crashreport"],
       "patterns": ["*.dmp"],
       "hours": 168,
       "recursive": true,
       "delete_parent_dir": true,
+      "enabled": true
+    },
+    {
+      "name": "swiftly_prevention_logs",
+      "description": "SwiftlyS2 crash prevention incident logs",
+      "directories": ["./game/csgo/addons/swiftlys2/dumps/prevention"],
+      "patterns": ["*.log"],
+      "hours": 168,
+      "recursive": false,
       "enabled": true
     },
     {

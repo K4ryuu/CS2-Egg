@@ -76,8 +76,11 @@ cleanup() {
         local parent
         parent=$(dirname "$file")
 
-        # match sits directly in the rule root: fall back to single-file delete
-        if [ "$parent" = "$rule_root" ] || [ ! -d "$parent" ]; then
+        # Fall back to single-file delete when the parent is the rule root, or when
+        # the parent has subdirectories (only leaf bundle dirs may be removed whole,
+        # a stray file must never take out a folder that holds other bundles).
+        if [ "$parent" = "$rule_root" ] || [ ! -d "$parent" ] || \
+           [ -n "$(find "$parent" -mindepth 1 -maxdepth 1 -type d -print -quit 2>/dev/null)" ]; then
             log_deletion "$file" "$category"
             return
         fi
