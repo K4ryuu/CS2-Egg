@@ -24,6 +24,7 @@ Out of the box, six rules cover the common disk hogs:
 | `demos` | SourceTV `.dem` recordings | 168 h (7 days) |
 | `css_logs` | CounterStrikeSharp `logs/*.txt` | 72 h (3 days) |
 | `swiftly_logs` | SwiftlyS2 `logs/*.log` | 72 h (3 days) |
+| `swiftly_crash_reports` | SwiftlyS2 crash bundles (`dumps/crashreport/<uuid>/`) | 168 h (7 days) |
 | `accelerator_dumps` | AcceleratorCS2 `*.dmp` + `*.dmp.txt` | 168 h (7 days) |
 | `core_dumps` | Linux core files (`core`, `core.NNNN`) | 0 h (every run) |
 
@@ -51,6 +52,7 @@ Each entry in `rules` has:
 | `patterns` | string[] | Filename globs. Matched against the **basename**, not the full path. `*.dem`, `core`, `core.[0-9]*`, `backup_round*.txt` all work. |
 | `hours` | number | Files whose modification time is older than this many hours get deleted. `0` = delete every match regardless of age. |
 | `recursive` | bool | `true` = descend into subdirectories. `false` = only the directory's top level (`-maxdepth 1`). |
+| `delete_parent_dir` | bool | `true` = when a file matches, delete its whole parent folder (bundle dirs like crash reports). The rule's root directory itself is never deleted; a match directly in the root falls back to single-file deletion. Default `false`. |
 | `enabled` | bool | `false` = skip this rule (without deleting the entry). |
 
 ## Common customizations
@@ -109,6 +111,22 @@ Each entry in `rules` has:
   "enabled": true
 }
 ```
+
+### Clean per-crash bundle directories
+
+```json
+{
+  "name": "swiftly_crash_reports",
+  "description": "SwiftlyS2 crash report bundles",
+  "directories": ["./game/csgo/addons/swiftlys2/dumps/crashreport"],
+  "patterns": ["*.dmp"],
+  "hours": 168,
+  "recursive": true,
+  "delete_parent_dir": true,
+  "enabled": true
+}
+```
+Each crash lives in its own UUID folder (`minidump.dmp` + `crashinfo.json`). Age is keyed on the `.dmp` (SwiftlyS2 keeps regenerating `crashinfo.json` on boot, so the json never gets old); when the dump is older than a week, the whole folder is removed. This rule ships enabled by default.
 
 ### Multiple directories in one rule
 

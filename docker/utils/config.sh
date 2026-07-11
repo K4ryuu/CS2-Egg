@@ -3,7 +3,7 @@
 source /utils/logging.sh
 
 # Current config version - bump this when changing fields
-CONFIG_VERSION="1.1.0"
+CONFIG_VERSION="1.2.0"
 
 # Use organized egg directory structure
 CONFIG_DIR="${EGG_CONFIGS_DIR:-/home/container/egg/configs}"
@@ -157,6 +157,8 @@ create_cleanup_config() {
     "  - patterns: Array of filename globs (e.g. '*.dem', 'core.[0-9]*')",
     "  - hours: File must be older than this many hours (0 = delete on every run)",
     "  - recursive: true = walk subdirectories, false = only the directory root",
+    "  - delete_parent_dir: true = delete the matched file's whole parent folder",
+    "    (for per-crash bundle dirs; the rule's root directory is never deleted)",
     "  - enabled: false disables the rule without deleting it",
     "",
     "Enable cleanup by setting CLEANUP_ENABLED=1 in the Pterodactyl egg.",
@@ -198,6 +200,16 @@ create_cleanup_config() {
       "patterns": ["*.log"],
       "hours": 72,
       "recursive": true,
+      "enabled": true
+    },
+    {
+      "name": "swiftly_crash_reports",
+      "description": "SwiftlyS2 crash report bundles (minidump + crashinfo per UUID dir)",
+      "directories": ["./game/csgo/addons/swiftlys2/dumps/crashreport"],
+      "patterns": ["*.dmp"],
+      "hours": 168,
+      "recursive": true,
+      "delete_parent_dir": true,
       "enabled": true
     },
     {

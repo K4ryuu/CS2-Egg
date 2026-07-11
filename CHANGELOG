@@ -4,6 +4,7 @@
 - feat(daemon): Push heartbeat - a server boot now keeps waiting while a daemon push is actively running instead of giving up after 30s, so SteamCMD can never write the same game tree concurrently with a long push
 - feat(installer): MAX_WORKERS is asked in the install wizard and preserved across reinstalls and script self-updates
 - feat(installer): CS2_EGG_BRANCH override installs from any branch (e.g. dev) and points self-update at the same branch, so testers can run prereleases without being pulled back to stable
+- feat(cleanup): New delete_parent_dir rule option removes whole bundle folders, and a default rule now cleans SwiftlyS2 crash reports (dumps/crashreport/<uuid>/) after a week, keyed on the minidump age since SwiftlyS2 regenerates crashinfo.json every boot
 - fix(swiftlys2): Version file is only bumped after a successful copy - a failed copy (full disk, IO error) now retries on next boot instead of silently keeping a corrupted install forever
 - fix(updaters): MetaMod and CounterStrikeSharp copy failures now log an error and skip the version bump instead of reporting success
 - fix(updaters): GitHub release-info requests got proper timeouts - an unreachable api.github.com no longer hangs server boot for minutes

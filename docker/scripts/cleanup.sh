@@ -64,6 +64,35 @@ cleanup() {
         fi
     }
 
+    # Delete a matched file's whole parent directory (crash-report bundles etc.).
+    # $3 is the rule's root dir, which must never be deleted itself.
+    log_dir_deletion() {
+        local file="$1"
+        local category="$2"
+        local rule_root="$3"
+        local parent
+        parent=$(dirname "$file")
+
+        # match sits directly in the rule root: fall back to single-file delete
+        if [ "$parent" = "$rule_root" ] || [ ! -d "$parent" ]; then
+            log_deletion "$file" "$category"
+            return
+        fi
+
+        local dsize fcount
+        dsize=$(du -sb "$parent" 2>/dev/null | cut -f1)
+        [[ "$dsize" =~ ^[0-9]+$ ]] || dsize=0
+        fcount=$(find "$parent" -type f 2>/dev/null | wc -l)
+
+        if rm -rf "$parent" 2>/dev/null; then
+            total_size=$((total_size + dsize))
+            stats[$category]=$((${stats[$category]:-0} + fcount))
+            deleted_count=$((deleted_count + fcount))
+        else
+            log_message "Failed to delete: $parent" "error"
+        fi
+    }
+
     local i
     for ((i = 0; i < rule_count; i++)); do
         local name enabled hours recursive
@@ -76,6 +105,8 @@ cleanup() {
 
         hours=$(jq -r ".rules[$i].hours // 0" "$config_file")
         recursive=$(jq -r ".rules[$i].recursive // true" "$config_file")
+        local delete_parent_dir
+        delete_parent_dir=$(jq -r ".rules[$i].delete_parent_dir // false" "$config_file")
 
         local -a dirs=() patterns=()
         mapfile -t dirs < <(jq -r ".rules[$i].directories[]?" "$config_file")
@@ -115,7 +146,11 @@ cleanup() {
             find_cmd+=(-print0)
 
             while IFS= read -r -d '' file; do
-                log_deletion "$file" "$name"
+                if [ "$delete_parent_dir" = "true" ]; then
+                    log_dir_deletion "$file" "$name" "$dir"
+                else
+                    log_deletion "$file" "$name"
+                fi
             done < <("${find_cmd[@]}" 2>/dev/null)
         done
     done
