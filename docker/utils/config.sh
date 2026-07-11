@@ -3,7 +3,7 @@
 source /utils/logging.sh
 
 # Current config version - bump this when changing fields
-CONFIG_VERSION="1.2.0"
+CONFIG_VERSION="1.2.1"
 
 # Use organized egg directory structure
 CONFIG_DIR="${EGG_CONFIGS_DIR:-/home/container/egg/configs}"
@@ -53,6 +53,14 @@ apply_smart_merge() {
                     .key as $k |
                     if ($new[$k] | type) == "object" then
                         {key: $k, value: ($new[$k] | smart_merge($old[$k] // {}))}
+                    elif ($new[$k] | type) == "array" and ($old[$k] | type) == "array"
+                         and ($new[$k] | length) > 0
+                         and ($new[$k] | all(type == "object" and has("name"))) then
+                        # named-object arrays (cleanup rules): user entries win by name,
+                        # template entries the user does not have yet get appended,
+                        # so new default rules reach existing installs on migration
+                        ($old[$k] | map(.name)) as $have |
+                        {key: $k, value: ($old[$k] + ($new[$k] | map(select(.name as $n | ($have | index($n)) == null))))}
                     else
                         {key: $k, value: ($old[$k] // $new[$k])}
                     end
