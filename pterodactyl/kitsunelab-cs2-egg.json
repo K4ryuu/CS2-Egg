@@ -2,7 +2,7 @@
   "_comment": "DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PTERODACTYL PANEL - PTERODACTYL.IO",
   "meta": {
     "version": "PTDL_v2",
-    "update_url": "https://raw.githubusercontent.com/K4ryuu/CS2-Egg/main/pterodactyl/kitsunelab-cs2-egg.json"
+    "update_url": "https://raw.githubusercontent.com/xe1os/CS2-Egg/main/pterodactyl/kitsunelab-cs2-egg.json"
   },
   "exported_at": "2026-03-30T16:51:51+00:00",
   "name": "KitsuneLab CS2 Egg @ K4ryuu",
@@ -10,6 +10,7 @@
   "description": "The SteamRT3 Platform image for Pterodactyl & Pelican CS2 servers is packed with numerous features, designed to simplify server management and reduce hassle.",
   "features": [],
   "docker_images": {
+    "xe1os CS2 Egg - MatchZy + WeaponPaints": "docker.io/xe1os/cs2-egg:latest",
     "KitsuneLab CS2 - GitHub - Unlimited": "ghcr.io/k4ryuu/cs2-egg:latest",
     "KitsuneLab CS2 Beta - GitHub - Unlimited": "ghcr.io/k4ryuu/cs2-egg:beta",
     "KitsuneLab CS2 - DockerHub - Limited": "docker.io/sples1/k4ryuu-cs2:latest",
@@ -150,6 +151,36 @@
       "user_editable": true,
       "rules": "required|boolean",
       "field_type": "text"
+    },
+    {
+     "name": "MatchZy",
+     "description": "Install and automatically update MatchZy on every server restart. CounterStrikeSharp and MetaMod are enabled automatically.",
+     "env_variable": "INSTALL_MATCHZY",
+     "default_value": "0",
+     "user_viewable": true,
+     "user_editable": true,
+     "rules": "required|boolean",
+     "field_type": "text"
+    },
+    {
+     "name": "WeaponPaints",
+     "description": "Install and automatically update WeaponPaints, AnyBaseLib, PlayerSettings and MenuManagerCore. Requires an external MySQL database.",
+     "env_variable": "INSTALL_WEAPONPAINTS",
+     "default_value": "0",
+     "user_viewable": true,
+     "user_editable": true,
+     "rules": "required|boolean",
+     "field_type": "text"
+    },
+    {
+     "name": "Accept WeaponPaints GSLT Risk",
+     "description": "Set to 1 only after accepting that WeaponPaints requires disabling CounterStrikeSharp server-guideline protection and may risk the server's GSLT. Leave at 0 for a safe default.",
+     "env_variable": "WEAPONPAINTS_ACCEPT_GSLT_RISK",
+     "default_value": "0",
+     "user_viewable": true,
+     "user_editable": true,
+     "rules": "required|boolean",
+     "field_type": "text"
     },
     {
       "name": "SwiftlyS2",

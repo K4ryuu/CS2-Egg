@@ -12,6 +12,8 @@ source /scripts/updaters/metamod.sh
 source /scripts/updaters/counterstrikesharp.sh
 source /scripts/updaters/swiftlys2.sh
 source /scripts/updaters/modsharp.sh
+source /scripts/updaters/matchzy.sh
+source /scripts/updaters/weaponpaints.sh
 
 # Backwards compatibility: Map old ADDON_SELECTION to new boolean variables
 migrate_addon_selection() {
@@ -46,6 +48,20 @@ update_addons() {
     # Backwards compatibility migration
     migrate_addon_selection
 
+# MatchZy and WeaponPaints are CounterStrikeSharp plugins.
+    if [ "${INSTALL_MATCHZY:-0}" -eq 1 ] ||
+       [ "${INSTALL_WEAPONPAINTS:-0}" -eq 1 ]; then
+
+    if [ "${INSTALL_CSS:-0}" -ne 1 ]; then
+        log_message \
+            "MatchZy/WeaponPaints requires CounterStrikeSharp; auto-enabling it..." \
+            "warning"
+    fi
+
+    INSTALL_CSS=1
+    fi
+
+
     # Dependency check: CSS requires MetaMod
     if [ "${INSTALL_CSS:-0}" -eq 1 ] && [ "${INSTALL_METAMOD:-0}" -ne 1 ]; then
         log_message "CounterStrikeSharp requires MetaMod:Source, auto-enabling..." "warning"
@@ -79,6 +95,28 @@ update_addons() {
     # CounterStrikeSharp
     if [ "${INSTALL_CSS:-0}" -eq 1 ]; then
         update_counterstrikesharp
+    fi
+
+    # MatchZy
+    if [ "${INSTALL_MATCHZY:-0}" -eq 1 ]; then
+        if type update_matchzy &>/dev/null; then
+        update_matchzy
+        else
+        log_message \
+            "update_matchzy function not available" \
+            "error"
+        fi
+    fi
+
+    # WeaponPaints and its dependencies
+    if [ "${INSTALL_WEAPONPAINTS:-0}" -eq 1 ]; then
+        if type update_weaponpaints &>/dev/null; then
+        update_weaponpaints
+        else
+        log_message \
+            "update_weaponpaints function not available" \
+            "error"
+        fi
     fi
 
     # SwiftlyS2 (standalone)
