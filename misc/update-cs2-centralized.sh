@@ -12,7 +12,7 @@
 #                 a CS2 container starts (new server or restart). Install as a
 #                 systemd service for automatic startup.
 #
-# Version: 1.0.47
+# Version: 1.0.48
 
 set -euo pipefail
 
@@ -74,6 +74,12 @@ VPK_PUSH_METHOD="symlink"
 # Symlink mounts are instant and not limited by this. Raise if you mass-create
 # many servers at once and the host has disk/CPU headroom.
 MAX_WORKERS="8"
+
+# Optional: Path to the Wings config.yml (used for the auto-restart API call)
+# Leave empty to auto-detect: /etc/pterodactyl/config.yml (Pterodactyl), then
+# /etc/pelican/config.yml (Pelican). Set it only if Wings runs with a custom
+# --config path.
+WINGS_CONFIG=""
 
 # ! ============================================================================
 # ! DO NOT EDIT BELOW THIS LINE UNLESS YOU KNOW WHAT YOU'RE DOING
@@ -428,12 +434,31 @@ update_cs2() {
     [ "$version_before" != "$version_after" ]
 }
 
-get_wings_token() {
-    if [ ! -f "/etc/pterodactyl/config.yml" ]; then
-        return 1
+# Path of the Wings config.yml, empty if none is readable.
+# Pelican ships the same Wings config schema, just under /etc/pelican.
+WINGS_CONFIG_PATHS=(/etc/pterodactyl/config.yml /etc/pelican/config.yml)
+
+get_wings_config() {
+    if [ -n "$WINGS_CONFIG" ]; then
+        [ -r "$WINGS_CONFIG" ] && echo "$WINGS_CONFIG"
+        return 0
     fi
 
-    local token=$(grep -E '^\s*token:' "/etc/pterodactyl/config.yml" | awk '{print $2}' | tr -d '"' || true)
+    local cfg
+    for cfg in "${WINGS_CONFIG_PATHS[@]}"; do
+        if [ -r "$cfg" ]; then
+            echo "$cfg"
+            return 0
+        fi
+    done
+
+    return 0
+}
+
+get_wings_token() {
+    local config="$1"
+
+    local token=$(grep -E '^\s*token:' "$config" | head -1 | awk '{print $2}' | tr -d '"' || true)
 
     if [ -z "$token" ]; then
         return 1
@@ -443,8 +468,10 @@ get_wings_token() {
 }
 
 get_wings_api_url() {
+    local config="$1"
+
     # Extract API configuration from config.yml api section
-    local api_section=$(sed -n '/^api:/,/^[a-z]/p' "/etc/pterodactyl/config.yml")
+    local api_section=$(sed -n '/^api:/,/^[a-z]/p' "$config")
 
     # Get host and port from api section
     local host=$(echo "$api_section" | grep -E '^\s+host:' | head -1 | awk '{print $2}' | tr -d '"' || echo "0.0.0.0")
@@ -509,16 +536,26 @@ restart_docker_containers() {
     done
 
     # Get Wings API credentials
+    local config
     local token
     local api_url
 
-    if ! token=$(get_wings_token) || ! api_url=$(get_wings_api_url); then
-        log_error "Wings API not available - cannot restart servers"
-        log_error "Make sure Wings is installed on this node and the config exists: /etc/pterodactyl/config.yml"
+    config=$(get_wings_config)
+
+    if [ -z "$config" ]; then
+        log_error "Wings config not found - cannot restart servers"
+        log_error "Looked for: ${WINGS_CONFIG_PATHS[*]}"
+        log_error "Wings elsewhere? Set WINGS_CONFIG in this script. Also make sure this script runs as root, config.yml is only readable by root"
         return 1
     fi
 
-    log_info "Using Wings API for restart"
+    if ! token=$(get_wings_token "$config") || ! api_url=$(get_wings_api_url "$config"); then
+        log_error "Wings API not available - cannot restart servers"
+        log_error "No API token found in $config"
+        return 1
+    fi
+
+    log_info "Using Wings API for restart (${DIM}$config${RESET})"
 
     local success=0
     local failed=0
@@ -1154,6 +1191,7 @@ preserve_user_config() {
         "UPDATE_CHECK_INTERVAL"
         "VPK_PUSH_METHOD"
         "MAX_WORKERS"
+        "WINGS_CONFIG"
         "GITHUB_BRANCH"
     )
 

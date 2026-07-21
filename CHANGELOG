@@ -1,3 +1,7 @@
+-- update - 2026.07.21
+
+- fix(centralized): Auto-restart works on Pelican Panel - the Wings config is now looked up at `/etc/pelican/config.yml` too, and a new `WINGS_CONFIG` setting points at a custom `--config` path if Wings runs from somewhere else (#55)
+
 -- update - 2026.07.11
 
 - feat(daemon): Worker pool for file pushes - heavy pushes now run on parallel workers (new MAX_WORKERS setting, default 8) while symlink mounts stay instant, so mass-starting dozens of servers no longer stalls the event loop and falls back to SteamCMD downloads (#51)
