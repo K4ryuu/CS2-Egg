@@ -1324,6 +1324,20 @@ run_doctor() {
         _dwarn "Cron file /etc/cron.d/cs2-update missing - automatic CS2 updates are off (installer recreates it)"
     fi
 
+    # hand-made entries in root's personal crontab (the installer never writes there)
+    local user_cron user_cron_path
+    user_cron=$(crontab -l 2>/dev/null | grep -v '^#' | grep 'update-cs2-centralized\.sh' || true)
+    if [ -n "$user_cron" ]; then
+        user_cron_path=$(echo "$user_cron" | grep -o '/[^ ]*update-cs2-centralized\.sh' | head -1 || true)
+        if [ -n "$user_cron_path" ] && [ ! -x "$user_cron_path" ]; then
+            _dfail "root's crontab runs $user_cron_path but the file is missing - remove the line: crontab -e"
+        elif [ -f /etc/cron.d/cs2-update ]; then
+            _dwarn "Update scheduled TWICE: /etc/cron.d/cs2-update AND root's crontab ($user_cron_path) - remove the crontab line: crontab -e"
+        else
+            _dwarn "Update runs from root's crontab ($user_cron_path) - the installer manages /etc/cron.d/cs2-update instead, consider reinstalling"
+        fi
+    fi
+
     # service state + stale in-memory code detection
     if command -v systemctl >/dev/null 2>&1; then
         if systemctl is-active --quiet cs2-vpk-daemon 2>/dev/null; then
