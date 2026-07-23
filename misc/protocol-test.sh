@@ -223,6 +223,52 @@ else
 fi
 rm -rf "$tmp"
 
+# --- daemon-side units (centralized script sourced, main() stays dormant) ----
+
+CENTRAL="$(cd "$(dirname "$0")" && pwd)/update-cs2-centralized.sh"
+
+# dynamic volume ownership: uid:gid read from the volume dir, empty when unknown
+if (
+    source "$CENTRAL" >/dev/null 2>&1
+    set +e
+    tmp2=$(mktemp -d)
+    own=$(_volume_owner "$tmp2")
+    none=$(_volume_owner "$tmp2/nonexistent")
+    rm -rf "$tmp2"
+    [ "$own" = "$(id -u):$(id -g)" ] && [ -z "$none" ]
+); then
+    echo "${GREEN}PASS${RESET}  volume owner detected dynamically (uid:gid)"
+else
+    echo "${RED}FAIL${RESET}  volume owner detected dynamically (uid:gid)"
+    FAILS=$((FAILS + 1))
+fi
+
+# status writers need flock (Linux); skipped on dev machines without it
+if command -v flock >/dev/null 2>&1; then
+    if (
+        source "$CENTRAL" >/dev/null 2>&1
+        set +e
+        tmp2=$(mktemp -d)
+        vol="$tmp2/vol"; mkdir -p "$vol/egg"
+        c="test-$$-$RANDOM"
+        _write_status "$c" "$vol" queued 3
+        s1=$(grep -m1 '^state=' "$vol/egg/.daemon-status" | cut -d= -f2)
+        p1=$(grep -m1 '^queue_pos=' "$vol/egg/.daemon-status" | cut -d= -f2)
+        _write_status "$c" "$vol" done
+        _refresh_status_entry "$c" "$vol"        # must NOT resurrect a non-terminal state
+        s2=$(grep -m1 '^state=' "$vol/egg/.daemon-status" | cut -d= -f2)
+        rm -rf "$tmp2"; rm -f "/var/lock/cs2-vpk-status-${c}.lock" 2>/dev/null
+        [ "$s1" = "queued" ] && [ "$p1" = "3" ] && [ "$s2" = "done" ]
+    ); then
+        echo "${GREEN}PASS${RESET}  status writes atomic, terminal state never resurrected"
+    else
+        echo "${RED}FAIL${RESET}  status writes atomic, terminal state never resurrected"
+        FAILS=$((FAILS + 1))
+    fi
+else
+    echo "SKIP  status writer units (no flock on this machine - runs on Linux hosts)"
+fi
+
 echo ""
 if [ "$FAILS" -eq 0 ]; then
     echo "${GREEN}${BOLD}All cases passed.${RESET}"

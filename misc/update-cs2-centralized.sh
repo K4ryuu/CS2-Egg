@@ -21,7 +21,7 @@
 #   --update      Self-update the script right now from GITHUB_BRANCH (daemon
 #                 restarts automatically). Skips the CS2/steamcmd update.
 #
-# Version: 1.0.55
+# Version: 1.0.56
 
 set -euo pipefail
 
@@ -452,9 +452,9 @@ update_cs2() {
     cp -f "$STEAMCMD_DIR/linux32/steamclient.so" "$CS2_DIR/.steam/sdk32/" 2>/dev/null || true
     cp -f "$STEAMCMD_DIR/linux64/steamclient.so" "$CS2_DIR/.steam/sdk64/" 2>/dev/null || true
 
-    # Set permissions: dirs 755, files keep their exec bit (cs2.sh, binaries)
-    # instead of a blanket 755 that marked every game file executable
-    chown -R pterodactyl:pterodactyl "$CS2_DIR" 2>/dev/null || true
+    # Permissions: dirs 755, files keep their exec bit (cs2.sh, binaries).
+    # No chown: the central dir is written by root and only READ by containers -
+    # world-readability is what matters, ownership is irrelevant for any panel.
     chmod -R u=rwX,go=rX "$CS2_DIR"
 
     # CS2_DIR consistent again - let waiting push workers proceed
@@ -545,6 +545,16 @@ _volume_path() {
     docker inspect "$1" \
         --format '{{range .Mounts}}{{if eq .Destination "/home/container"}}{{.Source}}{{end}}{{end}}' \
         2>/dev/null
+}
+
+# uid:gid owning a server volume (numeric, panel-agnostic). Wings creates the
+# volume as the server's user, so the volume root is the authority for ANY
+# panel - a hardcoded pterodactyl:pterodactyl broke Pelican hosts where that
+# user doesn't exist (root-owned gameinfo.gi -> in-container addon updaters got
+# Permission denied). Empty output = unknown; callers' chown then no-ops.
+_volume_owner() {
+    # -c is GNU stat (hosts), -f the BSD fallback (dev machines running the tests)
+    stat -c '%u:%g' "$1" 2>/dev/null || stat -f '%u:%g' "$1" 2>/dev/null || true
 }
 
 restart_docker_containers() {
@@ -658,7 +668,7 @@ _write_status() {
             echo "ts=$(date +%s)"
             [ -n "$qpos" ] && echo "queue_pos=$qpos"
         } > "$tmp" 2>/dev/null
-        chown pterodactyl:pterodactyl "$tmp" 2>/dev/null || true
+        chown "$(_volume_owner "$volume")" "$tmp" 2>/dev/null || true
         chmod 644 "$tmp" 2>/dev/null || true
         mv -f "$tmp" "$dir/.daemon-status" 2>/dev/null || rm -f "$tmp" 2>/dev/null
         exit 0
@@ -691,7 +701,7 @@ _refresh_status_entry() {
             echo "ts=$(date +%s)"
             [ -n "$qpos" ] && echo "queue_pos=$qpos"
         } > "$tmp" 2>/dev/null
-        chown pterodactyl:pterodactyl "$tmp" 2>/dev/null || true
+        chown "$(_volume_owner "$volume")" "$tmp" 2>/dev/null || true
         chmod 644 "$tmp" 2>/dev/null || true
         mv -f "$tmp" "$file" 2>/dev/null || rm -f "$tmp" 2>/dev/null
         exit 0
@@ -883,12 +893,14 @@ _sync_to_volume_impl() {
     local container="$1"
     local dest="$2"
     local src="$CS2_DIR"
+    local vol_owner
+    vol_owner=$(_volume_owner "$dest")
 
     local container_mount_dst="/tmp/cs2-shared"
 
     # marker is touched at the END of push (last-touch design)
     mkdir -p "$dest/egg" 2>/dev/null
-    chown -R pterodactyl:pterodactyl "$dest/egg" 2>/dev/null || true
+    chown -R "$vol_owner" "$dest/egg" 2>/dev/null || true
 
     # Sync non-VPK base files; exclude per-server configs, gameinfo.gi, and
     # SteamCMD-only dirs (Steam/, steamapps/): the CS2 server doesn't need them at
@@ -980,7 +992,7 @@ _sync_to_volume_impl() {
                         log_warn "hardlink[$container]: copy failed for $rel: $op_err"
                         return 1
                     fi
-                    chown pterodactyl:pterodactyl "$link_dst" 2>/dev/null || true
+                    chown "$vol_owner" "$link_dst" 2>/dev/null || true
                     chmod 644 "$link_dst" 2>/dev/null || true
                 else
                     if ! op_err=$(ln "$vpk_file" "$link_dst" 2>&1); then
@@ -991,7 +1003,7 @@ _sync_to_volume_impl() {
                 ;;
             copy)
                 cp "$vpk_file" "$link_dst" 2>/dev/null || return 1
-                chown pterodactyl:pterodactyl "$link_dst" 2>/dev/null || true
+                chown "$vol_owner" "$link_dst" 2>/dev/null || true
                 chmod 644 "$link_dst" 2>/dev/null || true
                 ;;
         esac
@@ -1004,14 +1016,14 @@ _sync_to_volume_impl() {
     human_size=$(format_bytes "$vpk_size")
     log_info "  ${DIM}→ $container: $vpk_count VPK(s), ${human_size}${RESET}"
 
-    chown -R pterodactyl:pterodactyl "$dest/game" 2>/dev/null || true
+    chown -R "$vol_owner" "$dest/game" 2>/dev/null || true
 
     # push done: touch marker (signals "daemon alive + files ready")
     # symlink mode: marker is touched on start event after nsenter mount, not here
     # ! TODO: Remove after 2026-10-01 (legacy marker for pre-status-file eggs)
     if [ "$VPK_PUSH_METHOD" != "symlink" ]; then
         touch "$dest/egg/.daemon-managed" 2>/dev/null || true
-        chown pterodactyl:pterodactyl "$dest/egg/.daemon-managed" 2>/dev/null || true
+        chown "$vol_owner" "$dest/egg/.daemon-managed" 2>/dev/null || true
     fi
 
     return 0
@@ -1233,7 +1245,7 @@ _push_worker() {
             mkdir -p "$volume_path/egg" 2>/dev/null
             # ! TODO: Remove marker touch after 2026-10-01 (pre-status-file eggs)
             touch "$volume_path/egg/.daemon-managed" 2>/dev/null || true
-            chown -R pterodactyl:pterodactyl "$volume_path/egg" 2>/dev/null || true
+            chown -R "$(_volume_owner "$volume_path")" "$volume_path/egg" 2>/dev/null || true
             _write_status "$container" "$volume_path" "done"
             exit 0
         fi
@@ -1270,7 +1282,7 @@ _handle_container_event() {
             _vol_path=$(_volume_path "$container")
             if [ -n "$_vol_path" ] && [ -d "$_vol_path/egg" ]; then
                 touch "$_vol_path/egg/.daemon-managed" 2>/dev/null || true
-                chown pterodactyl:pterodactyl "$_vol_path/egg/.daemon-managed" 2>/dev/null || true
+                chown "$(_volume_owner "$_vol_path")" "$_vol_path/egg/.daemon-managed" 2>/dev/null || true
             fi
         else
             log_warn "nsenter mount failed for $container - symlinks may not resolve"
@@ -1581,7 +1593,7 @@ run_protocol_test() {
     local base="https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}"
     mkdir -p "$tmp/misc" "$tmp/docker/scripts"
     local f
-    for f in misc/protocol-test.sh docker/scripts/update_helper.sh; do
+    for f in misc/protocol-test.sh misc/update-cs2-centralized.sh docker/scripts/update_helper.sh; do
         if ! curl -fsSL --max-time 30 "$base/$f" -o "$tmp/$f"; then
             log_error "Failed to download $f from GitHub (branch: $GITHUB_BRANCH)"
             exit 1
@@ -2105,5 +2117,8 @@ main() {
     echo ""
 }
 
-# Run main program
-main "$@"
+# Run main program - only when executed directly; sourcing (protocol tests)
+# loads the functions without side effects
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi
