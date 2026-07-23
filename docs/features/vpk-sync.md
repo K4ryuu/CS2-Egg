@@ -124,6 +124,9 @@ nano /usr/local/bin/update-cs2-centralized.sh
 # Health check + safe auto-fixes (run this FIRST when anything misbehaves)
 /usr/local/bin/update-cs2-centralized.sh --doctor
 
+# Self-update the script right now (daemon restarts automatically)
+/usr/local/bin/update-cs2-centralized.sh --update
+
 # Run the boot-handshake protocol tests (downloads from GitHub, cleans up after)
 /usr/local/bin/update-cs2-centralized.sh --test
 

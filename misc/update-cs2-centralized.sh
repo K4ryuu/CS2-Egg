@@ -18,8 +18,10 @@
 #   --doctor      Health check of the whole setup: script/service/cron paths,
 #                 daemon state, dependencies, per-server status files, locks.
 #                 Applies safe fixes automatically, prints commands for the rest.
+#   --update      Self-update the script right now from GITHUB_BRANCH (daemon
+#                 restarts automatically). Skips the CS2/steamcmd update.
 #
-# Version: 1.0.52
+# Version: 1.0.53
 
 set -euo pipefail
 
@@ -1951,6 +1953,17 @@ main() {
                 run_doctor
                 exit $?
                 ;;
+            --update)
+                # forced self-update: fetch + install the latest script from
+                # GITHUB_BRANCH right now (daemon restarts automatically),
+                # skipping the CS2/steamcmd update entirely
+                acquire_lock
+                trap release_lock EXIT
+                AUTO_UPDATE_SCRIPT="true"
+                UPDATE_CHECK_INTERVAL="*"
+                check_and_apply_updates
+                exit 0
+                ;;
             *)
                 log_error "Unknown argument: $1"
                 echo ""
@@ -1958,6 +1971,7 @@ main() {
                 echo "       $0 --daemon"
                 echo "       $0 --test"
                 echo "       $0 --doctor"
+                echo "       $0 --update"
                 echo ""
                 echo "Options:"
                 echo "  --simulate    Simulate update mode (skip SteamCMD, trigger restart logic)"
@@ -1965,6 +1979,7 @@ main() {
                 echo "  --daemon      Run as event listener - push game files on container start"
                 echo "  --test        Download + run the protocol test suite, then clean up"
                 echo "  --doctor      Health check + safe auto-fixes for the whole setup"
+                echo "  --update      Self-update the script now (skips the CS2 update)"
                 echo ""
                 exit 1
                 ;;
