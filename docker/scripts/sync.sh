@@ -129,8 +129,9 @@ sync_cfg_files() {
 
     # Copy default config files ONLY if they don't already exist
     # This way we don't overwrite user's custom configs
+    # process substitution keeps the counter in this shell (pipe would subshell it)
     local synced_count=0
-    find "$cfg_src_dir" -type f \( -name "*.cfg" -o -name "*.vcfg" \) -print0 2>/dev/null | while IFS= read -r -d '' cfg_file; do
+    while IFS= read -r -d '' cfg_file; do
         local filename="$(basename "$cfg_file")"
         local dest_file="$cfg_dest_dir/$filename"
 
@@ -141,7 +142,7 @@ sync_cfg_files() {
                 log_message "Failed to copy: $filename" "warning"
             fi
         fi
-    done
+    done < <(find "$cfg_src_dir" -type f \( -name "*.cfg" -o -name "*.vcfg" \) -print0 2>/dev/null)
 
     if [ $synced_count -gt 0 ]; then
         log_message "Synced $synced_count default config file(s)" "debug"

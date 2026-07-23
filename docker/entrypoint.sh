@@ -1,6 +1,12 @@
 #!/bin/bash
 
-# wipe stale marker first thing; must happen before daemon's start event lands
+# boot timestamp: the egg only accepts a daemon done/failed ack written after this
+# moment (host and container share the kernel clock, so epochs are comparable)
+export EGG_BOOT_EPOCH=$(date +%s)
+
+# ! TODO: Remove after 2026-10-01 (legacy marker protocol, host scripts < 1.0.49)
+# legacy protocol: wipe the stale marker before the daemon's start event lands;
+# new hosts signal via egg/.daemon-status instead
 rm -f /home/container/egg/.daemon-managed 2>/dev/null || true
 
 source /utils/logging.sh
@@ -23,6 +29,7 @@ load_configs
 
 detect_daemon_vpk
 cleanup_daemon_mode
+cleanup_broken_vpk_symlinks
 
 # Legacy VPK sync (SYNC_LOCATION mode) - runs before daemon detection result check
 if [ ${SRCDS_STOP_UPDATE:-0} -eq 0 ]; then

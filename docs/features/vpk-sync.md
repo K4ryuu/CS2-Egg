@@ -15,6 +15,34 @@ VPK Sync allows multiple CS2 servers to share game files from a single centraliz
 
 > **No Pterodactyl/Pelican Panel modifications required.** The script works directly with Docker and Wings - no PR patches, no mount setup, no egg variable configuration.
 
+## Boot Handshake (status file)
+
+On every container boot the egg and the daemon talk through a single one-way file: `egg/.daemon-status` inside the server volume. The daemon writes it, the egg only reads it - nothing is ever deleted, so no boot-ordering race is possible.
+
+```
+state=queued|updating|verifying|pushing|done|failed
+ts=<unix epoch of last write>
+queue_pos=<n>            # only while queued
+```
+
+| State       | Meaning                                        | Egg behavior                              |
+| ----------- | ---------------------------------------------- | ----------------------------------------- |
+| `queued`    | Waiting for a free push worker                 | Waits, shows queue position               |
+| `updating`  | Central CS2 update is rewriting `CS2_DIR`      | Waits, shows "central update in progress" |
+| `verifying` | Worker is checking the volume's files          | Waits                                     |
+| `pushing`   | Worker (or cron) is copying/linking game files | Waits                                     |
+| `done`      | Files verified/pushed for this boot            | Skips SteamCMD, starts the server         |
+| `failed`    | Push failed                                    | Falls back to SteamCMD immediately        |
+
+Two rules make this race-proof:
+
+- **Freshness**: the daemon refreshes `ts` every 3 seconds on all waiting states. If `ts` goes stale (>20s, `DAEMON_STATUS_STALE_SECS`), the daemon is dead and the egg falls back to SteamCMD - same recovery behavior as before, just detected faster.
+- **Boot acknowledgement**: `done`/`failed` only count if `ts` is newer than the container's boot. A restart during a CS2 update therefore never starts on files that are mid-replacement - the egg waits for the daemon to re-verify this specific boot (typically 1-3s).
+
+While `steamcmd` rewrites the central `CS2_DIR`, the update run holds a global lock. Workers handling a server start during that window report `updating` and verify only after the update finishes, so a restart mid-update simply waits instead of receiving half-written files or falling back to a full download.
+
+Old eggs (images without the status protocol) keep working: the daemon still maintains the legacy `.daemon-managed` marker and `.daemon-push-active` heartbeat until **2026-10-01**, when the legacy path is removed together with the deprecated `SYNC_LOCATION` sync.
+
 ## Startup Performance
 
 With the centralized script and VPK sync, new server startup is near-instant:
@@ -92,6 +120,9 @@ nano /usr/local/bin/update-cs2-centralized.sh
 
 # Test push and restart logic (skip SteamCMD download)
 /usr/local/bin/update-cs2-centralized.sh --simulate
+
+# Run the boot-handshake protocol tests (downloads from GitHub, cleans up after)
+/usr/local/bin/update-cs2-centralized.sh --test
 
 # Daemon status
 systemctl status cs2-vpk-daemon
@@ -178,6 +209,8 @@ curl -fsSL https://raw.githubusercontent.com/K4ryuu/CS2-Egg/dev/misc/install-cs2
 ```
 
 Set the server's Docker image to `docker.io/sples1/k4ryuu-cs2:dev` in the panel (the dev image is only published to Docker Hub). The installed script's self-update tracks the same branch, so it won't overwrite itself with the stable version. To go back, rerun the installer without `CS2_EGG_BRANCH` and switch the image back to `:latest`.
+
+If the testing branch is later deleted (merged into main), the script notices the 404 and switches its self-update back to `main` automatically - just remember to switch the Docker image back to `:latest` yourself.
 
 ## Support
 

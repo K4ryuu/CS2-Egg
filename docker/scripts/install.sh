@@ -32,7 +32,7 @@ install_steamcmd() {
     fi
 
     # Extract steamcmd
-    if ! tar -xzvf steamcmd.tar.gz -C ./steamcmd; then
+    if ! tar -xzf steamcmd.tar.gz -C ./steamcmd; then
         log_error_code "KL-STM-06" "Failed to extract SteamCMD"
         return 1
     fi

@@ -1,3 +1,28 @@
+-- update - 2026.07.23
+
+- feat(daemon): One-way status file protocol replaces the delete-and-wait marker handshake - the daemon writes `egg/.daemon-status` (queued/updating/verifying/pushing/done/failed + timestamp + queue position) and the egg only reads it, so the boot race that could trigger a full ~33GB SteamCMD redownload on loaded hosts can no longer happen (#56)
+- feat(daemon): Boot acknowledgement - the egg accepts done/failed only if written after its own boot, so a restart during a CS2 update waits for a fresh verify instead of starting on files mid-replacement
+- feat(daemon): Central update lock - server restarts while steamcmd rewrites the shared CS2_DIR now show "Central CS2 update in progress" and wait for it to finish; verify/push and the update can never see each other's half-written trees
+- feat(daemon): Queue visibility - on a saturated worker pool the server console shows a live queue position instead of silently timing out into a SteamCMD fallback
+- feat(daemon): Startup/reconnect reconcile - the daemon sweeps all running servers after a restart or a dropped docker event stream, so boots whose event was missed still get verified and acknowledged
+- feat(daemon): Script version is logged at daemon startup, so journalctl shows exactly which version is running
+- feat(centralized): New `--test` flag downloads the boot-handshake protocol test suite from GitHub (same branch as self-update), runs it and cleans up - quick sanity check for support and prerelease testing
+- fix(daemon): A crashed push worker now flips the status to failed - the egg falls back to SteamCMD immediately instead of hanging on a dead push
+- fix(daemon): A worker no longer gives up when the per-container push lock is busy (e.g. cron is pushing the same volume) - it waits for the lock while keeping the egg's status fresh
+- fix(centralized): VPK verify got stricter - hardlink mode now requires inode identity and copy mode checks mtime in addition to size, so an update that changed a VPK's content but not its size is re-pushed instead of leaving the server on stale files
+- fix(centralized): Wings restart error path produced a garbage HTTP code on curl failure (`\n` was never expanded), making the failure log misleading
+- feat(egg): Faster dead-daemon detection - a stale status file (no refresh for 20s) triggers the SteamCMD fallback in ~20s instead of 30+
+- feat(egg): Sanity check on daemon handoff - if the daemon reports ready but not a single VPK is readable (e.g. dangling symlinks after a failed mount), the egg falls back to SteamCMD instead of starting a crashing server (KL-DMN-04)
+- feat(egg): Broken VPK symlinks (leftovers of a lost daemon setup) are cleaned before the SteamCMD fallback runs, so SteamCMD rebuilds into a clean tree
+- feat(egg): Standalone servers (no daemon on the host) skip most of the boot wait - with an established install and zero daemon evidence the egg proceeds after ~5s instead of the full window
+- feat(centralized): Self-update survives a deleted testing branch - a confirmed 404 on the configured branch (e.g. dev after merge) switches the script back to main automatically
+- fix(centralized): CS2_DIR permissions preserve exec bits (u=rwX,go=rX) instead of blanket 755 that marked every game file executable
+- fix(centralized): Wings restart API calls got connect/max timeouts, so a hanging Wings can't stall the update run
+- fix(sync): Legacy cfg sync counter was stuck at 0 (pipe subshell), the "Synced N config file(s)" message never appeared
+- fix(install): SteamCMD extract no longer spams the console with the full file listing
+- docs(error-codes): New KL-DMN-03 (daemon reported failed push) and KL-DMN-04 (ready but no readable VPK) entries; stable anchors for every code (log links now jump to the right section) and retired notes on KL-DMN-01/02
+- docs(vpk-sync): New "Boot Handshake" section documenting the status file protocol; legacy marker files remain supported until 2026-10-01
+
 -- update - 2026.07.21
 
 - fix(centralized): Auto-restart works on Pelican Panel - the Wings config is now looked up at `/etc/pelican/config.yml` too, and a new `WINGS_CONFIG` setting points at a custom `--config` path if Wings runs from somewhere else (#55)
