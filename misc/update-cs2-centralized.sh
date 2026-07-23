@@ -21,7 +21,7 @@
 #   --update      Self-update the script right now from GITHUB_BRANCH (daemon
 #                 restarts automatically). Skips the CS2/steamcmd update.
 #
-# Version: 1.0.53
+# Version: 1.0.54
 
 set -euo pipefail
 
