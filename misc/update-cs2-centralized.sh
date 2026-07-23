@@ -1311,14 +1311,35 @@ run_doctor() {
         _dwarn "You are running $0 but the service runs $exec_path - edits to this copy do NOT reach the daemon/cron"
     fi
 
-    # cron job
+    # cron: /etc/cron.d/cs2-update is the managed scheduler - converge to it,
+    # always pointing at the service script (exec_path), never at stray copies
+    local cron_ok=false
     if [ -f /etc/cron.d/cs2-update ]; then
         local cron_path
         cron_path=$(grep -v '^#' /etc/cron.d/cs2-update 2>/dev/null | grep -o '/[^ ]*update-cs2-centralized\.sh' | head -1 || true)
         if [ -n "$cron_path" ] && [ ! -x "$cron_path" ]; then
-            _dfail "Cron points at $cron_path but the file is missing - CS2 updates are NOT running"
+            if [ -x "$exec_path" ] && sed -i "s|$cron_path|$exec_path|" /etc/cron.d/cs2-update 2>/dev/null; then
+                _dfixed "Cron pointed at missing $cron_path - rewrote to $exec_path (schedule kept)"
+                cron_ok=true
+            else
+                _dfail "Cron points at $cron_path but the file is missing - CS2 updates are NOT running"
+            fi
         else
             _ok "Cron job registered (/etc/cron.d/cs2-update)"
+            cron_ok=true
+        fi
+    elif [ -x "$exec_path" ]; then
+        if {
+            echo "# CS2 Centralized Update - restored by --doctor"
+            echo "SHELL=/bin/bash"
+            echo "PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin"
+            echo "* * * * * root $exec_path >> /var/log/cs2-update.log 2>&1"
+        } > /etc/cron.d/cs2-update 2>/dev/null; then
+            chmod 644 /etc/cron.d/cs2-update 2>/dev/null || true
+            _dfixed "Cron file was missing - recreated /etc/cron.d/cs2-update (every minute, rate-limited by UPDATE_CHECK_INTERVAL)"
+            cron_ok=true
+        else
+            _dwarn "Cron file /etc/cron.d/cs2-update missing and could not recreate it - automatic CS2 updates are off"
         fi
     else
         _dwarn "Cron file /etc/cron.d/cs2-update missing - automatic CS2 updates are off (installer recreates it)"
@@ -1329,10 +1350,17 @@ run_doctor() {
     user_cron=$(crontab -l 2>/dev/null | grep -v '^#' | grep 'update-cs2-centralized\.sh' || true)
     if [ -n "$user_cron" ]; then
         user_cron_path=$(echo "$user_cron" | grep -o '/[^ ]*update-cs2-centralized\.sh' | head -1 || true)
-        if [ -n "$user_cron_path" ] && [ ! -x "$user_cron_path" ]; then
-            _dfail "root's crontab runs $user_cron_path but the file is missing - remove the line: crontab -e"
-        elif [ -f /etc/cron.d/cs2-update ]; then
-            _dwarn "Update scheduled TWICE: /etc/cron.d/cs2-update AND root's crontab ($user_cron_path) - remove the crontab line: crontab -e"
+        if $cron_ok; then
+            # duplicate scheduler: the managed cron.d covers it, drop the crontab line
+            local remaining_cron
+            remaining_cron=$(crontab -l 2>/dev/null | grep -v 'update-cs2-centralized\.sh' || true)
+            if printf '%s\n' "$remaining_cron" | crontab - 2>/dev/null; then
+                _dfixed "Removed duplicate update line from root's crontab (kept /etc/cron.d/cs2-update). Removed: $user_cron"
+            else
+                _dwarn "Update scheduled TWICE: /etc/cron.d/cs2-update AND root's crontab ($user_cron_path) - remove the crontab line: crontab -e"
+            fi
+        elif [ -n "$user_cron_path" ] && [ ! -x "$user_cron_path" ]; then
+            _dfail "root's crontab runs $user_cron_path but the file is missing - remove the line (crontab -e) and reinstall for a managed cron"
         else
             _dwarn "Update runs from root's crontab ($user_cron_path) - the installer manages /etc/cron.d/cs2-update instead, consider reinstalling"
         fi
@@ -1374,10 +1402,23 @@ run_doctor() {
     section "Dependencies"
 
     command -v docker >/dev/null 2>&1 && _ok "docker present" || _dfail "docker missing - required for push/restart"
-    command -v rsync  >/dev/null 2>&1 && _ok "rsync present"  || _dfail "rsync missing - install: apt-get install -y rsync"
+
+    # installable deps: the script already apt-gets steamcmd libs on its own,
+    # so the doctor may install these small ones too instead of just complaining
+    _dep_check() {
+        local cmd="$1" pkg="$2" why="$3"
+        if command -v "$cmd" >/dev/null 2>&1; then
+            _ok "$cmd present${why:+ ($why)}"
+        elif command -v apt-get >/dev/null 2>&1 && \
+             DEBIAN_FRONTEND=noninteractive apt-get install -y -q "$pkg" >/dev/null 2>&1; then
+            _dfixed "$cmd was missing - installed $pkg"
+        else
+            _dfail "$cmd missing${why:+ ($why)} - install: apt-get install -y $pkg"
+        fi
+    }
+    _dep_check rsync rsync ""
     if [ "$VPK_PUSH_METHOD" = "symlink" ]; then
-        command -v python3 >/dev/null 2>&1 && _ok "python3 present (symlink mounts)" \
-            || _dfail "python3 missing - symlink mode cannot bind-mount, install: apt-get install -y python3"
+        _dep_check python3 python3 "symlink mounts"
         local kver kmaj kmin
         kver=$(uname -r 2>/dev/null || echo 0.0)
         kmaj=${kver%%.*}; kmin=${kver#*.}; kmin=${kmin%%.*}
@@ -1446,8 +1487,17 @@ run_doctor() {
             if [ -f "$volume/egg/.daemon-status" ] && [ -d "$volume/steamapps" ]; then
                 _dwarn "$container: steamapps/ leftovers found - evidence of a past SteamCMD fallback (egg cleans it on next daemon-managed boot)"
             fi
-            local broken
-            broken=$(find "$volume/game" -name '*.vpk' -type l ! -exec test -e {} \; -print 2>/dev/null | wc -l | tr -d ' ')
+            # symlink targets (/tmp/cs2-shared/...) only resolve INSIDE the container;
+            # from the host, rewrite the prefix to CS2_DIR before testing
+            local broken=0 link target
+            while IFS= read -r link; do
+                [ -z "$link" ] && continue
+                target=$(readlink "$link" 2>/dev/null || true)
+                case "$target" in
+                    /tmp/cs2-shared/*) [ -e "$CS2_DIR/${target#/tmp/cs2-shared/}" ] || broken=$((broken + 1)) ;;
+                    *)                 [ -e "$link" ] || broken=$((broken + 1)) ;;
+                esac
+            done < <(find "$volume/game" -name '*.vpk' -type l 2>/dev/null)
             [ "${broken:-0}" -gt 0 ] && _dwarn "$container: $broken broken VPK symlink(s) - egg cleans them on next boot; daemon mount may have failed earlier"
         done < <(_matching_containers)
         [ "$checked" -eq 0 ] && _dwarn "No running containers match SERVER_IMAGE ($SERVER_IMAGE)"
