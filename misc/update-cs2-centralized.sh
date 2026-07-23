@@ -1158,7 +1158,10 @@ _push_worker() {
     local _slot=0 _locked=0 _registered=0
     # Release only what this worker actually holds, even on crash.
     # Unconditional cleanup would free another worker's live lock.
-    trap '[ "$_locked" = 1 ] && rmdir "$lock_file" 2>/dev/null; [ "$_registered" = 1 ] && rm -f "$reg_file" 2>/dev/null; [ "$_slot" = 1 ] && echo >&"$_DAEMON_WORKER_FD"' EXIT
+    # ${var:-} guards: the trap can fire after the function already returned
+    # (locals gone) - an unbound variable here would abort the trap mid-way and
+    # leak the per-container lock + pool slot (stuck "queued" servers).
+    trap '[ "${_locked:-0}" = 1 ] && rmdir "${lock_file:-/nonexistent}" 2>/dev/null; [ "${_registered:-0}" = 1 ] && rm -f "${reg_file:-/nonexistent}" 2>/dev/null; [ "${_slot:-0}" = 1 ] && echo >&"${_DAEMON_WORKER_FD:-2}" 2>/dev/null' EXIT
 
     # Debounce: only applied to create events (Wings fires create+start together,
     # so create handles initial push and start can skip the heavy work).
@@ -1242,6 +1245,9 @@ _push_worker() {
     else
         log_warn "Push failed for ${BOLD}$container${RESET}"
     fi
+    # explicit exit so the EXIT trap runs while the locals above still exist
+    # (a plain function return would pop them before the trap fires)
+    exit 0
 }
 
 # Shared handling for live docker events and reconcile sweeps.
