@@ -7,6 +7,14 @@ set -u
 HELPER="$(cd "$(dirname "$0")/.." && pwd)/docker/scripts/update_helper.sh"
 FAILS=0
 
+if [[ -t 1 ]] && [[ -z "${NO_COLOR:-}" ]]; then
+    GREEN=$'\e[32m'; RED=$'\e[31m'; BOLD=$'\e[1m'; RESET=$'\e[0m'
+else
+    GREEN=""; RED=""; BOLD=""; RESET=""
+fi
+
+echo ""
+
 # write_status <dir> <state> <ts> [queue_pos]
 write_status() {
     { echo "state=$2"; echo "ts=$3"; [ -n "${4:-}" ] && echo "queue_pos=$4"; } > "$1/.daemon-status"
@@ -41,9 +49,9 @@ run_case() {
         fi
     fi
     if $ok; then
-        echo "PASS  $name"
+        echo "${GREEN}PASS${RESET}  $name"
     else
-        echo "FAIL  $name (got: $result, expected: $expect${expect_log:+, log must contain '$expect_log'})"
+        echo "${RED}FAIL${RESET}  $name (got: $result, expected: $expect${expect_log:+, log must contain '$expect_log'})"
         sed 's/^/      | /' "$tmp/log" 2>/dev/null
         FAILS=$((FAILS + 1))
     fi
@@ -186,9 +194,9 @@ result=$(
 )
 elapsed=$((SECONDS - start))
 if [ "$result" = "fallback" ] && [ "$elapsed" -le 8 ]; then
-    echo "PASS  standalone steamapps -> fast fallback (${elapsed}s)"
+    echo "${GREEN}PASS${RESET}  standalone steamapps -> fast fallback (${elapsed}s)"
 else
-    echo "FAIL  standalone steamapps -> fast fallback (result=$result, elapsed=${elapsed}s)"
+    echo "${RED}FAIL${RESET}  standalone steamapps -> fast fallback (result=$result, elapsed=${elapsed}s)"
     FAILS=$((FAILS + 1))
 fi
 rm -rf "$tmp"
@@ -208,17 +216,17 @@ if (
     cleanup_broken_vpk_symlinks >/dev/null 2>&1
     [ -L "$GAME_DIR/csgo/ok.vpk" ] && [ ! -L "$GAME_DIR/csgo/broken.vpk" ]
 ); then
-    echo "PASS  broken VPK symlinks cleaned, valid ones kept"
+    echo "${GREEN}PASS${RESET}  broken VPK symlinks cleaned, valid ones kept"
 else
-    echo "FAIL  broken VPK symlinks cleaned, valid ones kept"
+    echo "${RED}FAIL${RESET}  broken VPK symlinks cleaned, valid ones kept"
     FAILS=$((FAILS + 1))
 fi
 rm -rf "$tmp"
 
 echo ""
 if [ "$FAILS" -eq 0 ]; then
-    echo "All cases passed."
+    echo "${GREEN}${BOLD}All cases passed.${RESET}"
 else
-    echo "$FAILS case(s) FAILED."
+    echo "${RED}${BOLD}$FAILS case(s) FAILED.${RESET}"
     exit 1
 fi
