@@ -57,8 +57,9 @@ detect_daemon_vpk() {
     }
 
     local standalone_grace_secs="${DAEMON_STANDALONE_GRACE_SECS:-5}"
+    local legacy_grace_secs="${DAEMON_LEGACY_GRACE_SECS:-5}"
     local steamapps_dir="${EGG_STEAMAPPS_DIR:-/home/container/steamapps}"
-    local waited=0 announced=false last_note="" saw_status=false
+    local waited=0 announced=false last_note="" saw_status=false marker_ticks=0
     local state ts qpos now age
     while :; do
         state=""; ts=0; qpos=""
@@ -127,16 +128,24 @@ detect_daemon_vpk() {
         fi
 
         # legacy protocol (host script < 1.0.49): marker touched after the
-        # boot-time deletion = daemon alive and files ready
+        # boot-time deletion = daemon alive and files ready. Grace period first:
+        # a NEW script touches the marker instantly (compat) while its worker's
+        # first status write lands ~1-2s later - the status protocol gets first
+        # claim, the bare marker only counts once it stayed alone for the grace.
         if [ -f "$marker" ]; then
-            # old scripts never write a status file - warn only in that case, so a
-            # new-script host (stale status + cron push) doesn't get a false alarm
-            if [ ! -f "$status_file" ]; then
-                log_message "Host update script is outdated (legacy daemon protocol) - support ends after 2026-10-01" "warning"
-                log_message "  → It self-updates if AUTO_UPDATE_SCRIPT=true; otherwise re-run the installer on the host" "warning"
+            marker_ticks=$((marker_ticks + 1))
+            if [ "$marker_ticks" -gt "$legacy_grace_secs" ]; then
+                # old scripts never write a status file - warn only in that case, so
+                # a new-script host (stale status + cron push) doesn't get a false alarm
+                if [ ! -f "$status_file" ]; then
+                    log_message "Host update script is outdated (legacy daemon protocol) - support ends after 2026-10-01" "warning"
+                    log_message "  → It self-updates if AUTO_UPDATE_SCRIPT=true; otherwise re-run the installer on the host" "warning"
+                fi
+                _daemon_managed
+                return 0
             fi
-            _daemon_managed
-            return 0
+            sleep 1
+            continue
         fi
         # legacy long-push heartbeat: keep waiting while it stays fresh
         if [ -n "$(find "$push_active" -mmin -2 2>/dev/null)" ]; then

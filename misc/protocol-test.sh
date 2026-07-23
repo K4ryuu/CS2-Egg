@@ -13,13 +13,14 @@ write_status() {
 }
 
 # run_case <name> <expected: managed|fallback> <setup-fn> [expected-log-substring]
+# Prefix the log substring with "!" to assert it must NOT appear.
 run_case() {
     local name="$1" expect="$2" setup="$3" expect_log="${4:-}"
     local tmp result
     tmp=$(mktemp -d)
     result=$(
         export EGG_DIR="$tmp/egg" GAME_CSGO_DIR="$tmp/csgo" LOG_OUT="$tmp/log"
-        export DAEMON_STATUS_STALE_SECS=2 DAEMON_WAIT_MAX_SECS=2 DAEMON_WAIT_SECS=1
+        export DAEMON_STATUS_STALE_SECS=2 DAEMON_WAIT_MAX_SECS=2 DAEMON_WAIT_SECS=1 DAEMON_LEGACY_GRACE_SECS=2
         unset SRCDS_STOP_UPDATE DAEMON_EVIDENCE_FOUND SYNC_LOCATION EGG_BOOT_EPOCH 2>/dev/null
         mkdir -p "$EGG_DIR" "$GAME_CSGO_DIR"
         touch "$LOG_OUT"
@@ -32,8 +33,12 @@ run_case() {
     )
     local ok=true
     [ "$result" = "$expect" ] || ok=false
-    if [ -n "$expect_log" ] && ! grep -q "$expect_log" "$tmp/log" 2>/dev/null; then
-        ok=false
+    if [ -n "$expect_log" ]; then
+        if [ "${expect_log#!}" != "$expect_log" ]; then
+            grep -q "${expect_log#!}" "$tmp/log" 2>/dev/null && ok=false
+        elif ! grep -q "$expect_log" "$tmp/log" 2>/dev/null; then
+            ok=false
+        fi
     fi
     if $ok; then
         echo "PASS  $name"
@@ -88,6 +93,61 @@ s_stale_queued() {
     write_status "$EGG_DIR" queued "$(($(date +%s) - 100))" 2
 }
 
+s_marker_races_status() {
+    # new-script host: compat marker lands instantly, worker status ~1-2s later -
+    # the status protocol must win and no legacy deprecation warning may appear
+    touch "$GAME_CSGO_DIR/pak01_dir.vpk"
+    touch "$EGG_DIR/.daemon-managed"
+    ( sleep 1; write_status "$EGG_DIR" queued "$(future_ts)" 1
+      sleep 1; write_status "$EGG_DIR" done "$(future_ts)" ) &
+}
+
+s_updating_then_done() {
+    # restart during a central CS2 update: egg must wait it out, then start
+    touch "$GAME_CSGO_DIR/pak01_dir.vpk"
+    write_status "$EGG_DIR" updating "$(future_ts)"
+    ( sleep 2; write_status "$EGG_DIR" done "$(future_ts)" ) &
+}
+
+s_pushing_then_failed() {
+    # push dies mid-boot: failed ack must drop the egg to SteamCMD immediately
+    touch "$GAME_CSGO_DIR/pak01_dir.vpk"
+    write_status "$EGG_DIR" pushing "$(future_ts)"
+    ( sleep 2; write_status "$EGG_DIR" failed "$(future_ts)" ) &
+}
+
+s_legacy_push_heartbeat() {
+    # old-script long push: fresh heartbeat extends the wait past wait_max,
+    # marker lands later and the boot still ends up daemon-managed
+    touch "$GAME_CSGO_DIR/pak01_dir.vpk"
+    touch "$EGG_DIR/.daemon-push-active"
+    ( sleep 3; touch "$EGG_DIR/.daemon-managed" ) &
+}
+
+s_queue_position_shown() {
+    touch "$GAME_CSGO_DIR/pak01_dir.vpk"
+    write_status "$EGG_DIR" queued "$(future_ts)" 3
+    ( sleep 2; write_status "$EGG_DIR" done "$(future_ts)" ) &
+}
+
+s_corrupt_status() {
+    # garbage status file = no usable signal, must time out to SteamCMD
+    touch "$GAME_CSGO_DIR/pak01_dir.vpk"
+    printf 'state=;;;\nts=not-a-number\n\x00\x01' > "$EGG_DIR/.daemon-status"
+}
+
+s_sync_location_fallback() {
+    export SYNC_LOCATION="/nonexistent-legacy-mount"
+}
+
+s_preboot_failed_ignored() {
+    # failed from BEFORE this boot is not ours to act on - no instant fallback,
+    # the normal wait window decides
+    touch "$GAME_CSGO_DIR/pak01_dir.vpk"
+    export EGG_BOOT_EPOCH=$(($(date +%s) + 1000))
+    write_status "$EGG_DIR" failed "$(date +%s)"
+}
+
 # --- run --------------------------------------------------------------------
 
 run_case "done (this boot) -> managed"                managed  s_done_fresh
@@ -98,6 +158,14 @@ run_case "pre-boot done not accepted -> fallback"     fallback s_preboot_done_on
 run_case "legacy marker -> managed + deprecation"     managed  s_legacy_marker "2026-10-01"
 run_case "done but zero readable VPK -> fallback"     fallback s_done_no_vpk "KL-DMN-04"
 run_case "stale queued (dead daemon) -> fallback"     fallback s_stale_queued
+run_case "marker races status -> status wins"         managed  s_marker_races_status "!2026-10-01"
+run_case "updating -> waits out central update"       managed  s_updating_then_done "Central CS2 update in progress"
+run_case "pushing -> failed mid-boot -> fallback"     fallback s_pushing_then_failed "KL-DMN-03"
+run_case "legacy push heartbeat extends the wait"     managed  s_legacy_push_heartbeat "Daemon push still in progress"
+run_case "queue position shown on console"            managed  s_queue_position_shown "2 server(s) ahead"
+run_case "corrupt status file -> timeout fallback"    fallback s_corrupt_status
+run_case "SYNC_LOCATION fallback warns deprecation"   fallback s_sync_location_fallback "DEPRECATION"
+run_case "pre-boot failed ignored (no instant fall)"  fallback s_preboot_failed_ignored "!KL-DMN-03"
 
 # --- bespoke cases ----------------------------------------------------------
 

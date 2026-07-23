@@ -13,6 +13,7 @@
 - fix(centralized): Wings restart error path produced a garbage HTTP code on curl failure (`\n` was never expanded), making the failure log misleading
 - feat(egg): Faster dead-daemon detection - a stale status file (no refresh for 20s) triggers the SteamCMD fallback in ~20s instead of 30+
 - feat(egg): Sanity check on daemon handoff - if the daemon reports ready but not a single VPK is readable (e.g. dangling symlinks after a failed mount), the egg falls back to SteamCMD instead of starting a crashing server (KL-DMN-04)
+- fix(egg): Legacy grace period - the compat marker lands instantly while the worker's first status write takes ~1-2s, so the bare marker only counts after ~5s without a status file; prevents a false "host script outdated" warning and keeps the boot acknowledgement authoritative on new-script hosts
 - feat(egg): Broken VPK symlinks (leftovers of a lost daemon setup) are cleaned before the SteamCMD fallback runs, so SteamCMD rebuilds into a clean tree
 - feat(egg): Standalone servers (no daemon on the host) skip most of the boot wait - with an established install and zero daemon evidence the egg proceeds after ~5s instead of the full window
 - feat(centralized): Self-update survives a deleted testing branch - a confirmed 404 on the configured branch (e.g. dev after merge) switches the script back to main automatically
