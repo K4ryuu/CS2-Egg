@@ -19,7 +19,7 @@
 #                 daemon state, dependencies, per-server status files, locks.
 #                 Applies safe fixes automatically, prints commands for the rest.
 #
-# Version: 1.0.49
+# Version: 1.0.50
 
 set -euo pipefail
 
