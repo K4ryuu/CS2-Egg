@@ -189,7 +189,7 @@ df -h /var/lib/pelican/volumes
 
 ### Cron Job Not Running
 
-`--doctor` detects a missing cron file or a cron entry pointing at a missing script. If it reports the cron file missing, re-run the installer; to test an update manually: `/usr/local/bin/update-cs2-centralized.sh`
+Scheduling lives in **`/etc/cron.d/cs2-update`** (runs every minute, rate-limited by `UPDATE_CHECK_INTERVAL`) - never add the script to root's crontab. `--doctor` recreates a missing cron file, rewrites a dead path in it, and removes duplicate crontab entries automatically. To test an update manually: `sudo /usr/local/bin/update-cs2-centralized.sh`
 
 ## FAQ
 

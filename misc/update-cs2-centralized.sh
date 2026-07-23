@@ -21,7 +21,7 @@
 #   --update      Self-update the script right now from GITHUB_BRANCH (daemon
 #                 restarts automatically). Skips the CS2/steamcmd update.
 #
-# Version: 1.0.54
+# Version: 1.0.55
 
 set -euo pipefail
 
@@ -1120,6 +1120,7 @@ push_vpk_to_containers() {
             ((failed++)) || true
             continue
         fi
+        echo "$BASHPID" > "$lock_file/pid" 2>/dev/null || true
 
         if _sync_to_volume "$container" "$volume_path"; then
             ((success++)) || true
@@ -1127,7 +1128,7 @@ push_vpk_to_containers() {
             log_warn "Push failed for ${BOLD}$container${RESET}"
             ((failed++)) || true
         fi
-        rmdir "$lock_file" 2>/dev/null || true
+        rm -rf "$lock_file" 2>/dev/null || true
     done
 
     # Hardlink mode: set VPK files in CS2_DIR to root:root 644
@@ -1161,7 +1162,7 @@ _push_worker() {
     # ${var:-} guards: the trap can fire after the function already returned
     # (locals gone) - an unbound variable here would abort the trap mid-way and
     # leak the per-container lock + pool slot (stuck "queued" servers).
-    trap '[ "${_locked:-0}" = 1 ] && rmdir "${lock_file:-/nonexistent}" 2>/dev/null; [ "${_registered:-0}" = 1 ] && rm -f "${reg_file:-/nonexistent}" 2>/dev/null; [ "${_slot:-0}" = 1 ] && echo >&"${_DAEMON_WORKER_FD:-2}" 2>/dev/null' EXIT
+    trap '[ "${_locked:-0}" = 1 ] && rm -rf "${lock_file:-/nonexistent}" 2>/dev/null; [ "${_registered:-0}" = 1 ] && rm -f "${reg_file:-/nonexistent}" 2>/dev/null; [ "${_slot:-0}" = 1 ] && echo >&"${_DAEMON_WORKER_FD:-2}" 2>/dev/null' EXIT
 
     # Debounce: only applied to create events (Wings fires create+start together,
     # so create handles initial push and start can skip the heavy work).
@@ -1206,6 +1207,8 @@ _push_worker() {
         waited=$((waited + 2))
     done
     _locked=1
+    # record the owner pid so the doctor can spot orphaned locks instantly
+    echo "$BASHPID" > "$lock_file/pid" 2>/dev/null || true
 
     # Central CS2 update in progress? Wait it out instead of verifying against a
     # half-written CS2_DIR. The shared lock is then HELD until worker exit (fd
@@ -1513,13 +1516,26 @@ run_doctor() {
 
     section "Locks"
 
-    # ponytail: 2h orphan threshold - workers cap waits at 1h, anything older is a corpse
-    local lock removed_locks=0
+    # locks carry their owner pid since 1.0.53: dead owner = orphan, remove now.
+    # pid-less locks (older scripts) fall back to a 2h age rule - workers cap
+    # waits at 1h, anything older is a corpse.
+    local lock lock_pid lock_age removed_locks=0
     while IFS= read -r lock; do
         [ -z "$lock" ] && continue
-        rmdir "$lock" 2>/dev/null && removed_locks=$((removed_locks + 1))
-    done < <(find /var/lock -maxdepth 1 -name 'cs2-vpk-push-*' -type d -mmin +120 2>/dev/null)
-    [ "$removed_locks" -gt 0 ] && _dfixed "Removed $removed_locks orphaned push lock(s) (older than 2h)"
+        lock_pid=$(cat "$lock/pid" 2>/dev/null || true)
+        if [[ "$lock_pid" =~ ^[0-9]+$ ]]; then
+            kill -0 "$lock_pid" 2>/dev/null && continue    # live owner, leave it
+            rm -rf "$lock" 2>/dev/null && removed_locks=$((removed_locks + 1))
+        else
+            lock_age=$(( ($(date +%s) - $(stat -c %Y "$lock" 2>/dev/null || date +%s)) / 60 ))
+            if [ "$lock_age" -ge 120 ]; then
+                rm -rf "$lock" 2>/dev/null && removed_locks=$((removed_locks + 1))
+            else
+                _dwarn "Push lock $(basename "$lock") has no owner pid and is ${lock_age} min old - if a server hangs on 'queued', remove it: rm -rf $lock"
+            fi
+        fi
+    done < <(find /var/lock -maxdepth 1 -name 'cs2-vpk-push-*' -type d 2>/dev/null)
+    [ "$removed_locks" -gt 0 ] && _dfixed "Removed $removed_locks orphaned push lock(s) (dead owner)"
     if [ -f "$CENTRAL_UPDATE_LOCK" ] && command -v flock >/dev/null 2>&1; then
         if ( exec 9<"$CENTRAL_UPDATE_LOCK"; flock -n -s 9 ) 2>/dev/null; then
             _ok "No central update in progress"
