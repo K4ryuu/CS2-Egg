@@ -26,6 +26,7 @@
 - feat(daemon): Push locks record their owner pid, so `--doctor` removes a dead-owner lock instantly instead of waiting for the 2h age rule
 - fix(daemon): Volume file ownership now follows the volume's actual owner (numeric uid:gid) instead of a hardcoded pterodactyl:pterodactyl - on Pelican hosts pushed files (e.g. gameinfo.gi) stayed root-owned and in-container addon updaters failed with Permission denied until a second restart [#56]
 - feat(test): The centralized script is now sourceable, so `--test` also unit-tests daemon-side pieces: dynamic volume-owner detection everywhere, and the status writers (atomicity + terminal state never resurrected) on Linux hosts
+- fix(updaters): GitHub API rate limiting (shared node IP) is now detected and reported clearly - the addon update check is skipped for that boot and the installed version keeps running, instead of feeding the error response into the parser
 - fix(sync): Legacy cfg sync counter was stuck at 0 (pipe subshell), the "Synced N config file(s)" message never appeared
 - fix(install): SteamCMD extract no longer spams the console with the full file listing
 - docs(error-codes): New KL-DMN-03 (daemon reported failed push) and KL-DMN-04 (ready but no readable VPK) entries; stable anchors for every code (log links now jump to the right section) and retired notes on KL-DMN-01/02
