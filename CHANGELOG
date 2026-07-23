@@ -20,6 +20,7 @@
 - feat(centralized): Self-update survives a deleted testing branch - a confirmed 404 on the configured branch (e.g. dev after merge) switches the script back to main automatically
 - fix(centralized): CS2_DIR permissions preserve exec bits (u=rwX,go=rX) instead of blanket 755 that marked every game file executable
 - fix(centralized): Wings restart API calls got connect/max timeouts, so a hanging Wings can't stall the update run
+- fix(centralized): Script re-execs itself with sudo when started as a normal user, instead of failing halfway with confusing permission errors
 - fix(sync): Legacy cfg sync counter was stuck at 0 (pipe subshell), the "Synced N config file(s)" message never appeared
 - fix(install): SteamCMD extract no longer spams the console with the full file listing
 - docs(error-codes): New KL-DMN-03 (daemon reported failed push) and KL-DMN-04 (ready but no readable VPK) entries; stable anchors for every code (log links now jump to the right section) and retired notes on KL-DMN-01/02

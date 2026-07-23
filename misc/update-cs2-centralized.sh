@@ -19,7 +19,7 @@
 #                 daemon state, dependencies, per-server status files, locks.
 #                 Applies safe fixes automatically, prints commands for the rest.
 #
-# Version: 1.0.51
+# Version: 1.0.52
 
 set -euo pipefail
 
@@ -1910,6 +1910,18 @@ check_and_apply_updates() {
 }
 
 main() {
+    # Everything here touches root-owned paths (CS2_DIR, /var/cache, /var/lock,
+    # panel volumes, docker) - re-exec with sudo like the installer does, instead
+    # of failing halfway through with confusing permission errors.
+    if [ "$EUID" -ne 0 ]; then
+        if command -v sudo >/dev/null 2>&1; then
+            log_warn "Requires root - re-executing with sudo..."
+            exec sudo bash "$0" "$@"
+        fi
+        log_error "This script must run as root"
+        exit 1
+    fi
+
     # Parse command line arguments
     while [[ $# -gt 0 ]]; do
         case "$1" in
