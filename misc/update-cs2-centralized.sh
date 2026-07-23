@@ -15,6 +15,9 @@
 #   --test        Download the boot-handshake protocol test suite from GitHub
 #                 (same branch as self-update), run it, clean up. No docker or
 #                 config needed - quick sanity check for support/diagnostics.
+#   --doctor      Health check of the whole setup: script/service/cron paths,
+#                 daemon state, dependencies, per-server status files, locks.
+#                 Applies safe fixes automatically, prints commands for the rest.
 #
 # Version: 1.0.49
 
@@ -1275,6 +1278,208 @@ _reconcile_running_containers() {
     done < <(_matching_containers)
 }
 
+# Health check for the whole centralized setup. Read-only diagnosis, except a
+# few unambiguously safe fixes (daemon restart on stale in-memory code, orphaned
+# push locks). Everything else prints the exact command to run. Every check must
+# be failure-guarded: set -e is active and a dying doctor helps nobody.
+run_doctor() {
+    headline "CS2 Egg Doctor"
+
+    local fails=0 warns=0 fixed=0
+    _ok()    { echo -e "  ${GREEN}OK${RESET}     $*" >&2; }
+    _dwarn() { echo -e "  ${YELLOW}WARN${RESET}   $*" >&2; warns=$((warns + 1)); }
+    _dfail() { echo -e "  ${RED}FAIL${RESET}   $*" >&2; fails=$((fails + 1)); }
+    _dfixed(){ echo -e "  ${CYAN}FIXED${RESET}  $*" >&2; fixed=$((fixed + 1)); }
+
+    section "Script & service"
+
+    # where does systemd actually point?
+    local exec_path=""
+    if [ -f /etc/systemd/system/cs2-vpk-daemon.service ]; then
+        exec_path=$(grep -m1 '^ExecStart=' /etc/systemd/system/cs2-vpk-daemon.service 2>/dev/null | cut -d= -f2- | awk '{print $1}' || true)
+    fi
+    [ -z "$exec_path" ] && exec_path="/usr/local/bin/update-cs2-centralized.sh"
+
+    local disk_version=""
+    if [ -x "$exec_path" ]; then
+        disk_version=$(grep -m1 '^# Version:' "$exec_path" 2>/dev/null | awk '{print $3}' || true)
+        _ok "Service script exists: $exec_path (version ${disk_version:-unknown})"
+    else
+        _dfail "Service script missing/not executable at $exec_path - reinstall: curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}/misc/install-cs2-update.sh -o /tmp/i.sh && sudo bash /tmp/i.sh"
+    fi
+    if [ "$(readlink -f "$0" 2>/dev/null || true)" != "$(readlink -f "$exec_path" 2>/dev/null || true)" ]; then
+        _dwarn "You are running $0 but the service runs $exec_path - edits to this copy do NOT reach the daemon/cron"
+    fi
+
+    # cron job
+    if [ -f /etc/cron.d/cs2-update ]; then
+        local cron_path
+        cron_path=$(grep -v '^#' /etc/cron.d/cs2-update 2>/dev/null | grep -o '/[^ ]*update-cs2-centralized\.sh' | head -1 || true)
+        if [ -n "$cron_path" ] && [ ! -x "$cron_path" ]; then
+            _dfail "Cron points at $cron_path but the file is missing - CS2 updates are NOT running"
+        else
+            _ok "Cron job registered (/etc/cron.d/cs2-update)"
+        fi
+    else
+        _dwarn "Cron file /etc/cron.d/cs2-update missing - automatic CS2 updates are off (installer recreates it)"
+    fi
+
+    # service state + stale in-memory code detection
+    if command -v systemctl >/dev/null 2>&1; then
+        if systemctl is-active --quiet cs2-vpk-daemon 2>/dev/null; then
+            local main_pid proc_start script_mtime
+            main_pid=$(systemctl show -p MainPID --value cs2-vpk-daemon 2>/dev/null || echo 0)
+            proc_start=$(stat -c %Z "/proc/$main_pid" 2>/dev/null || echo 0)
+            script_mtime=$(stat -c %Y "$exec_path" 2>/dev/null || echo 0)
+            if [ "$script_mtime" -gt "$proc_start" ] 2>/dev/null && [ "$proc_start" -gt 0 ]; then
+                if systemctl restart cs2-vpk-daemon 2>/dev/null; then
+                    _dfixed "Daemon was running OLDER code than the script on disk - restarted to load it"
+                else
+                    _dfail "Daemon runs older code than on disk and restart failed - run: systemctl restart cs2-vpk-daemon"
+                fi
+            else
+                _ok "Daemon active (pid $main_pid) and running the on-disk code"
+            fi
+        elif [ -x "$exec_path" ]; then
+            if systemctl restart cs2-vpk-daemon 2>/dev/null && systemctl is-active --quiet cs2-vpk-daemon 2>/dev/null; then
+                _dfixed "Daemon was not running - started it"
+            else
+                _dfail "Daemon not running and restart failed - check: journalctl -u cs2-vpk-daemon -n 50"
+            fi
+        else
+            _dfail "Daemon not running (no script to start) - reinstall first, then: systemctl restart cs2-vpk-daemon"
+        fi
+        # crash-loop evidence in the recent journal
+        local exec_fails
+        exec_fails=$(journalctl -u cs2-vpk-daemon --since "-10 min" --no-pager 2>/dev/null | grep -c "Failed at step EXEC" || true)
+        [ "${exec_fails:-0}" -gt 0 ] && _dwarn "Service crash-looped ${exec_fails}x in the last 10 min (203/EXEC = missing script) - recheck after the fixes above"
+    else
+        _dwarn "systemd not found - cannot check the daemon service"
+    fi
+
+    section "Dependencies"
+
+    command -v docker >/dev/null 2>&1 && _ok "docker present" || _dfail "docker missing - required for push/restart"
+    command -v rsync  >/dev/null 2>&1 && _ok "rsync present"  || _dfail "rsync missing - install: apt-get install -y rsync"
+    if [ "$VPK_PUSH_METHOD" = "symlink" ]; then
+        command -v python3 >/dev/null 2>&1 && _ok "python3 present (symlink mounts)" \
+            || _dfail "python3 missing - symlink mode cannot bind-mount, install: apt-get install -y python3"
+        local kver kmaj kmin
+        kver=$(uname -r 2>/dev/null || echo 0.0)
+        kmaj=${kver%%.*}; kmin=${kver#*.}; kmin=${kmin%%.*}
+        if [ "${kmaj:-0}" -gt 5 ] 2>/dev/null || { [ "${kmaj:-0}" -eq 5 ] && [ "${kmin:-0}" -ge 2 ]; } 2>/dev/null; then
+            _ok "Kernel $kver (>= 5.2 needed for symlink mounts)"
+        else
+            _dfail "Kernel $kver too old for symlink mounts (needs 5.2+) - switch VPK_PUSH_METHOD to hardlink/copy"
+        fi
+    fi
+
+    section "Central files"
+
+    if [ -d "$CS2_DIR" ]; then
+        local buildid vpk_count
+        buildid=$(get_local_version)
+        vpk_count=$(find "$CS2_DIR" -type f -name '*.vpk' 2>/dev/null | wc -l | tr -d ' ')
+        if [ "$buildid" = "unknown" ] || [ "${vpk_count:-0}" -eq 0 ]; then
+            _dfail "CS2_DIR ($CS2_DIR) exists but looks incomplete (buildid: $buildid, VPKs: $vpk_count) - run: $exec_path"
+        else
+            _ok "CS2_DIR healthy: buildid $buildid, $vpk_count VPKs"
+        fi
+    else
+        _dfail "CS2_DIR ($CS2_DIR) does not exist - first update run pending: $exec_path"
+    fi
+    local free_kb
+    free_kb=$(df -Pk "$(dirname "$CS2_DIR")" 2>/dev/null | awk 'NR==2 {print $4}' || true)
+    if [[ "$free_kb" =~ ^[0-9]+$ ]]; then
+        if [ "$free_kb" -lt 10485760 ]; then
+            _dwarn "Low disk space on CS2_DIR filesystem ($((free_kb / 1048576)) GB free) - updates and fallbacks will fail without headroom"
+        else
+            _ok "Disk space: $((free_kb / 1048576)) GB free on CS2_DIR filesystem"
+        fi
+    fi
+
+    section "Servers"
+
+    if command -v docker >/dev/null 2>&1; then
+        local container volume state ts age now checked=0
+        now=$(date +%s)
+        while IFS= read -r container; do
+            [ -z "$container" ] && continue
+            checked=$((checked + 1))
+            volume=$(_volume_path "$container")
+            if [ -z "$volume" ] || [ ! -d "$volume" ]; then
+                _dwarn "$container: cannot resolve volume path"
+                continue
+            fi
+            if [ -f "$volume/egg/.daemon-status" ]; then
+                state=$(grep -m1 '^state=' "$volume/egg/.daemon-status" 2>/dev/null | cut -d= -f2 || true)
+                ts=$(grep -m1 '^ts=' "$volume/egg/.daemon-status" 2>/dev/null | cut -d= -f2 || true)
+                [[ "$ts" =~ ^[0-9]+$ ]] || ts=0
+                age=$((now - ts))
+                case "$state" in
+                    done)   _ok "$container: status done ($((age / 60)) min ago)" ;;
+                    failed) _dwarn "$container: last push FAILED - server likely fell back to SteamCMD, check journalctl around $(date -d "@$ts" 2>/dev/null || echo "ts $ts")" ;;
+                    *)      if [ "$age" -gt 120 ]; then
+                                _dwarn "$container: status stuck in '$state' for $((age / 60)) min - worker died? journalctl -u cs2-vpk-daemon"
+                            else
+                                _ok "$container: push in progress ($state)"
+                            fi ;;
+                esac
+            else
+                _dwarn "$container: no .daemon-status yet (old egg image, or daemon has not seen this server since 1.0.49)"
+            fi
+            # forensic: steamapps in a daemon-managed volume = a past SteamCMD fallback
+            if [ -f "$volume/egg/.daemon-status" ] && [ -d "$volume/steamapps" ]; then
+                _dwarn "$container: steamapps/ leftovers found - evidence of a past SteamCMD fallback (egg cleans it on next daemon-managed boot)"
+            fi
+            local broken
+            broken=$(find "$volume/game" -name '*.vpk' -type l ! -exec test -e {} \; -print 2>/dev/null | wc -l | tr -d ' ')
+            [ "${broken:-0}" -gt 0 ] && _dwarn "$container: $broken broken VPK symlink(s) - egg cleans them on next boot; daemon mount may have failed earlier"
+        done < <(_matching_containers)
+        [ "$checked" -eq 0 ] && _dwarn "No running containers match SERVER_IMAGE ($SERVER_IMAGE)"
+    fi
+
+    section "Locks"
+
+    # ponytail: 2h orphan threshold - workers cap waits at 1h, anything older is a corpse
+    local lock removed_locks=0
+    while IFS= read -r lock; do
+        [ -z "$lock" ] && continue
+        rmdir "$lock" 2>/dev/null && removed_locks=$((removed_locks + 1))
+    done < <(find /var/lock -maxdepth 1 -name 'cs2-vpk-push-*' -type d -mmin +120 2>/dev/null)
+    [ "$removed_locks" -gt 0 ] && _dfixed "Removed $removed_locks orphaned push lock(s) (older than 2h)"
+    if [ -f "$CENTRAL_UPDATE_LOCK" ] && command -v flock >/dev/null 2>&1; then
+        if ( exec 9<"$CENTRAL_UPDATE_LOCK"; flock -n -s 9 ) 2>/dev/null; then
+            _ok "No central update in progress"
+        else
+            _ok "Central CS2 update currently running (restarting servers will wait for it)"
+        fi
+    fi
+
+    section "Self-update"
+
+    local http_code
+    http_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$REMOTE_SCRIPT_URL" 2>/dev/null || echo 000)
+    case "$http_code" in
+        200) _ok "Update source reachable (branch: $GITHUB_BRANCH)" ;;
+        404) _dwarn "Branch '$GITHUB_BRANCH' gone from GitHub - self-update will switch to main on its next run" ;;
+        *)   _dwarn "GitHub unreachable (HTTP $http_code) - self-update and --test won't work right now" ;;
+    esac
+
+    section "Summary"
+    echo -e "  ${YELLOW}$warns warning(s)${RESET}, ${RED}$fails failure(s)${RESET}, ${CYAN}$fixed auto-fixed${RESET}" >&2
+    if [ "$fails" -gt 0 ]; then
+        log_error "Doctor found $fails blocking issue(s) - fix them with the commands above, then re-run --doctor"
+        return 1
+    fi
+    if [ "$fixed" -gt 0 ]; then
+        log_ok "Doctor applied $fixed fix(es) - re-run --doctor to confirm everything is green"
+    else
+        log_ok "Everything looks healthy"
+    fi
+    return 0
+}
+
 # Download the protocol test suite + the egg helper it exercises from GitHub
 # (tracks GITHUB_BRANCH like self-update), run it in a temp dir, clean up.
 # Tests the branch's logic, not the installed image - a smoke check for support.
@@ -1666,18 +1871,24 @@ main() {
                 run_protocol_test
                 exit 0
                 ;;
+            --doctor)
+                run_doctor
+                exit $?
+                ;;
             *)
                 log_error "Unknown argument: $1"
                 echo ""
                 echo "Usage: $0 [--simulate] [--validate]"
                 echo "       $0 --daemon"
                 echo "       $0 --test"
+                echo "       $0 --doctor"
                 echo ""
                 echo "Options:"
                 echo "  --simulate    Simulate update mode (skip SteamCMD, trigger restart logic)"
                 echo "  --validate    Force one-shot file validation (steamcmd validate), does not persist"
                 echo "  --daemon      Run as event listener - push game files on container start"
                 echo "  --test        Download + run the protocol test suite, then clean up"
+                echo "  --doctor      Health check + safe auto-fixes for the whole setup"
                 echo ""
                 exit 1
                 ;;

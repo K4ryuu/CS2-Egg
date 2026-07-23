@@ -121,6 +121,9 @@ nano /usr/local/bin/update-cs2-centralized.sh
 # Test push and restart logic (skip SteamCMD download)
 /usr/local/bin/update-cs2-centralized.sh --simulate
 
+# Health check + safe auto-fixes (run this FIRST when anything misbehaves)
+/usr/local/bin/update-cs2-centralized.sh --doctor
+
 # Run the boot-handshake protocol tests (downloads from GitHub, cleans up after)
 /usr/local/bin/update-cs2-centralized.sh --test
 
@@ -149,9 +152,17 @@ journalctl -u cs2-vpk-daemon --since "1 hour ago"
 
 ## Troubleshooting
 
+**Always start with the doctor** - it checks the whole setup (script/service/cron paths, daemon state, dependencies, per-server status files, disk space, locks), fixes what it safely can, and prints the exact command for everything else:
+
+```bash
+sudo /usr/local/bin/update-cs2-centralized.sh --doctor
+```
+
+Its output is also the ideal thing to paste into a GitHub issue.
+
 > The script automatically handles: SteamCMD installation, 32-bit library setup, permissions, Steam SDK libraries, and directory creation.
 
-> **Something broken?** Re-run the installer - it resets config to working defaults while offering your current values as starting points:
+> **Doctor says reinstall?** Re-run the installer - it resets config to working defaults while offering your current values as starting points:
 >
 > ```bash
 > curl -fsSL https://raw.githubusercontent.com/K4ryuu/CS2-Egg/main/misc/install-cs2-update.sh -o /tmp/install-cs2-update.sh && sudo bash /tmp/install-cs2-update.sh
@@ -175,11 +186,7 @@ df -h /var/lib/pelican/volumes
 
 ### Cron Job Not Running
 
-```bash
-systemctl status cron
-cat /etc/cron.d/cs2-update
-/usr/local/bin/update-cs2-centralized.sh  # test manually
-```
+`--doctor` detects a missing cron file or a cron entry pointing at a missing script. If it reports the cron file missing, re-run the installer; to test an update manually: `/usr/local/bin/update-cs2-centralized.sh`
 
 ## FAQ
 

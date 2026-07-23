@@ -27,10 +27,9 @@ Every fatal error in the KitsuneLab egg emits a stable code. Look it up here to 
 
 **Auto-recovery**: The egg removes the stale marker + broken VPK symlinks, then falls back to SteamCMD so the server still boots.
 
-**Diagnose (on host)**:
+**Diagnose (on host)** - the doctor checks all of this (daemon state, versions, kernel/python3, disk space, per-server status files) and applies safe fixes:
 ```bash
-sudo systemctl status cs2-vpk-daemon
-sudo journalctl -u cs2-vpk-daemon -n 100 --no-pager
+sudo /usr/local/bin/update-cs2-centralized.sh --doctor
 ```
 
 **Fix**:
@@ -53,11 +52,9 @@ sudo journalctl -u cs2-vpk-daemon -n 100 --no-pager
 
 **Meaning**: Daemon marker is fresh (daemon is alive), but `/tmp/cs2-shared` never got bind-mounted into the container. The VPK symlinks will point to an empty mount → CS2 will fail to load game files.
 
-**Diagnose (on host)**:
+**Diagnose (on host)** - the doctor checks all of this (daemon state, versions, kernel/python3, disk space, per-server status files) and applies safe fixes:
 ```bash
-uname -r                 # must be 5.2+ for open_tree/move_mount syscalls
-python3 --version        # daemon uses python3 to invoke the syscalls
-sudo journalctl -u cs2-vpk-daemon -n 100 --no-pager | grep nsenter
+sudo /usr/local/bin/update-cs2-centralized.sh --doctor
 ```
 
 **Fix**:
@@ -77,10 +74,9 @@ sudo journalctl -u cs2-vpk-daemon -n 100 --no-pager | grep nsenter
 
 **Auto-recovery**: The egg falls back to SteamCMD immediately, so the server still boots - with a full local download into the volume.
 
-**Diagnose (on host)**:
+**Diagnose (on host)** - the doctor checks all of this (daemon state, versions, kernel/python3, disk space, per-server status files) and applies safe fixes:
 ```bash
-sudo journalctl -u cs2-vpk-daemon -n 200 --no-pager
-df -h /srv/cs2-shared /var/lib/pterodactyl/volumes /var/lib/pelican/volumes
+sudo /usr/local/bin/update-cs2-centralized.sh --doctor
 ```
 
 **Fix**:
@@ -99,11 +95,9 @@ df -h /srv/cs2-shared /var/lib/pterodactyl/volumes /var/lib/pelican/volumes
 
 **Auto-recovery**: The egg falls back to SteamCMD instead of starting a server that would crash on missing game files.
 
-**Diagnose (on host)**:
+**Diagnose (on host)** - the doctor checks all of this (daemon state, versions, kernel/python3, disk space, per-server status files) and applies safe fixes:
 ```bash
-uname -r                 # must be 5.2+ for open_tree/move_mount syscalls
-python3 --version        # daemon uses python3 to invoke the syscalls
-sudo journalctl -u cs2-vpk-daemon -n 100 --no-pager | grep nsenter
+sudo /usr/local/bin/update-cs2-centralized.sh --doctor
 ```
 
 **Fix**:
