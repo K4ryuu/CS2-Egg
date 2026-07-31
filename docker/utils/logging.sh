@@ -42,42 +42,26 @@ get_log_file_path() {
     echo "${EGG_LOGS_DIR}/${date_str}.log"
 }
 
-# Map log levels to priorities for filtering (compatible with older bash)
+# Map message types to priorities for filtering
 _get_msg_priority() {
     local type="$1"
     case "$type" in
         "debug") echo 0 ;;
-        "info") echo 1 ;;
-        "running") echo 2 ;;
+        "info"|"success") echo 1 ;;
+        "warning"|"running") echo 2 ;;
         "error") echo 3 ;;
         *) echo 1 ;; # Default to info
     esac
 }
 
-# Cache for log level priority calculation (performance optimization)
-LOG_LEVEL_PRIORITY_CACHE=""
-LOG_LEVEL_CACHE_VALUE=""
-
 get_level_priority() {
-    local log_level="${CONSOLE_LOG_LEVEL:-INFO}"
-
-    # Return cached value if log level hasn't changed
-    if [[ "$log_level" == "$LOG_LEVEL_CACHE_VALUE" ]] && [[ -n "$LOG_LEVEL_PRIORITY_CACHE" ]]; then
-        echo "$LOG_LEVEL_PRIORITY_CACHE"
-        return
-    fi
-
-    # Calculate and cache new priority
-    LOG_LEVEL_CACHE_VALUE="$log_level"
-    case "$(echo "$log_level" | tr '[:lower:]' '[:upper:]')" in
-        "DEBUG") LOG_LEVEL_PRIORITY_CACHE=0 ;;
-        "INFO") LOG_LEVEL_PRIORITY_CACHE=1 ;;
-        "WARNING") LOG_LEVEL_PRIORITY_CACHE=2 ;;
-        "ERROR") LOG_LEVEL_PRIORITY_CACHE=3 ;;
-        *) LOG_LEVEL_PRIORITY_CACHE=1 ;; # Default to INFO
+    case "$(echo "${CONSOLE_LOG_LEVEL:-INFO}" | tr '[:lower:]' '[:upper:]')" in
+        "DEBUG") echo 0 ;;
+        "INFO") echo 1 ;;
+        "WARNING") echo 2 ;;
+        "ERROR") echo 3 ;;
+        *) echo 1 ;; # Default to INFO
     esac
-
-    echo "$LOG_LEVEL_PRIORITY_CACHE"
 }
 
 # Clean up old logs based on size/count/age limits
@@ -135,7 +119,7 @@ log_message() {
     fi
 
     # Enterprise-style table output:  PREFIX | LEVEL | message
-    # Level tag padded to 5 chars via printf %-5s — aligns columns across levels.
+    # Level tag padded to 5 chars via printf %-5s, aligns columns across levels.
     local level_tag level_color
     case "$type" in
         info)     level_tag="INFO";  level_color="$CYAN" ;;
@@ -195,9 +179,6 @@ handle_error() {
         127)
             log_message "Command not found: $last_command" "error"
             log_message "Exit code: 127" "error"
-            ;;
-        0)
-            return 0
             ;;
         *)
             log_message "Error on line $line_number: $last_command" "error"

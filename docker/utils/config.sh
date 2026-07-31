@@ -3,38 +3,14 @@
 source /utils/logging.sh
 
 # Current config version - bump this when changing fields
-CONFIG_VERSION="1.1.0"
+CONFIG_VERSION="1.2.1"
 
 # Use organized egg directory structure
 CONFIG_DIR="${EGG_CONFIGS_DIR:-/home/container/egg/configs}"
 
-# Check if any config needs migration
-check_config_versions() {
-    local needs_migration=false
-    local old_version=""
-
-    # Check all config files
-    for config_file in "$CONFIG_DIR/console-filter.json" "$CONFIG_DIR/cleanup.json" "$CONFIG_DIR/logging.json"; do
-        if [ -f "$config_file" ]; then
-            local current_version=$(jq -r '.version // "0.0.0"' "$config_file" 2>/dev/null)
-            if [ "$current_version" != "$CONFIG_VERSION" ]; then
-                needs_migration=true
-                old_version="$current_version"
-                break
-            fi
-        fi
-    done
-
-    # Log once if migration is needed
-    if [ "$needs_migration" = true ]; then
-        log_message "Migrating configs from v$old_version to v$CONFIG_VERSION" "info"
-    fi
-}
-
 # Migrate old config to new version (no logging, just migration)
 migrate_config() {
     local config_file="$1"
-    local config_name="$2"
 
     if [ ! -f "$config_file" ]; then
         return 0
@@ -77,6 +53,14 @@ apply_smart_merge() {
                     .key as $k |
                     if ($new[$k] | type) == "object" then
                         {key: $k, value: ($new[$k] | smart_merge($old[$k] // {}))}
+                    elif ($new[$k] | type) == "array" and ($old[$k] | type) == "array"
+                         and ($new[$k] | length) > 0
+                         and ($new[$k] | all(type == "object" and has("name"))) then
+                        # named-object arrays (cleanup rules): user entries win by name,
+                        # template entries the user does not have yet get appended,
+                        # so new default rules reach existing installs on migration
+                        ($old[$k] | map(.name)) as $have |
+                        {key: $k, value: ($old[$k] + ($new[$k] | map(select(.name as $n | ($have | index($n)) == null))))}
                     else
                         {key: $k, value: ($old[$k] // $new[$k])}
                     end
@@ -87,7 +71,13 @@ apply_smart_merge() {
         smart_merge($old) | .version = "'"$CONFIG_VERSION"'"
     ' "$config_file" > "$temp_file"
 
-    mv "$temp_file" "$config_file"
+    # keep the freshly generated config if jq failed, never install an empty file
+    if [ $? -eq 0 ] && [ -s "$temp_file" ]; then
+        mv "$temp_file" "$config_file"
+    else
+        log_message "Config merge failed for $(basename "$config_file") - keeping new defaults" "warning"
+        rm -f "$temp_file"
+    fi
 }
 
 init_configs() {
@@ -95,9 +85,6 @@ init_configs() {
     init_egg_directories
 
     mkdir -p "$CONFIG_DIR"
-
-    # Check if migration is needed (logs once if yes)
-    check_config_versions
 
     create_console_filter_config
     create_cleanup_config
@@ -110,7 +97,7 @@ create_console_filter_config() {
 
   # Migrate if needed
     if [ -f "$config_file" ]; then
-        old_values=$(migrate_config "$config_file" "console-filter")
+        old_values=$(migrate_config "$config_file")
     fi
 
     if [ ! -f "$config_file" ]; then
@@ -158,7 +145,7 @@ create_cleanup_config() {
 
   # Migrate if needed
     if [ -f "$config_file" ]; then
-        old_values=$(migrate_config "$config_file" "cleanup")
+        old_values=$(migrate_config "$config_file")
     fi
 
     if [ ! -f "$config_file" ]; then
@@ -166,7 +153,7 @@ create_cleanup_config() {
 {
   "version": "$CONFIG_VERSION",
   "_description": [
-    "Cleanup Configuration — rule-based",
+    "Cleanup Configuration: rule-based",
     "",
     "Every entry in 'rules' is an independent cleanup target. You can edit,",
     "disable, add, or remove rules without touching any code.",
@@ -178,6 +165,8 @@ create_cleanup_config() {
     "  - patterns: Array of filename globs (e.g. '*.dem', 'core.[0-9]*')",
     "  - hours: File must be older than this many hours (0 = delete on every run)",
     "  - recursive: true = walk subdirectories, false = only the directory root",
+    "  - delete_parent_dir: true = delete the matched file's whole parent folder",
+    "    (for per-crash bundle dirs; the rule's root directory is never deleted)",
     "  - enabled: false disables the rule without deleting it",
     "",
     "Enable cleanup by setting CLEANUP_ENABLED=1 in the Pterodactyl egg.",
@@ -222,6 +211,25 @@ create_cleanup_config() {
       "enabled": true
     },
     {
+      "name": "swiftly_crash_reports",
+      "description": "SwiftlyS2 crash reports: loose .dmp files and per-UUID bundle dirs",
+      "directories": ["./game/csgo/addons/swiftlys2/dumps/crashreport"],
+      "patterns": ["*.dmp"],
+      "hours": 168,
+      "recursive": true,
+      "delete_parent_dir": true,
+      "enabled": true
+    },
+    {
+      "name": "swiftly_prevention_logs",
+      "description": "SwiftlyS2 crash prevention incident logs",
+      "directories": ["./game/csgo/addons/swiftlys2/dumps/prevention"],
+      "patterns": ["*.log"],
+      "hours": 168,
+      "recursive": false,
+      "enabled": true
+    },
+    {
       "name": "accelerator_dumps",
       "description": "AcceleratorCS2 crash dumps and reports",
       "directories": ["./game/csgo/addons/AcceleratorCS2/dumps"],
@@ -254,7 +262,7 @@ create_logging_config() {
 
   # Migrate if needed
     if [ -f "$config_file" ]; then
-        old_values=$(migrate_config "$config_file" "logging")
+        old_values=$(migrate_config "$config_file")
     fi
 
     if [ ! -f "$config_file" ]; then

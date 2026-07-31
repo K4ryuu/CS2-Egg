@@ -15,6 +15,34 @@ VPK Sync allows multiple CS2 servers to share game files from a single centraliz
 
 > **No Pterodactyl/Pelican Panel modifications required.** The script works directly with Docker and Wings - no PR patches, no mount setup, no egg variable configuration.
 
+## Boot Handshake (status file)
+
+On every container boot the egg and the daemon talk through a single one-way file: `egg/.daemon-status` inside the server volume. The daemon writes it, the egg only reads it - nothing is ever deleted, so no boot-ordering race is possible.
+
+```
+state=queued|updating|verifying|pushing|done|failed
+ts=<unix epoch of last write>
+queue_pos=<n>            # only while queued
+```
+
+| State       | Meaning                                        | Egg behavior                              |
+| ----------- | ---------------------------------------------- | ----------------------------------------- |
+| `queued`    | Waiting for a free push worker                 | Waits, shows queue position               |
+| `updating`  | Central CS2 update is rewriting `CS2_DIR`      | Waits, shows "central update in progress" |
+| `verifying` | Worker is checking the volume's files          | Waits                                     |
+| `pushing`   | Worker (or cron) is copying/linking game files | Waits                                     |
+| `done`      | Files verified/pushed for this boot            | Skips SteamCMD, starts the server         |
+| `failed`    | Push failed                                    | Falls back to SteamCMD immediately        |
+
+Two rules make this race-proof:
+
+- **Freshness**: the daemon refreshes `ts` every 3 seconds on all waiting states. If `ts` goes stale (>20s, `DAEMON_STATUS_STALE_SECS`), the daemon is dead and the egg falls back to SteamCMD - same recovery behavior as before, just detected faster.
+- **Boot acknowledgement**: `done`/`failed` only count if `ts` is newer than the container's boot. A restart during a CS2 update therefore never starts on files that are mid-replacement - the egg waits for the daemon to re-verify this specific boot (typically 1-3s).
+
+While `steamcmd` rewrites the central `CS2_DIR`, the update run holds a global lock. Workers handling a server start during that window report `updating` and verify only after the update finishes, so a restart mid-update simply waits instead of receiving half-written files or falling back to a full download.
+
+Old eggs (images without the status protocol) keep working: the daemon still maintains the legacy `.daemon-managed` marker and `.daemon-push-active` heartbeat until **2026-10-01**, when the legacy path is removed together with the deprecated `SYNC_LOCATION` sync.
+
 ## Startup Performance
 
 With the centralized script and VPK sync, new server startup is near-instant:
@@ -93,6 +121,15 @@ nano /usr/local/bin/update-cs2-centralized.sh
 # Test push and restart logic (skip SteamCMD download)
 /usr/local/bin/update-cs2-centralized.sh --simulate
 
+# Health check + safe auto-fixes (run this FIRST when anything misbehaves)
+/usr/local/bin/update-cs2-centralized.sh --doctor
+
+# Self-update the script right now (daemon restarts automatically)
+/usr/local/bin/update-cs2-centralized.sh --update
+
+# Run the boot-handshake protocol tests (downloads from GitHub, cleans up after)
+/usr/local/bin/update-cs2-centralized.sh --test
+
 # Daemon status
 systemctl status cs2-vpk-daemon
 
@@ -118,9 +155,17 @@ journalctl -u cs2-vpk-daemon --since "1 hour ago"
 
 ## Troubleshooting
 
+**Always start with the doctor** - it checks the whole setup (script/service/cron paths, daemon state, dependencies, per-server status files, disk space, locks), fixes what it safely can, and prints the exact command for everything else:
+
+```bash
+sudo /usr/local/bin/update-cs2-centralized.sh --doctor
+```
+
+Its output is also the ideal thing to paste into a GitHub issue.
+
 > The script automatically handles: SteamCMD installation, 32-bit library setup, permissions, Steam SDK libraries, and directory creation.
 
-> **Something broken?** Re-run the installer - it resets config to working defaults while offering your current values as starting points:
+> **Doctor says reinstall?** Re-run the installer - it resets config to working defaults while offering your current values as starting points:
 >
 > ```bash
 > curl -fsSL https://raw.githubusercontent.com/K4ryuu/CS2-Egg/main/misc/install-cs2-update.sh -o /tmp/install-cs2-update.sh && sudo bash /tmp/install-cs2-update.sh
@@ -144,11 +189,7 @@ df -h /var/lib/pelican/volumes
 
 ### Cron Job Not Running
 
-```bash
-systemctl status cron
-cat /etc/cron.d/cs2-update
-/usr/local/bin/update-cs2-centralized.sh  # test manually
-```
+Scheduling lives in **`/etc/cron.d/cs2-update`** (runs every minute, rate-limited by `UPDATE_CHECK_INTERVAL`) - never add the script to root's crontab. `--doctor` recreates a missing cron file, rewrites a dead path in it, and removes duplicate crontab entries automatically. To test an update manually: `sudo /usr/local/bin/update-cs2-centralized.sh`
 
 ## FAQ
 
@@ -166,6 +207,20 @@ The cron job handles CS2 updates and pushes to all existing servers. The daemon 
 
 **Q: Can I use VPK sync without the daemon?**
 Yes. Without the daemon, new servers receive files on the next cron cycle (~2 minutes). For most setups this is fine since CS2 startup takes longer than that anyway.
+
+**Q: How many servers does the daemon handle in parallel?**
+File pushes run on a worker pool, 8 parallel workers by default. Symlink mounts are instant and unlimited. The installer asks for the pool size (`MAX_WORKERS`), or edit it later in `/usr/local/bin/update-cs2-centralized.sh` and restart the daemon.
+
+**Q: How do I test a prerelease (dev) version?**
+Run the installer with the branch override, and use the matching image tag on the server:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/K4ryuu/CS2-Egg/dev/misc/install-cs2-update.sh -o /tmp/install-cs2-update.sh && sudo CS2_EGG_BRANCH=dev bash /tmp/install-cs2-update.sh
+```
+
+Set the server's Docker image to `docker.io/sples1/k4ryuu-cs2:dev` in the panel (the dev image is only published to Docker Hub). The installed script's self-update tracks the same branch, so it won't overwrite itself with the stable version. To go back, rerun the installer without `CS2_EGG_BRANCH` and switch the image back to `:latest`.
+
+If the testing branch is later deleted (merged into main), the script notices the 404 and switches its self-update back to `main` automatically - just remember to switch the Docker image back to `:latest` yourself.
 
 ## Support
 

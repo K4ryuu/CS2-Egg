@@ -1,41 +1,6 @@
 #!/bin/bash
 source /utils/logging.sh
 
-# Cache platform detection for stat command (performance optimization)
-STAT_PLATFORM=$(uname -s)
-if [[ "$STAT_PLATFORM" == "Darwin" ]]; then
-    STAT_CMD="stat -f %z"
-else
-    STAT_CMD="stat -c %s"
-fi
-
-# Quick check to make sure we have enough disk space
-check_filesystem() {
-    local dir="$1"
-    local required_space=1048576  # 1GB in KB
-
-    # Get filesystem info safely
-    local fs_info
-    if ! fs_info=$(df -k "$dir" 2>/dev/null | tail -n 1); then
-        log_message "Failed to get filesystem information for $dir" "error"
-        return 1
-    fi
-
-    # Parse available space safely
-    local available
-    available=$(echo "$fs_info" | awk '{print $4}')
-    if [[ ! "$available" =~ ^[0-9]+$ ]]; then
-        log_message "Invalid filesystem information received" "error"
-        return 1
-    fi
-
-    if [ "$available" -lt "$required_space" ]; then
-        log_message "Low disk space warning: Less than 1GB available" "warning"
-    fi
-
-    return 0
-}
-
 # Make file sizes readable for humans
 format_size() {
     local size="$1"
@@ -85,7 +50,7 @@ cleanup() {
         fi
 
         local size
-        size=$($STAT_CMD "$file" 2>/dev/null)
+        size=$(stat -c %s "$file" 2>/dev/null)
         if [ $? -ne 0 ] || [[ ! "$size" =~ ^[0-9]+$ ]]; then
             size=0
         fi
@@ -96,6 +61,41 @@ cleanup() {
             ((deleted_count++))
         else
             log_message "Failed to delete: $file" "error"
+        fi
+    }
+
+    # Delete a matched file's whole parent directory (crash-report bundles etc.).
+    # $3 is the rule's root dir, which must never be deleted itself.
+    log_dir_deletion() {
+        local file="$1"
+        local category="$2"
+        local rule_root="$3"
+        # normalize trailing slashes: dirname never emits one, and a mismatch here
+        # would defeat the root-protection compare below
+        while [[ "$rule_root" == */ && "$rule_root" != "/" ]]; do rule_root="${rule_root%/}"; done
+        local parent
+        parent=$(dirname "$file")
+
+        # Fall back to single-file delete when the parent is the rule root, or when
+        # the parent has subdirectories (only leaf bundle dirs may be removed whole,
+        # a stray file must never take out a folder that holds other bundles).
+        if [ "$parent" = "$rule_root" ] || [ ! -d "$parent" ] || \
+           [ -n "$(find "$parent" -mindepth 1 -maxdepth 1 -type d -print -quit 2>/dev/null)" ]; then
+            log_deletion "$file" "$category"
+            return
+        fi
+
+        local dsize fcount
+        dsize=$(du -sb "$parent" 2>/dev/null | cut -f1)
+        [[ "$dsize" =~ ^[0-9]+$ ]] || dsize=0
+        fcount=$(find "$parent" -type f 2>/dev/null | wc -l)
+
+        if rm -rf "$parent" 2>/dev/null; then
+            total_size=$((total_size + dsize))
+            stats[$category]=$((${stats[$category]:-0} + fcount))
+            deleted_count=$((deleted_count + fcount))
+        else
+            log_message "Failed to delete: $parent" "error"
         fi
     }
 
@@ -111,6 +111,8 @@ cleanup() {
 
         hours=$(jq -r ".rules[$i].hours // 0" "$config_file")
         recursive=$(jq -r ".rules[$i].recursive // true" "$config_file")
+        local delete_parent_dir
+        delete_parent_dir=$(jq -r ".rules[$i].delete_parent_dir // false" "$config_file")
 
         local -a dirs=() patterns=()
         mapfile -t dirs < <(jq -r ".rules[$i].directories[]?" "$config_file")
@@ -150,7 +152,11 @@ cleanup() {
             find_cmd+=(-print0)
 
             while IFS= read -r -d '' file; do
-                log_deletion "$file" "$name"
+                if [ "$delete_parent_dir" = "true" ]; then
+                    log_dir_deletion "$file" "$name" "$dir"
+                else
+                    log_deletion "$file" "$name"
+                fi
             done < <("${find_cmd[@]}" 2>/dev/null)
         done
     done

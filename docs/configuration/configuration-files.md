@@ -65,7 +65,7 @@ Files are automatically created on first startup with default values and detaile
 
 ### `cleanup.json`
 
-**Purpose:** Automatic cleanup of old files — rule-based, user-extensible.
+**Purpose:** Automatic cleanup of old files: rule-based, user-extensible.
 
 **Enable:** Set `CLEANUP_ENABLED=1` in Pterodactyl egg.
 

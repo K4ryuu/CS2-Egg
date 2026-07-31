@@ -1,6 +1,12 @@
 #!/bin/bash
 
-# wipe stale marker first thing — must happen before daemon's start event lands
+# boot timestamp: the egg only accepts a daemon done/failed ack written after this
+# moment (host and container share the kernel clock, so epochs are comparable)
+export EGG_BOOT_EPOCH=$(date +%s)
+
+# ! TODO: Remove after 2026-10-01 (legacy marker protocol, host scripts < 1.0.49)
+# legacy protocol: wipe the stale marker before the daemon's start event lands;
+# new hosts signal via egg/.daemon-status instead
 rm -f /home/container/egg/.daemon-managed 2>/dev/null || true
 
 source /utils/logging.sh
@@ -21,11 +27,9 @@ cd /home/container
 init_configs
 load_configs
 
-# Get internal Docker IP
-INTERNAL_IP=$(ip route get 1 | awk '{print $NF;exit}')
-
 detect_daemon_vpk
 cleanup_daemon_mode
+cleanup_broken_vpk_symlinks
 
 # Legacy VPK sync (SYNC_LOCATION mode) - runs before daemon detection result check
 if [ ${SRCDS_STOP_UPDATE:-0} -eq 0 ]; then
@@ -42,7 +46,7 @@ rotate_logs
 
 # Server update process
 if [ -n "${SRCDS_APPID}" ] && [ "${SRCDS_STOP_UPDATE:-0}" -eq 0 ]; then
-    # Build SteamCMD command from optional parts — login, beta, validate.
+    # Build SteamCMD command from optional parts: login, beta, validate.
     STEAMCMD="./steamcmd/steamcmd.sh"
 
     if [ -n "${SRCDS_LOGIN}" ]; then
@@ -60,10 +64,10 @@ if [ -n "${SRCDS_APPID}" ] && [ "${SRCDS_STOP_UPDATE:-0}" -eq 0 ]; then
         fi
     fi
 
-    if [ "${SRCDS_VALIDATE}" -eq 1 ]; then
+    if [ "${SRCDS_VALIDATE:-0}" -eq 1 ]; then
         STEAMCMD+=" validate"
         log_message "!!! VALIDATION ENABLED: THIS MAY WIPE CUSTOM CONFIGURATIONS!" "warning"
-        log_message "  → Starting in 5 seconds — stop the server NOW to abort." "warning"
+        log_message "  → Starting in 5 seconds, stop the server NOW to abort." "warning"
         sleep 5
     fi
 
@@ -82,9 +86,11 @@ if [ -n "${SRCDS_APPID}" ] && [ "${SRCDS_STOP_UPDATE:-0}" -eq 0 ]; then
         log_error_code "KL-STM-02" "SteamCMD failed with exit code $STEAM_EXIT_CODE"
     fi
 
-    # Update steamclient.so files
-    cp -f ./steamcmd/linux32/steamclient.so ./.steam/sdk32/steamclient.so
-    cp -f ./steamcmd/linux64/steamclient.so ./.steam/sdk64/steamclient.so
+    # Update steamclient.so files (may not exist yet if first-ever SteamCMD run failed)
+    if [ -f ./steamcmd/linux32/steamclient.so ]; then
+        cp -f ./steamcmd/linux32/steamclient.so ./.steam/sdk32/steamclient.so
+        cp -f ./steamcmd/linux64/steamclient.so ./.steam/sdk64/steamclient.so
+    fi
 fi
 
 # Handle the addon installations based on the selection
@@ -122,7 +128,7 @@ eval "$START_CMD" | while IFS= read -r line; do
         continue
     fi
 
-    # GSLT token rejection — CS2 spams these lines, append our hint after each so it
+    # GSLT token rejection: CS2 spams these lines, append our hint after each so it
     # pairs up visually in the log regardless of where the user scrolls.
     if [[ "$line" == *"Cert request for invalid failed"* ]] || \
        [[ "$line" == *"We're not logged into Steam"* ]]; then

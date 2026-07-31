@@ -20,7 +20,25 @@ get_github_release() {
         log_message "Checking latest stable release for $repo" "debug" >&2
     fi
 
-    curl -s "$url" 2>/dev/null | jq --arg p "$asset_pattern" '
+    local body http_code
+    body=$(curl -s --connect-timeout 10 -m 60 -w $'\n%{http_code}' "$url" 2>/dev/null) || return 1
+    http_code=${body##*$'\n'}
+    body=${body%$'\n'*}
+
+    # all servers on a node share one IP, so the unauthenticated API quota burns
+    # fast - fail fast and loud instead of feeding the error body to jq: the
+    # installed version keeps running, next boot retries
+    if [ "$http_code" = "403" ] || [ "$http_code" = "429" ]; then
+        log_message "GitHub API rate limited (HTTP $http_code) - skipping update check for $repo this boot" "warning" >&2
+        return 1
+    fi
+
+    if [ "$http_code" != "200" ]; then
+        log_message "GitHub API returned HTTP $http_code for $repo - skipping update check" "warning" >&2
+        return 1
+    fi
+
+    echo "$body" | jq --arg p "$asset_pattern" '
         (if type == "array" then .[0] else . end) //empty |
         {
             version: .tag_name,
@@ -133,34 +151,6 @@ handle_download_and_extract() {
     esac
 
     return 0
-}
-
-# Centralized version checking using semver
-check_version() {
-    local addon="$1"
-    local current="${2:-none}"
-    local new="$3"
-
-    if [ "$current" = "none" ] || [ -z "$current" ]; then
-        log_message "Update available for $addon: $new (current: none)" "info"
-        return 0 # New install
-    fi
-
-    semver_compare "$new" "$current"
-    case $? in
-        0) # Equal
-            log_message "$addon is up-to-date ($current)" "debug"
-            return 1
-            ;;
-        1) # new > current
-            log_message "Update available for $addon: $new (current: $current)" "info"
-            return 0
-            ;;
-        2) # new < current
-            log_message "$addon is at a newer version ($current) than latest ($new). Skipping downgrade." "info"
-            return 1
-            ;;
-    esac
 }
 
 # Add addon path to gameinfo.gi if not already present

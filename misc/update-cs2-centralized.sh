@@ -4,6 +4,7 @@
 #
 # Usage: ./update-cs2-centralized.sh [--simulate] [--validate]
 #        ./update-cs2-centralized.sh --daemon
+#        ./update-cs2-centralized.sh --test
 #
 #   --simulate    Skip SteamCMD update, simulate update and trigger restart logic
 #   --validate    Force one-shot file validation (steamcmd validate) for this run
@@ -11,8 +12,16 @@
 #   --daemon      Run as event listener daemon - pushes game files instantly when
 #                 a CS2 container starts (new server or restart). Install as a
 #                 systemd service for automatic startup.
+#   --test        Download the boot-handshake protocol test suite from GitHub
+#                 (same branch as self-update), run it, clean up. No docker or
+#                 config needed - quick sanity check for support/diagnostics.
+#   --doctor      Health check of the whole setup: script/service/cron paths,
+#                 daemon state, dependencies, per-server status files, locks.
+#                 Applies safe fixes automatically, prints commands for the rest.
+#   --update      Self-update the script right now from GITHUB_BRANCH (daemon
+#                 restarts automatically). Skips the CS2/steamcmd update.
 #
-# Version: 1.0.46
+# Version: 1.0.56
 
 set -euo pipefail
 
@@ -70,6 +79,17 @@ UPDATE_CHECK_INTERVAL="*"
 # "off"      = disable push, servers won't receive game files automatically
 VPK_PUSH_METHOD="symlink"
 
+# Optional: Max parallel file pushes in daemon mode (worker pool size)
+# Symlink mounts are instant and not limited by this. Raise if you mass-create
+# many servers at once and the host has disk/CPU headroom.
+MAX_WORKERS="8"
+
+# Optional: Path to the Wings config.yml (used for the auto-restart API call)
+# Leave empty to auto-detect: /etc/pterodactyl/config.yml (Pterodactyl), then
+# /etc/pelican/config.yml (Pelican). Set it only if Wings runs with a custom
+# --config path.
+WINGS_CONFIG=""
+
 # ! ============================================================================
 # ! DO NOT EDIT BELOW THIS LINE UNLESS YOU KNOW WHAT YOU'RE DOING
 # ! ============================================================================
@@ -79,6 +99,8 @@ SIMULATE_MODE=false
 
 # Store original arguments for self-update restart
 ORIGINAL_ARGS=("$@")
+
+_DAEMON_WORKER_FD=   # fd for worker pool token bucket; set by run_event_daemon
 
 # ============================================================================
 # INTERNAL CONSTANTS
@@ -95,6 +117,15 @@ UPDATE_CHECK_TIMESTAMP_FILE="/var/cache/cs2-update-script-check"
 UPDATE_BACKUP_DIR="$(dirname "$0")/.script-backups"
 UPDATE_KEEP_BACKUPS=3
 
+# Boot handshake status protocol (egg/.daemon-status in each volume, see
+# docs/features/vpk-sync.md). Held exclusive by update_cs2 while steamcmd
+# rewrites CS2_DIR; held shared by push workers during verify/push.
+CENTRAL_UPDATE_LOCK="/var/lock/cs2-central-update.lock"
+# Worker registry (tmpfs): one file per in-flight worker, consumed by the
+# status refresher loop to keep waiting eggs' status files fresh.
+DAEMON_REGISTRY_DIR="/run/cs2-vpk-daemon"
+_REFRESHER_PID=
+
 # ============================================================================
 # STYLING / COLORS
 # ============================================================================
@@ -102,20 +133,14 @@ UPDATE_KEEP_BACKUPS=3
 if [[ -t 1 ]] && [[ -z "${NO_COLOR:-}" ]]; then
     BOLD="\033[1m"; DIM="\033[2m"
     RED="\033[31m"; GREEN="\033[32m"; YELLOW="\033[33m"
-    BLUE="\033[34m"; MAGENTA="\033[35m"; CYAN="\033[36m"; GRAY="\033[90m"
+    BLUE="\033[34m"; MAGENTA="\033[35m"; CYAN="\033[36m"
     RESET="\033[0m"
 else
-    BOLD=""; DIM=""; RED=""; GREEN=""; YELLOW=""; BLUE=""; MAGENTA=""; CYAN=""; GRAY=""; RESET=""
+    BOLD=""; DIM=""; RED=""; GREEN=""; YELLOW=""; BLUE=""; MAGENTA=""; CYAN=""; RESET=""
 fi
 
 format_bytes() {
-    local size="$1"
-    if [[ ! "$size" =~ ^[0-9]+$ ]]; then echo "0 B"; return 1; fi
-    if   [ "$size" -ge 1099511627776 ]; then awk -v s="$size" 'BEGIN { printf "%.2f TB", s/1099511627776 }'
-    elif [ "$size" -ge 1073741824 ];    then awk -v s="$size" 'BEGIN { printf "%.2f GB", s/1073741824 }'
-    elif [ "$size" -ge 1048576 ];       then awk -v s="$size" 'BEGIN { printf "%.2f MB", s/1048576 }'
-    elif [ "$size" -ge 1024 ];          then awk -v s="$size" 'BEGIN { printf "%.2f KB", s/1024 }'
-    else echo "${size} B"; fi
+    numfmt --to=iec --suffix=B "${1:-0}" 2>/dev/null || echo "${1:-0} B"
 }
 
 log_info()    { echo -e "ℹ ${BOLD}${CYAN}INFO${RESET}  $*" >&2; }
@@ -141,27 +166,33 @@ validate_config() {
     if [[ ! "$CS2_DIR" =~ ^/[a-zA-Z0-9/_-]+$ ]]; then
         log_error "Invalid CS2_DIR path: $CS2_DIR"
         log_error "Path must be absolute and contain only alphanumeric, /, -, _ characters"
-        ((errors++))
+        errors=$((errors + 1))
     fi
 
     # Validate SteamCMD directory path
     if [[ ! "$STEAMCMD_DIR" =~ ^/[a-zA-Z0-9/_-]+$ ]]; then
         log_error "Invalid STEAMCMD_DIR path: $STEAMCMD_DIR"
         log_error "Path must be absolute and contain only alphanumeric, /, -, _ characters"
-        ((errors++))
+        errors=$((errors + 1))
     fi
 
     # Validate APP_ID is numeric
     if [[ ! "$APP_ID" =~ ^[0-9]+$ ]]; then
         log_error "Invalid APP_ID: $APP_ID (must be numeric)"
-        ((errors++))
+        errors=$((errors + 1))
+    fi
+
+    # Validate MAX_WORKERS is a positive integer (0 would deadlock the worker pool)
+    if [[ ! "$MAX_WORKERS" =~ ^[1-9][0-9]*$ ]]; then
+        log_error "Invalid MAX_WORKERS: $MAX_WORKERS (must be a positive number)"
+        errors=$((errors + 1))
     fi
 
     # Validate Docker configuration if auto-restart or VPK push is enabled
     if [ "$AUTO_RESTART_SERVERS" = "true" ] || [ "$VPK_PUSH_METHOD" != "off" ]; then
         if [ -z "$SERVER_IMAGE" ]; then
             log_error "SERVER_IMAGE is required when AUTO_RESTART_SERVERS=true or VPK_PUSH_METHOD is enabled"
-            ((errors++))
+            errors=$((errors + 1))
         fi
     fi
 
@@ -170,7 +201,7 @@ validate_config() {
         symlink|hardlink|copy|off) ;;
         *)
             log_error "Invalid VPK_PUSH_METHOD: $VPK_PUSH_METHOD (must be: symlink, hardlink, copy, off)"
-            ((errors++))
+            errors=$((errors + 1))
             ;;
     esac
 
@@ -210,107 +241,19 @@ release_lock() {
 # LIVE OUTPUT UTILITIES
 # ============================================================================
 
-run_with_live_tail() {
-    local label="$1"; shift
-    local cmd=("$@")
-    local display_lines=3
-    local start_ts=$(date +%s)
-    local log_file="/tmp/cs2-update.$$.$RANDOM.log"
-
-    echo -e "${BOLD}${MAGENTA}${label}${RESET}" >&2
-
-    # Run command in background
-    "${cmd[@]}" >"$log_file" 2>&1 &
-    local pid=$!
-
-    local last_line_count=0
-    local displayed_lines=0
-
-    # Monitor output in real-time
-    while kill -0 $pid 2>/dev/null; do
-        local current_line_count=$(wc -l < "$log_file" 2>/dev/null || echo 0)
-
-        if [ $current_line_count -gt $last_line_count ]; then
-            # Move cursor up if we have lines displayed
-            if [ $displayed_lines -gt 0 ]; then
-                tput cuu $displayed_lines 2>/dev/null || true
-            fi
-
-            # Get and display last N lines
-            local lines=$(tail -n $display_lines "$log_file" 2>/dev/null)
-            displayed_lines=0
-
-            while IFS= read -r line; do
-                tput el 2>/dev/null || true
-                # Truncate long lines to 100 chars
-                echo -e "${DIM}${line:0:100}${RESET}" >&2
-                ((displayed_lines++))
-            done <<< "$lines"
-
-            # Pad with empty lines if we have fewer than display_lines
-            while [ $displayed_lines -lt $display_lines ]; do
-                tput el 2>/dev/null || true
-                echo "" >&2
-                ((displayed_lines++))
-            done
-
-            last_line_count=$current_line_count
-        fi
-
-        sleep 0.2
-    done
-
-    wait $pid
-    local ec=$?
-    local end_ts=$(date +%s)
-    local dur=$((end_ts-start_ts))
-
-    # Clear the displayed lines
-    if [ $displayed_lines -gt 0 ]; then
-        tput cuu $displayed_lines 2>/dev/null || true
-        for i in $(seq 1 $displayed_lines); do
-            tput el 2>/dev/null || true
-            echo "" >&2
-        done
-        tput cuu $displayed_lines 2>/dev/null || true
-    fi
-
-    if [ $ec -eq 0 ]; then
-        log_ok "${label} finished in ${dur}s"
+# Friendly context for known SteamCMD failure codes found in a log file
+_steamcmd_error_hint() {
+    local error_code
+    error_code=$(grep -oP "state is \K0x[0-9a-fA-F]+" "$1" 2>/dev/null | head -n1)
+    [ -z "$error_code" ] && return 0
+    echo "" >&2
+    if [ "$error_code" = "0x202" ]; then
+        log_error "SteamCMD Error 0x202 - Disk space or filesystem issue"
+        log_info "CS2 requires ~60GB for initial installation"
+        log_info "Free up disk space and retry. Check: ${BOLD}df -h $(dirname "$CS2_DIR")${RESET}"
     else
-        log_error "${label} failed after ${dur}s (exit $ec)"
-        echo "${BOLD}Last 10 lines:${RESET}" >&2
-        tail -n 10 "$log_file" >&2 || true
-
-        # Check for specific SteamCMD errors and provide helpful context
-        if grep -q "state is 0x" "$log_file" 2>/dev/null; then
-            local error_code=$(grep -oP "state is \K0x[0-9a-fA-F]+" "$log_file" 2>/dev/null | head -n1)
-            echo "" >&2
-
-            case "$error_code" in
-                0x202)
-                    log_error "SteamCMD Error 0x202 - Disk space or filesystem issue"
-                    log_info "• CS2 requires ~60GB for initial installation"
-                    log_info "• After VPK sync, servers only use ~3-8GB each"
-                    log_info "• VPK files (~52GB) shared from centralized location"
-                    echo "" >&2
-                    log_info "Solution: Free up disk space and try again"
-                    log_info "Check space: ${BOLD}df -h $(dirname "$CS2_DIR")${RESET}"
-                    ;;
-                *)
-                    log_error "SteamCMD Error $error_code detected"
-                    log_info "• Check SteamCMD documentation for details"
-                    log_info "• Review full output above for more context"
-                    ;;
-            esac
-        fi
-
-        rm -f "$log_file"
-        return $ec
+        log_error "SteamCMD Error $error_code detected - review output above"
     fi
-
-    rm -f "$log_file"
-    return 0
 }
 
 run_with_spinner() {
@@ -344,6 +287,7 @@ run_with_spinner() {
         log_error "${label} failed after ${dur}s (exit $ec)"
         echo "${BOLD}Last 20 lines:${RESET}" >&2
         tail -n 20 "$log_file" >&2 || true
+        _steamcmd_error_hint "$log_file"
         rm -f "$log_file"
         return $ec
     fi
@@ -468,13 +412,24 @@ update_cs2() {
     local version_before=$(get_local_version)
     mkdir -p "$CS2_DIR"
 
+    # Block push workers while steamcmd rewrites CS2_DIR: workers hold this lock
+    # shared during verify/push, so neither side ever sees a half-written tree.
+    # A restarting server meanwhile shows "central update in progress" and waits.
+    touch "$CENTRAL_UPDATE_LOCK" 2>/dev/null || true
+    exec 201>"$CENTRAL_UPDATE_LOCK"
+    if ! flock -x -w 3600 201; then
+        log_error "Central update lock busy for 1h - a push worker may be stuck; skipping update this run"
+        exec 201>&-
+        return 1
+    fi
+
     # Build validate flag based on configuration
     local validate_flag=""
     if [ "$VALIDATE_INSTALL" = "true" ]; then
         validate_flag="validate"
     fi
 
-    if ! run_with_live_tail "Checking for updates and downloading" \
+    if ! run_with_spinner "Checking for updates and downloading" \
         "$STEAMCMD_DIR/steamcmd.sh" +force_install_dir "$CS2_DIR" +login anonymous +app_update "$APP_ID" $validate_flag +quit; then
         log_error "CS2 update failed"
         exit 1
@@ -497,9 +452,13 @@ update_cs2() {
     cp -f "$STEAMCMD_DIR/linux32/steamclient.so" "$CS2_DIR/.steam/sdk32/" 2>/dev/null || true
     cp -f "$STEAMCMD_DIR/linux64/steamclient.so" "$CS2_DIR/.steam/sdk64/" 2>/dev/null || true
 
-    # Set permissions
-    chown -R pterodactyl:pterodactyl "$CS2_DIR" 2>/dev/null || true
-    chmod -R 755 "$CS2_DIR"
+    # Permissions: dirs 755, files keep their exec bit (cs2.sh, binaries).
+    # No chown: the central dir is written by root and only READ by containers -
+    # world-readability is what matters, ownership is irrelevant for any panel.
+    chmod -R u=rwX,go=rX "$CS2_DIR"
+
+    # CS2_DIR consistent again - let waiting push workers proceed
+    exec 201>&-
 
     local size=$(du -sh "$CS2_DIR" 2>/dev/null | cut -f1)
     log_info "CS2 directory size: ${BOLD}$size${RESET}"
@@ -508,12 +467,31 @@ update_cs2() {
     [ "$version_before" != "$version_after" ]
 }
 
-get_wings_token() {
-    if [ ! -f "/etc/pterodactyl/config.yml" ]; then
-        return 1
+# Path of the Wings config.yml, empty if none is readable.
+# Pelican ships the same Wings config schema, just under /etc/pelican.
+WINGS_CONFIG_PATHS=(/etc/pterodactyl/config.yml /etc/pelican/config.yml)
+
+get_wings_config() {
+    if [ -n "$WINGS_CONFIG" ]; then
+        [ -r "$WINGS_CONFIG" ] && echo "$WINGS_CONFIG"
+        return 0
     fi
 
-    local token=$(grep -E '^\s*token:' "/etc/pterodactyl/config.yml" | awk '{print $2}' | tr -d '"' || true)
+    local cfg
+    for cfg in "${WINGS_CONFIG_PATHS[@]}"; do
+        if [ -r "$cfg" ]; then
+            echo "$cfg"
+            return 0
+        fi
+    done
+
+    return 0
+}
+
+get_wings_token() {
+    local config="$1"
+
+    local token=$(grep -E '^\s*token:' "$config" | head -1 | awk '{print $2}' | tr -d '"' || true)
 
     if [ -z "$token" ]; then
         return 1
@@ -523,8 +501,10 @@ get_wings_token() {
 }
 
 get_wings_api_url() {
+    local config="$1"
+
     # Extract API configuration from config.yml api section
-    local api_section=$(sed -n '/^api:/,/^[a-z]/p' "/etc/pterodactyl/config.yml")
+    local api_section=$(sed -n '/^api:/,/^[a-z]/p' "$config")
 
     # Get host and port from api section
     local host=$(echo "$api_section" | grep -E '^\s+host:' | head -1 | awk '{print $2}' | tr -d '"' || echo "0.0.0.0")
@@ -548,40 +528,50 @@ get_wings_api_url() {
     echo "${protocol}://${host}:${port}"
 }
 
+# Print names of running containers using any configured SERVER_IMAGE, one per line
+_matching_containers() {
+    local images="${SERVER_IMAGE//,/ }"
+    local grep_pattern="" img escaped_img
+    for img in $images; do
+        escaped_img=$(printf '%s' "$img" | sed 's/[.[\*^$()+?{|\\]/\\&/g')
+        [ -z "$grep_pattern" ] && grep_pattern="$escaped_img" || grep_pattern="$grep_pattern|$escaped_img"
+    done
+    # || true: no match must not kill the script under pipefail + set -e
+    docker ps --format "{{.Names}}\t{{.Image}}" | grep -E "$grep_pattern" | cut -f1 || true
+}
+
+# Host path of a container's /home/container volume
+_volume_path() {
+    docker inspect "$1" \
+        --format '{{range .Mounts}}{{if eq .Destination "/home/container"}}{{.Source}}{{end}}{{end}}' \
+        2>/dev/null
+}
+
+# uid:gid owning a server volume (numeric, panel-agnostic). Wings creates the
+# volume as the server's user, so the volume root is the authority for ANY
+# panel - a hardcoded pterodactyl:pterodactyl broke Pelican hosts where that
+# user doesn't exist (root-owned gameinfo.gi -> in-container addon updaters got
+# Permission denied). Empty output = unknown; callers' chown then no-ops.
+_volume_owner() {
+    # -c is GNU stat (hosts), -f the BSD fallback (dev machines running the tests)
+    stat -c '%u:%g' "$1" 2>/dev/null || stat -f '%u:%g' "$1" 2>/dev/null || true
+}
+
 restart_docker_containers() {
     section "Detecting and Restarting Servers"
 
-    # Normalize SERVER_IMAGE: replace commas with spaces for consistent processing
-    local images="${SERVER_IMAGE//,/ }"
-
-    # Build grep pattern for multiple images (escape special chars and join with |)
-    local grep_pattern=""
-    for img in $images; do
-        # Escape special regex characters in image name
-        local escaped_img=$(printf '%s' "$img" | sed 's/[.[\*^$()+?{|\\]/\\&/g')
-        if [ -z "$grep_pattern" ]; then
-            grep_pattern="$escaped_img"
-        else
-            grep_pattern="$grep_pattern|$escaped_img"
-        fi
-    done
-
-    # Find containers using any of the specified images
-    local containers=$(docker ps --format "{{.Names}}\t{{.Image}}" | grep -E "$grep_pattern" | cut -f1)
-
-    if [ -z "$containers" ]; then
-        log_info "No containers found using images: ${BOLD}$images${RESET}"
-        return 0
-    fi
-
-    # Convert to array for reliable counting and iteration
     local -a container_array=()
     while IFS= read -r line; do
         [[ -n "$line" ]] && container_array+=("$line")
-    done <<< "$containers"
+    done < <(_matching_containers)
+
+    if [ ${#container_array[@]} -eq 0 ]; then
+        log_info "No containers found using images: ${BOLD}${SERVER_IMAGE//,/ }${RESET}"
+        return 0
+    fi
 
     local count=${#container_array[@]}
-    log_info "Found ${BOLD}$count${RESET} container(s) using images: ${BOLD}$images${RESET}"
+    log_info "Found ${BOLD}$count${RESET} container(s) using images: ${BOLD}${SERVER_IMAGE//,/ }${RESET}"
 
     # List containers for visibility
     for c in "${container_array[@]}"; do
@@ -589,16 +579,26 @@ restart_docker_containers() {
     done
 
     # Get Wings API credentials
+    local config
     local token
     local api_url
 
-    if ! token=$(get_wings_token) || ! api_url=$(get_wings_api_url); then
-        log_error "Wings API not available - cannot restart servers"
-        log_error "Make sure Wings is installed on this node and the config exists: /etc/pterodactyl/config.yml"
+    config=$(get_wings_config)
+
+    if [ -z "$config" ]; then
+        log_error "Wings config not found - cannot restart servers"
+        log_error "Looked for: ${WINGS_CONFIG_PATHS[*]}"
+        log_error "Wings elsewhere? Set WINGS_CONFIG in this script. Also make sure this script runs as root, config.yml is only readable by root"
         return 1
     fi
 
-    log_info "Using Wings API for restart"
+    if ! token=$(get_wings_token "$config") || ! api_url=$(get_wings_api_url "$config"); then
+        log_error "Wings API not available - cannot restart servers"
+        log_error "No API token found in $config"
+        return 1
+    fi
+
+    log_info "Using Wings API for restart (${DIM}$config${RESET})"
 
     local success=0
     local failed=0
@@ -611,13 +611,17 @@ restart_docker_containers() {
         local response
         local http_code
 
-        response=$(curl -k -s -w "\n%{http_code}" \
+        if ! response=$(curl -k -s -w "\n%{http_code}" \
+            --connect-timeout 10 --max-time 30 \
             -X POST "${api_url}/api/servers/${uuid}/power" \
             -H "Authorization: Bearer ${token}" \
             -H "Content-Type: application/json" \
             -H "Accept: application/json" \
             -d '{"action":"restart"}' \
-            2>/dev/null || echo "error\n000")
+            2>/dev/null); then
+            # real newline so tail -n1 yields a clean http code on curl failure
+            response=$'error\n000'
+        fi
 
         http_code=$(echo "$response" | tail -n1)
 
@@ -637,6 +641,128 @@ restart_docker_containers() {
         log_ok "All containers restarted successfully (${BOLD}$success/$count${RESET})"
         return 0
     fi
+}
+
+# ============================================================================
+# STATUS FILE PROTOCOL (boot handshake with the egg)
+# ============================================================================
+# One read-only file per volume: egg/.daemon-status with state=/ts=/queue_pos=
+# lines. The egg never deletes it - it accepts "done"/"failed" only when ts is
+# newer than its own boot, and keeps waiting on any non-terminal state while
+# ts stays fresh (refreshed every 3s). Stale ts = dead daemon = SteamCMD
+# fallback. Writes are atomic (tmp + mv) and serialized per container via
+# flock, so a refresher tick can never resurrect an already-terminal state.
+
+# Unconditional status write. Usage: _write_status container volume state [queue_pos]
+_write_status() {
+    local container="$1" volume="$2" state="$3" qpos="${4:-}"
+    local dir="$volume/egg"
+    mkdir -p "$dir" 2>/dev/null || return 0
+    (
+        exec 9>"/var/lock/cs2-vpk-status-${container}.lock"
+        flock -w 5 9 || exit 0
+        local tmp
+        tmp=$(mktemp "$dir/.daemon-status.XXXXXX" 2>/dev/null) || exit 0
+        {
+            echo "state=$state"
+            echo "ts=$(date +%s)"
+            [ -n "$qpos" ] && echo "queue_pos=$qpos"
+        } > "$tmp" 2>/dev/null
+        chown "$(_volume_owner "$volume")" "$tmp" 2>/dev/null || true
+        chmod 644 "$tmp" 2>/dev/null || true
+        mv -f "$tmp" "$dir/.daemon-status" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+        exit 0
+    ) || true
+    return 0
+}
+
+# Bump ts on a non-terminal status so the waiting egg knows we're alive.
+# Never touches done/failed - the state is re-read under the same lock that
+# terminal writes take, so no tick can overwrite a just-written terminal state.
+_refresh_status_entry() {
+    local container="$1" volume="$2" qpos="${3:-}"
+    local file="$volume/egg/.daemon-status"
+    (
+        exec 9>"/var/lock/cs2-vpk-status-${container}.lock"
+        flock -w 5 9 || exit 0
+        local state
+        state=$(grep -m1 '^state=' "$file" 2>/dev/null | cut -d= -f2 || true)
+        case "$state" in
+            queued|updating|verifying|pushing) ;;
+            *) exit 0 ;;
+        esac
+        if [ -z "$qpos" ] && [ "$state" = "queued" ]; then
+            qpos=$(grep -m1 '^queue_pos=' "$file" 2>/dev/null | cut -d= -f2 || true)
+        fi
+        local tmp
+        tmp=$(mktemp "$volume/egg/.daemon-status.XXXXXX" 2>/dev/null) || exit 0
+        {
+            echo "state=$state"
+            echo "ts=$(date +%s)"
+            [ -n "$qpos" ] && echo "queue_pos=$qpos"
+        } > "$tmp" 2>/dev/null
+        chown "$(_volume_owner "$volume")" "$tmp" 2>/dev/null || true
+        chmod 644 "$tmp" 2>/dev/null || true
+        mv -f "$tmp" "$file" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+        exit 0
+    ) || true
+    return 0
+}
+
+# Flip a still-pending status to failed (worker died without a terminal write),
+# so the egg falls back to SteamCMD immediately instead of waiting out staleness.
+_fail_status_if_pending() {
+    local container="$1" volume="$2"
+    (
+        exec 9>"/var/lock/cs2-vpk-status-${container}.lock"
+        flock -w 5 9 || exit 0
+        local state
+        state=$(grep -m1 '^state=' "$volume/egg/.daemon-status" 2>/dev/null | cut -d= -f2 || true)
+        case "$state" in
+            queued|updating|verifying|pushing) ;;
+            *) exit 0 ;;
+        esac
+        exit 1
+    ) && return 0
+    _write_status "$container" "$volume" "failed"
+    return 0
+}
+
+# Daemon-side refresher: single loop, one tick every 3s. Refreshes ts for every
+# registered in-flight worker, recomputes queue positions, and flips the status
+# of crashed workers to failed. Does nothing slow, cannot back up.
+_status_refresher() {
+    set +e
+    local reg container pid volume enq state pos
+    while sleep 3; do
+        [ -d "$DAEMON_REGISTRY_DIR" ] || continue
+        local -a queued_list=()
+        for reg in "$DAEMON_REGISTRY_DIR"/*; do
+            [ -e "$reg" ] || continue
+            container=${reg##*/}
+            pid=$(grep -m1 '^pid=' "$reg" 2>/dev/null | cut -d= -f2)
+            volume=$(grep -m1 '^volume=' "$reg" 2>/dev/null | cut -d= -f2)
+            enq=$(grep -m1 '^enq=' "$reg" 2>/dev/null | cut -d= -f2)
+            [ -z "$volume" ] && { rm -f "$reg"; continue; }
+            if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
+                _fail_status_if_pending "$container" "$volume"
+                rm -f "$reg"
+                continue
+            fi
+            state=$(grep -m1 '^state=' "$volume/egg/.daemon-status" 2>/dev/null | cut -d= -f2)
+            if [ "$state" = "queued" ]; then
+                queued_list+=("${enq:-0} $container $volume")
+            else
+                _refresh_status_entry "$container" "$volume"
+            fi
+        done
+        pos=1
+        while read -r enq container volume; do
+            [ -z "$container" ] && continue
+            _refresh_status_entry "$container" "$volume" "$pos"
+            pos=$((pos + 1))
+        done < <(printf '%s\n' "${queued_list[@]:-}" | sort -n)
+    done
 }
 
 # ============================================================================
@@ -730,20 +856,54 @@ PYEOF
     log_info "nsenter[$container]: bind mount ok"
 }
 
-# Sync base files + VPK files from CS2_DIR into a single server volume
+# Sync base files + VPK files from CS2_DIR into a single server volume.
+# Wrapper owns the push lifecycle signals: status file pushing -> done/failed,
+# plus the legacy .daemon-push-active heartbeat for pre-status-file eggs
+# (! TODO: remove the legacy heartbeat after 2026-10-01, eggs < status protocol).
+# Both are refreshed every 3s while the push runs; a crashed pusher stops the
+# heartbeat, so a waiting egg falls back instead of waiting forever.
+# Works from both the daemon workers and the cron push path.
 _sync_to_volume() {
+    local _hb_file="$2/egg/.daemon-push-active"
+    local _owner=$BASHPID
+    mkdir -p "$2/egg" 2>/dev/null
+    touch "$_hb_file" 2>/dev/null || true
+    _write_status "$1" "$2" "pushing"
+    ( while sleep 3; do
+          kill -0 "$_owner" 2>/dev/null || exit
+          touch "$_hb_file" 2>/dev/null || true
+          _refresh_status_entry "$1" "$2"
+      done ) &
+    local _hb_pid=$!
+
+    local rc=0
+    _sync_to_volume_impl "$@" || rc=$?
+
+    kill "$_hb_pid" 2>/dev/null || true
+    rm -f "$_hb_file" 2>/dev/null || true
+    if [ $rc -eq 0 ]; then
+        _write_status "$1" "$2" "done"
+    else
+        _write_status "$1" "$2" "failed"
+    fi
+    return $rc
+}
+
+_sync_to_volume_impl() {
     local container="$1"
     local dest="$2"
     local src="$CS2_DIR"
+    local vol_owner
+    vol_owner=$(_volume_owner "$dest")
 
     local container_mount_dst="/tmp/cs2-shared"
 
     # marker is touched at the END of push (last-touch design)
     mkdir -p "$dest/egg" 2>/dev/null
-    chown -R pterodactyl:pterodactyl "$dest/egg" 2>/dev/null || true
+    chown -R "$vol_owner" "$dest/egg" 2>/dev/null || true
 
     # Sync non-VPK base files; exclude per-server configs, gameinfo.gi, and
-    # SteamCMD-only dirs (Steam/, steamapps/) — the CS2 server doesn't need them at
+    # SteamCMD-only dirs (Steam/, steamapps/): the CS2 server doesn't need them at
     # runtime, and the container-side cleanup would just delete them each boot.
     # --no-o --no-g: don't overwrite ownership (preserve volume root owner = pterodactyl)
     rsync -aK --no-o --no-g \
@@ -832,7 +992,7 @@ _sync_to_volume() {
                         log_warn "hardlink[$container]: copy failed for $rel: $op_err"
                         return 1
                     fi
-                    chown pterodactyl:pterodactyl "$link_dst" 2>/dev/null || true
+                    chown "$vol_owner" "$link_dst" 2>/dev/null || true
                     chmod 644 "$link_dst" 2>/dev/null || true
                 else
                     if ! op_err=$(ln "$vpk_file" "$link_dst" 2>&1); then
@@ -843,7 +1003,7 @@ _sync_to_volume() {
                 ;;
             copy)
                 cp "$vpk_file" "$link_dst" 2>/dev/null || return 1
-                chown pterodactyl:pterodactyl "$link_dst" 2>/dev/null || true
+                chown "$vol_owner" "$link_dst" 2>/dev/null || true
                 chmod 644 "$link_dst" 2>/dev/null || true
                 ;;
         esac
@@ -856,13 +1016,14 @@ _sync_to_volume() {
     human_size=$(format_bytes "$vpk_size")
     log_info "  ${DIM}→ $container: $vpk_count VPK(s), ${human_size}${RESET}"
 
-    chown -R pterodactyl:pterodactyl "$dest/game" 2>/dev/null || true
+    chown -R "$vol_owner" "$dest/game" 2>/dev/null || true
 
-    # push done — touch marker (signals "daemon alive + files ready")
+    # push done: touch marker (signals "daemon alive + files ready")
     # symlink mode: marker is touched on start event after nsenter mount, not here
+    # ! TODO: Remove after 2026-10-01 (legacy marker for pre-status-file eggs)
     if [ "$VPK_PUSH_METHOD" != "symlink" ]; then
         touch "$dest/egg/.daemon-managed" 2>/dev/null || true
-        chown pterodactyl:pterodactyl "$dest/egg/.daemon-managed" 2>/dev/null || true
+        chown "$vol_owner" "$dest/egg/.daemon-managed" 2>/dev/null || true
     fi
 
     return 0
@@ -889,12 +1050,27 @@ _verify_volume_vpks() {
                 [ "$(readlink "$vol_file" 2>/dev/null)" = "$expected" ] || return 1
                 ;;
             hardlink|copy)
-                # must be a real file with matching size
+                # size alone can miss an update that changed content but not size
                 [ -f "$vol_file" ] || return 1
                 local src_size dst_size
                 src_size=$(stat -c %s "$src_file" 2>/dev/null || echo 0)
                 dst_size=$(stat -c %s "$vol_file" 2>/dev/null || echo 0)
                 [ "$src_size" = "$dst_size" ] || return 1
+                local src_dev dst_dev
+                src_dev=$(stat -c %d "$src_file" 2>/dev/null || echo 0)
+                dst_dev=$(stat -c %d "$vol_file" 2>/dev/null || echo 1)
+                if [ "$VPK_PUSH_METHOD" = "hardlink" ] && [ "$src_dev" = "$dst_dev" ]; then
+                    # same fs: a proper hardlink shares the inode, exact check
+                    [ "$(stat -c %i "$src_file" 2>/dev/null)" = "$(stat -c %i "$vol_file" 2>/dev/null)" ] || return 1
+                else
+                    # copy (or hardlink's cross-fs copy fallback): the copy was made
+                    # after the source's last modification, so dst mtime >= src mtime
+                    # means current; an updated source flips this and triggers re-push
+                    local src_mtime dst_mtime
+                    src_mtime=$(stat -c %Y "$src_file" 2>/dev/null || echo 0)
+                    dst_mtime=$(stat -c %Y "$vol_file" 2>/dev/null || echo 0)
+                    [ "$dst_mtime" -ge "$src_mtime" ] || return 1
+                fi
                 ;;
         esac
     done < <(find "$CS2_DIR" -type f -name "*.vpk" -print0 2>/dev/null)
@@ -917,27 +1093,15 @@ push_vpk_to_containers() {
         return 1
     fi
 
-    # Build image grep pattern (same logic as restart_docker_containers)
-    local images="${SERVER_IMAGE//,/ }"
-    local grep_pattern=""
-    for img in $images; do
-        local escaped_img
-        escaped_img=$(printf '%s' "$img" | sed 's/[.[\*^$()+?{|\\]/\\&/g')
-        [ -z "$grep_pattern" ] && grep_pattern="$escaped_img" || grep_pattern="$grep_pattern|$escaped_img"
-    done
-
-    local containers
-    containers=$(docker ps --format "{{.Names}}\t{{.Image}}" | grep -E "$grep_pattern" | cut -f1)
-
-    if [ -z "$containers" ]; then
-        log_info "No running containers found for VPK push"
-        return 0
-    fi
-
     local -a container_array=()
     while IFS= read -r line; do
         [[ -n "$line" ]] && container_array+=("$line")
-    done <<< "$containers"
+    done < <(_matching_containers)
+
+    if [ ${#container_array[@]} -eq 0 ]; then
+        log_info "No running containers found for VPK push"
+        return 0
+    fi
 
     log_info "Pushing game files to ${BOLD}${#container_array[@]}${RESET} container(s) [method: ${BOLD}$VPK_PUSH_METHOD${RESET}]"
 
@@ -946,8 +1110,7 @@ push_vpk_to_containers() {
 
     for container in "${container_array[@]}"; do
         local volume_path
-        volume_path=$(docker inspect "$container" \
-            --format '{{range .Mounts}}{{if eq .Destination "/home/container"}}{{.Source}}{{end}}{{end}}' 2>/dev/null)
+        volume_path=$(_volume_path "$container")
 
         if [ -z "$volume_path" ] || [ ! -d "$volume_path" ]; then
             log_warn "Could not get volume path for $container, skipping"
@@ -955,12 +1118,29 @@ push_vpk_to_containers() {
             continue
         fi
 
+        # Same per-container mutex as the daemon workers, so a cron push and a
+        # daemon self-heal never write the same volume concurrently.
+        local lock_file="/var/lock/cs2-vpk-push-${container}.lock"
+        local waited=0 got_lock=true
+        while ! mkdir "$lock_file" 2>/dev/null; do
+            if [ "$waited" -ge 120 ]; then got_lock=false; break; fi
+            sleep 2
+            waited=$((waited + 2))
+        done
+        if ! $got_lock; then
+            log_warn "Push lock busy for ${BOLD}$container${RESET} after ${waited}s, skipping"
+            ((failed++)) || true
+            continue
+        fi
+        echo "$BASHPID" > "$lock_file/pid" 2>/dev/null || true
+
         if _sync_to_volume "$container" "$volume_path"; then
             ((success++)) || true
         else
             log_warn "Push failed for ${BOLD}$container${RESET}"
             ((failed++)) || true
         fi
+        rm -rf "$lock_file" 2>/dev/null || true
     done
 
     # Hardlink mode: set VPK files in CS2_DIR to root:root 644
@@ -979,6 +1159,454 @@ push_vpk_to_containers() {
 
     log_ok "VPK push complete - ${BOLD}$success/${#container_array[@]}${RESET} server(s) synced"
     return 0
+}
+
+# One background worker per container event: writes the status file lifecycle
+# (queued -> updating? -> verifying -> pushing? -> done/failed) that the egg's
+# boot handshake reads. Runs as a subshell via `_push_worker event container &`.
+_push_worker() {
+    local event="$1" container="$2"
+    local lock_file="/var/lock/cs2-vpk-push-${container}.lock"
+    local reg_file="$DAEMON_REGISTRY_DIR/${container}"
+    local _slot=0 _locked=0 _registered=0
+    # Release only what this worker actually holds, even on crash.
+    # Unconditional cleanup would free another worker's live lock.
+    # ${var:-} guards: the trap can fire after the function already returned
+    # (locals gone) - an unbound variable here would abort the trap mid-way and
+    # leak the per-container lock + pool slot (stuck "queued" servers).
+    trap '[ "${_locked:-0}" = 1 ] && rm -rf "${lock_file:-/nonexistent}" 2>/dev/null; [ "${_registered:-0}" = 1 ] && rm -f "${reg_file:-/nonexistent}" 2>/dev/null; [ "${_slot:-0}" = 1 ] && echo >&"${_DAEMON_WORKER_FD:-2}" 2>/dev/null' EXIT
+
+    # Debounce: only applied to create events (Wings fires create+start together,
+    # so create handles initial push and start can skip the heavy work).
+    local debounce_file="/tmp/cs2-vpk-pushed-${container}"
+    if [ "$event" != "start" ] && [ -f "$debounce_file" ]; then
+        local last_push now
+        last_push=$(cat "$debounce_file" 2>/dev/null || echo 0)
+        now=$(date +%s)
+        [ $((now - last_push)) -lt 30 ] && exit 0
+    fi
+
+    local volume_path
+    volume_path=$(_volume_path "$container")
+
+    if [ -z "$volume_path" ] || [ ! -d "$volume_path" ]; then
+        exit 0
+    fi
+
+    # Register for the refresher and signal "queued" BEFORE waiting for a slot:
+    # on a saturated pool the egg sees a live queue position instead of silence.
+    { echo "pid=$BASHPID"; echo "volume=$volume_path"; echo "enq=$(date +%s)"; } > "$reg_file" 2>/dev/null && _registered=1
+    local qpos
+    qpos=$(ls "$DAEMON_REGISTRY_DIR" 2>/dev/null | wc -l | tr -d ' ')
+    _write_status "$container" "$volume_path" "queued" "$qpos"
+
+    # Acquire a worker slot here, inside the subshell: the event loop
+    # must never block on a saturated pool, or symlink mounts for later
+    # events would stall and containers time out waiting on markers (#51).
+    read -r <&"$_DAEMON_WORKER_FD" || exit 0
+    _slot=1
+
+    # Per-container push lock: wait for a concurrent cron push / sibling worker
+    # instead of giving up - the fresh queued status keeps the egg waiting.
+    local waited=0
+    while ! mkdir "$lock_file" 2>/dev/null; do
+        if [ "$waited" -ge 3600 ]; then
+            log_warn "Push lock busy for ${BOLD}$container${RESET} after 1h - reporting failed"
+            _write_status "$container" "$volume_path" "failed"
+            exit 0
+        fi
+        sleep 2
+        waited=$((waited + 2))
+    done
+    _locked=1
+    # record the owner pid so the doctor can spot orphaned locks instantly
+    echo "$BASHPID" > "$lock_file/pid" 2>/dev/null || true
+
+    # Central CS2 update in progress? Wait it out instead of verifying against a
+    # half-written CS2_DIR. The shared lock is then HELD until worker exit (fd
+    # closes with the subshell) so an update can't start mid-verify/push either.
+    local _ufd
+    touch "$CENTRAL_UPDATE_LOCK" 2>/dev/null || true
+    exec {_ufd}<"$CENTRAL_UPDATE_LOCK"
+    if ! flock -n -s "$_ufd"; then
+        log_info "Central update running - ${BOLD}$container${RESET} waiting for it to finish"
+        _write_status "$container" "$volume_path" "updating"
+        if ! flock -s -w 3600 "$_ufd"; then
+            log_warn "Central update still running after 1h - reporting failed for ${BOLD}$container${RESET}"
+            _write_status "$container" "$volume_path" "failed"
+            exit 0
+        fi
+        log_info "Central update finished - ${BOLD}$container${RESET} proceeding"
+    fi
+
+    if [ "$event" = "start" ]; then
+        _write_status "$container" "$volume_path" "verifying"
+        if _verify_volume_vpks "$volume_path"; then
+            mkdir -p "$volume_path/egg" 2>/dev/null
+            # ! TODO: Remove marker touch after 2026-10-01 (pre-status-file eggs)
+            touch "$volume_path/egg/.daemon-managed" 2>/dev/null || true
+            chown -R "$(_volume_owner "$volume_path")" "$volume_path/egg" 2>/dev/null || true
+            _write_status "$container" "$volume_path" "done"
+            exit 0
+        fi
+        log_warn "Container has missing/broken VPKs: ${BOLD}$container${RESET} - self-healing push..."
+    else
+        log_info "Container started: ${BOLD}$container${RESET} - pushing game files before first start..."
+    fi
+
+    if _sync_to_volume "$container" "$volume_path"; then
+        date +%s > "$debounce_file"
+        log_ok "Game files pushed to ${BOLD}$container${RESET}"
+    else
+        log_warn "Push failed for ${BOLD}$container${RESET}"
+    fi
+    # explicit exit so the EXIT trap runs while the locals above still exist
+    # (a plain function return would pop them before the trap fires)
+    exit 0
+}
+
+# Shared handling for live docker events and reconcile sweeps.
+_handle_container_event() {
+    local event="$1" container="$2"
+
+    # Treat restart identically to start for all downstream logic.
+    [ "$event" = "restart" ] && event="start"
+
+    # symlink mode: nsenter-mount on every start event; stays in main thread
+    # (fast ~100ms per server). Legacy marker touch kept for pre-status-file eggs
+    # (! TODO: remove the marker touch after 2026-10-01).
+    if [ "$event" = "start" ] && [ "$VPK_PUSH_METHOD" = "symlink" ]; then
+        if _nsenter_mount "$container" "$CS2_DIR" "/tmp/cs2-shared"; then
+            log_info "CS2_DIR mounted into ${BOLD}$container${RESET} at /tmp/cs2-shared"
+            local _vol_path
+            _vol_path=$(_volume_path "$container")
+            if [ -n "$_vol_path" ] && [ -d "$_vol_path/egg" ]; then
+                touch "$_vol_path/egg/.daemon-managed" 2>/dev/null || true
+                chown "$(_volume_owner "$_vol_path")" "$_vol_path/egg/.daemon-managed" 2>/dev/null || true
+            fi
+        else
+            log_warn "nsenter mount failed for $container - symlinks may not resolve"
+        fi
+    fi
+
+    _push_worker "$event" "$container" &
+}
+
+# Sweep all running matching containers as synthetic start events. Covers boots
+# whose docker event the daemon missed (daemon restart, event stream drop).
+_reconcile_running_containers() {
+    local c
+    while IFS= read -r c; do
+        [ -n "$c" ] && _handle_container_event start "$c"
+    done < <(_matching_containers)
+}
+
+# Health check for the whole centralized setup. Read-only diagnosis, except a
+# few unambiguously safe fixes (daemon restart on stale in-memory code, orphaned
+# push locks). Everything else prints the exact command to run. Every check must
+# be failure-guarded: set -e is active and a dying doctor helps nobody.
+run_doctor() {
+    headline "CS2 Egg Doctor"
+
+    local fails=0 warns=0 fixed=0
+    _ok()    { echo -e "  ${GREEN}OK${RESET}     $*" >&2; }
+    _dwarn() { echo -e "  ${YELLOW}WARN${RESET}   $*" >&2; warns=$((warns + 1)); }
+    _dfail() { echo -e "  ${RED}FAIL${RESET}   $*" >&2; fails=$((fails + 1)); }
+    _dfixed(){ echo -e "  ${CYAN}FIXED${RESET}  $*" >&2; fixed=$((fixed + 1)); }
+
+    section "Script & service"
+
+    # where does systemd actually point?
+    local exec_path=""
+    if [ -f /etc/systemd/system/cs2-vpk-daemon.service ]; then
+        exec_path=$(grep -m1 '^ExecStart=' /etc/systemd/system/cs2-vpk-daemon.service 2>/dev/null | cut -d= -f2- | awk '{print $1}' || true)
+    fi
+    [ -z "$exec_path" ] && exec_path="/usr/local/bin/update-cs2-centralized.sh"
+
+    local disk_version=""
+    if [ -x "$exec_path" ]; then
+        disk_version=$(grep -m1 '^# Version:' "$exec_path" 2>/dev/null | awk '{print $3}' || true)
+        _ok "Service script exists: $exec_path (version ${disk_version:-unknown})"
+    else
+        _dfail "Service script missing/not executable at $exec_path - reinstall: curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}/misc/install-cs2-update.sh -o /tmp/i.sh && sudo bash /tmp/i.sh"
+    fi
+    if [ "$(readlink -f "$0" 2>/dev/null || true)" != "$(readlink -f "$exec_path" 2>/dev/null || true)" ]; then
+        _dwarn "You are running $0 but the service runs $exec_path - edits to this copy do NOT reach the daemon/cron"
+    fi
+
+    # cron: /etc/cron.d/cs2-update is the managed scheduler - converge to it,
+    # always pointing at the service script (exec_path), never at stray copies
+    local cron_ok=false
+    if [ -f /etc/cron.d/cs2-update ]; then
+        local cron_path
+        cron_path=$(grep -v '^#' /etc/cron.d/cs2-update 2>/dev/null | grep -o '/[^ ]*update-cs2-centralized\.sh' | head -1 || true)
+        if [ -n "$cron_path" ] && [ ! -x "$cron_path" ]; then
+            if [ -x "$exec_path" ] && sed -i "s|$cron_path|$exec_path|" /etc/cron.d/cs2-update 2>/dev/null; then
+                _dfixed "Cron pointed at missing $cron_path - rewrote to $exec_path (schedule kept)"
+                cron_ok=true
+            else
+                _dfail "Cron points at $cron_path but the file is missing - CS2 updates are NOT running"
+            fi
+        else
+            _ok "Cron job registered (/etc/cron.d/cs2-update)"
+            cron_ok=true
+        fi
+    elif [ -x "$exec_path" ]; then
+        if {
+            echo "# CS2 Centralized Update - restored by --doctor"
+            echo "SHELL=/bin/bash"
+            echo "PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin"
+            echo "* * * * * root $exec_path >> /var/log/cs2-update.log 2>&1"
+        } > /etc/cron.d/cs2-update 2>/dev/null; then
+            chmod 644 /etc/cron.d/cs2-update 2>/dev/null || true
+            _dfixed "Cron file was missing - recreated /etc/cron.d/cs2-update (every minute, rate-limited by UPDATE_CHECK_INTERVAL)"
+            cron_ok=true
+        else
+            _dwarn "Cron file /etc/cron.d/cs2-update missing and could not recreate it - automatic CS2 updates are off"
+        fi
+    else
+        _dwarn "Cron file /etc/cron.d/cs2-update missing - automatic CS2 updates are off (installer recreates it)"
+    fi
+
+    # hand-made entries in root's personal crontab (the installer never writes there)
+    local user_cron user_cron_path
+    user_cron=$(crontab -l 2>/dev/null | grep -v '^#' | grep 'update-cs2-centralized\.sh' || true)
+    if [ -n "$user_cron" ]; then
+        user_cron_path=$(echo "$user_cron" | grep -o '/[^ ]*update-cs2-centralized\.sh' | head -1 || true)
+        if $cron_ok; then
+            # duplicate scheduler: the managed cron.d covers it, drop the crontab line
+            local remaining_cron
+            remaining_cron=$(crontab -l 2>/dev/null | grep -v 'update-cs2-centralized\.sh' || true)
+            if printf '%s\n' "$remaining_cron" | crontab - 2>/dev/null; then
+                _dfixed "Removed duplicate update line from root's crontab (kept /etc/cron.d/cs2-update). Removed: $user_cron"
+            else
+                _dwarn "Update scheduled TWICE: /etc/cron.d/cs2-update AND root's crontab ($user_cron_path) - remove the crontab line: crontab -e"
+            fi
+        elif [ -n "$user_cron_path" ] && [ ! -x "$user_cron_path" ]; then
+            _dfail "root's crontab runs $user_cron_path but the file is missing - remove the line (crontab -e) and reinstall for a managed cron"
+        else
+            _dwarn "Update runs from root's crontab ($user_cron_path) - the installer manages /etc/cron.d/cs2-update instead, consider reinstalling"
+        fi
+    fi
+
+    # service state + stale in-memory code detection
+    if command -v systemctl >/dev/null 2>&1; then
+        if systemctl is-active --quiet cs2-vpk-daemon 2>/dev/null; then
+            local main_pid proc_start script_mtime
+            main_pid=$(systemctl show -p MainPID --value cs2-vpk-daemon 2>/dev/null || echo 0)
+            proc_start=$(stat -c %Z "/proc/$main_pid" 2>/dev/null || echo 0)
+            script_mtime=$(stat -c %Y "$exec_path" 2>/dev/null || echo 0)
+            if [ "$script_mtime" -gt "$proc_start" ] 2>/dev/null && [ "$proc_start" -gt 0 ]; then
+                if systemctl restart cs2-vpk-daemon 2>/dev/null; then
+                    _dfixed "Daemon was running OLDER code than the script on disk - restarted to load it"
+                else
+                    _dfail "Daemon runs older code than on disk and restart failed - run: systemctl restart cs2-vpk-daemon"
+                fi
+            else
+                _ok "Daemon active (pid $main_pid) and running the on-disk code"
+            fi
+        elif [ -x "$exec_path" ]; then
+            if systemctl restart cs2-vpk-daemon 2>/dev/null && systemctl is-active --quiet cs2-vpk-daemon 2>/dev/null; then
+                _dfixed "Daemon was not running - started it"
+            else
+                _dfail "Daemon not running and restart failed - check: journalctl -u cs2-vpk-daemon -n 50"
+            fi
+        else
+            _dfail "Daemon not running (no script to start) - reinstall first, then: systemctl restart cs2-vpk-daemon"
+        fi
+        # crash-loop evidence in the recent journal
+        local exec_fails
+        exec_fails=$(journalctl -u cs2-vpk-daemon --since "-10 min" --no-pager 2>/dev/null | grep -c "Failed at step EXEC" || true)
+        [ "${exec_fails:-0}" -gt 0 ] && _dwarn "Service crash-looped ${exec_fails}x in the last 10 min (203/EXEC = missing script) - recheck after the fixes above"
+    else
+        _dwarn "systemd not found - cannot check the daemon service"
+    fi
+
+    section "Dependencies"
+
+    command -v docker >/dev/null 2>&1 && _ok "docker present" || _dfail "docker missing - required for push/restart"
+
+    # installable deps: the script already apt-gets steamcmd libs on its own,
+    # so the doctor may install these small ones too instead of just complaining
+    _dep_check() {
+        local cmd="$1" pkg="$2" why="$3"
+        if command -v "$cmd" >/dev/null 2>&1; then
+            _ok "$cmd present${why:+ ($why)}"
+        elif command -v apt-get >/dev/null 2>&1 && \
+             DEBIAN_FRONTEND=noninteractive apt-get install -y -q "$pkg" >/dev/null 2>&1; then
+            _dfixed "$cmd was missing - installed $pkg"
+        else
+            _dfail "$cmd missing${why:+ ($why)} - install: apt-get install -y $pkg"
+        fi
+    }
+    _dep_check rsync rsync ""
+    if [ "$VPK_PUSH_METHOD" = "symlink" ]; then
+        _dep_check python3 python3 "symlink mounts"
+        local kver kmaj kmin
+        kver=$(uname -r 2>/dev/null || echo 0.0)
+        kmaj=${kver%%.*}; kmin=${kver#*.}; kmin=${kmin%%.*}
+        if [ "${kmaj:-0}" -gt 5 ] 2>/dev/null || { [ "${kmaj:-0}" -eq 5 ] && [ "${kmin:-0}" -ge 2 ]; } 2>/dev/null; then
+            _ok "Kernel $kver (>= 5.2 needed for symlink mounts)"
+        else
+            _dfail "Kernel $kver too old for symlink mounts (needs 5.2+) - switch VPK_PUSH_METHOD to hardlink/copy"
+        fi
+    fi
+
+    section "Central files"
+
+    if [ -d "$CS2_DIR" ]; then
+        local buildid vpk_count
+        buildid=$(get_local_version)
+        vpk_count=$(find "$CS2_DIR" -type f -name '*.vpk' 2>/dev/null | wc -l | tr -d ' ')
+        if [ "$buildid" = "unknown" ] || [ "${vpk_count:-0}" -eq 0 ]; then
+            _dfail "CS2_DIR ($CS2_DIR) exists but looks incomplete (buildid: $buildid, VPKs: $vpk_count) - run: $exec_path"
+        else
+            _ok "CS2_DIR healthy: buildid $buildid, $vpk_count VPKs"
+        fi
+    else
+        _dfail "CS2_DIR ($CS2_DIR) does not exist - first update run pending: $exec_path"
+    fi
+    local free_kb
+    free_kb=$(df -Pk "$(dirname "$CS2_DIR")" 2>/dev/null | awk 'NR==2 {print $4}' || true)
+    if [[ "$free_kb" =~ ^[0-9]+$ ]]; then
+        if [ "$free_kb" -lt 10485760 ]; then
+            _dwarn "Low disk space on CS2_DIR filesystem ($((free_kb / 1048576)) GB free) - updates and fallbacks will fail without headroom"
+        else
+            _ok "Disk space: $((free_kb / 1048576)) GB free on CS2_DIR filesystem"
+        fi
+    fi
+
+    section "Servers"
+
+    if command -v docker >/dev/null 2>&1; then
+        local container volume state ts age now checked=0
+        now=$(date +%s)
+        while IFS= read -r container; do
+            [ -z "$container" ] && continue
+            checked=$((checked + 1))
+            volume=$(_volume_path "$container")
+            if [ -z "$volume" ] || [ ! -d "$volume" ]; then
+                _dwarn "$container: cannot resolve volume path"
+                continue
+            fi
+            if [ -f "$volume/egg/.daemon-status" ]; then
+                state=$(grep -m1 '^state=' "$volume/egg/.daemon-status" 2>/dev/null | cut -d= -f2 || true)
+                ts=$(grep -m1 '^ts=' "$volume/egg/.daemon-status" 2>/dev/null | cut -d= -f2 || true)
+                [[ "$ts" =~ ^[0-9]+$ ]] || ts=0
+                age=$((now - ts))
+                case "$state" in
+                    done)   _ok "$container: status done ($((age / 60)) min ago)" ;;
+                    failed) _dwarn "$container: last push FAILED - server likely fell back to SteamCMD, check journalctl around $(date -d "@$ts" 2>/dev/null || echo "ts $ts")" ;;
+                    *)      if [ "$age" -gt 120 ]; then
+                                _dwarn "$container: status stuck in '$state' for $((age / 60)) min - worker died? journalctl -u cs2-vpk-daemon"
+                            else
+                                _ok "$container: push in progress ($state)"
+                            fi ;;
+                esac
+            else
+                _dwarn "$container: no .daemon-status yet (old egg image, or daemon has not seen this server since 1.0.49)"
+            fi
+            # forensic: steamapps in a daemon-managed volume = a past SteamCMD fallback
+            if [ -f "$volume/egg/.daemon-status" ] && [ -d "$volume/steamapps" ]; then
+                _dwarn "$container: steamapps/ leftovers found - evidence of a past SteamCMD fallback (egg cleans it on next daemon-managed boot)"
+            fi
+            # symlink targets (/tmp/cs2-shared/...) only resolve INSIDE the container;
+            # from the host, rewrite the prefix to CS2_DIR before testing
+            local broken=0 link target
+            while IFS= read -r link; do
+                [ -z "$link" ] && continue
+                target=$(readlink "$link" 2>/dev/null || true)
+                case "$target" in
+                    /tmp/cs2-shared/*) [ -e "$CS2_DIR/${target#/tmp/cs2-shared/}" ] || broken=$((broken + 1)) ;;
+                    *)                 [ -e "$link" ] || broken=$((broken + 1)) ;;
+                esac
+            done < <(find "$volume/game" -name '*.vpk' -type l 2>/dev/null)
+            [ "${broken:-0}" -gt 0 ] && _dwarn "$container: $broken broken VPK symlink(s) - egg cleans them on next boot; daemon mount may have failed earlier"
+        done < <(_matching_containers)
+        [ "$checked" -eq 0 ] && _dwarn "No running containers match SERVER_IMAGE ($SERVER_IMAGE)"
+    fi
+
+    section "Locks"
+
+    # locks carry their owner pid since 1.0.53: dead owner = orphan, remove now.
+    # pid-less locks (older scripts) fall back to a 2h age rule - workers cap
+    # waits at 1h, anything older is a corpse.
+    local lock lock_pid lock_age removed_locks=0
+    while IFS= read -r lock; do
+        [ -z "$lock" ] && continue
+        lock_pid=$(cat "$lock/pid" 2>/dev/null || true)
+        if [[ "$lock_pid" =~ ^[0-9]+$ ]]; then
+            kill -0 "$lock_pid" 2>/dev/null && continue    # live owner, leave it
+            rm -rf "$lock" 2>/dev/null && removed_locks=$((removed_locks + 1))
+        else
+            lock_age=$(( ($(date +%s) - $(stat -c %Y "$lock" 2>/dev/null || date +%s)) / 60 ))
+            if [ "$lock_age" -ge 120 ]; then
+                rm -rf "$lock" 2>/dev/null && removed_locks=$((removed_locks + 1))
+            else
+                _dwarn "Push lock $(basename "$lock") has no owner pid and is ${lock_age} min old - if a server hangs on 'queued', remove it: rm -rf $lock"
+            fi
+        fi
+    done < <(find /var/lock -maxdepth 1 -name 'cs2-vpk-push-*' -type d 2>/dev/null)
+    [ "$removed_locks" -gt 0 ] && _dfixed "Removed $removed_locks orphaned push lock(s) (dead owner)"
+    if [ -f "$CENTRAL_UPDATE_LOCK" ] && command -v flock >/dev/null 2>&1; then
+        if ( exec 9<"$CENTRAL_UPDATE_LOCK"; flock -n -s 9 ) 2>/dev/null; then
+            _ok "No central update in progress"
+        else
+            _ok "Central CS2 update currently running (restarting servers will wait for it)"
+        fi
+    fi
+
+    section "Self-update"
+
+    local http_code
+    http_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$REMOTE_SCRIPT_URL" 2>/dev/null || echo 000)
+    case "$http_code" in
+        200) _ok "Update source reachable (branch: $GITHUB_BRANCH)" ;;
+        404) _dwarn "Branch '$GITHUB_BRANCH' gone from GitHub - self-update will switch to main on its next run" ;;
+        *)   _dwarn "GitHub unreachable (HTTP $http_code) - self-update and --test won't work right now" ;;
+    esac
+
+    section "Summary"
+    echo -e "  ${YELLOW}$warns warning(s)${RESET}, ${RED}$fails failure(s)${RESET}, ${CYAN}$fixed auto-fixed${RESET}" >&2
+    if [ "$fails" -gt 0 ]; then
+        log_error "Doctor found $fails blocking issue(s) - fix them with the commands above, then re-run --doctor"
+        return 1
+    fi
+    if [ "$fixed" -gt 0 ]; then
+        log_ok "Doctor applied $fixed fix(es) - re-run --doctor to confirm everything is green"
+    else
+        log_ok "Everything looks healthy"
+    fi
+    return 0
+}
+
+# Download the protocol test suite + the egg helper it exercises from GitHub
+# (tracks GITHUB_BRANCH like self-update), run it in a temp dir, clean up.
+# Tests the branch's logic, not the installed image - a smoke check for support.
+run_protocol_test() {
+    section "Protocol Self-Test"
+
+    local tmp
+    tmp=$(mktemp -d /tmp/cs2-egg-test-XXXXXX) || { log_error "mktemp failed"; exit 1; }
+    trap 'rm -rf "$tmp"' EXIT
+
+    local base="https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}"
+    mkdir -p "$tmp/misc" "$tmp/docker/scripts"
+    local f
+    for f in misc/protocol-test.sh misc/update-cs2-centralized.sh docker/scripts/update_helper.sh; do
+        if ! curl -fsSL --max-time 30 "$base/$f" -o "$tmp/$f"; then
+            log_error "Failed to download $f from GitHub (branch: $GITHUB_BRANCH)"
+            exit 1
+        fi
+    done
+
+    log_info "Running boot-handshake tests (branch: ${BOLD}$GITHUB_BRANCH${RESET})..."
+    if bash "$tmp/misc/protocol-test.sh" >&2; then
+        log_ok "Protocol self-test passed"
+        exit 0
+    fi
+    log_error "Protocol self-test FAILED - please report this with the output above"
+    exit 1
 }
 
 run_event_daemon() {
@@ -1002,102 +1630,53 @@ run_event_daemon() {
     done
 
     log_ok "Daemon started - watching for container start events"
+    log_info "Script version: ${BOLD}$(grep -m1 '^# Version:' "$0" | awk '{print $3}')${RESET}"
     log_info "Images: ${BOLD}$SERVER_IMAGE${RESET}"
     log_info "Push method: ${BOLD}$VPK_PUSH_METHOD${RESET}"
     log_info "CS2 source: ${BOLD}$CS2_DIR${RESET}"
     echo "" >&2
 
+    local _max_workers="$MAX_WORKERS"
+    local _fifo
+    _fifo=$(mktemp -u /tmp/cs2-daemon-slots-XXXXXX)
+    mkfifo "$_fifo"
+    exec {_DAEMON_WORKER_FD}<>"$_fifo"
+    rm -f "$_fifo"
+    for _i in $(seq 1 "$_max_workers"); do echo >&"$_DAEMON_WORKER_FD"; done
+
+    log_info "Worker pool: ${BOLD}${_max_workers}${RESET} parallel workers (MAX_WORKERS)"
+    echo "" >&2
+
+    # Fresh daemon = no live workers: wipe the registry, then start the status
+    # refresher that keeps waiting eggs' status files fresh every 3s.
+    rm -rf "$DAEMON_REGISTRY_DIR" 2>/dev/null || true
+    mkdir -p "$DAEMON_REGISTRY_DIR" 2>/dev/null || true
+    _status_refresher &
+    _REFRESHER_PID=$!
+
+    # Refresher never exits on its own - kill it first or `wait` would hang.
+    trap 'kill "$_REFRESHER_PID" 2>/dev/null; wait; exec {_DAEMON_WORKER_FD}>&-' EXIT
+    trap 'kill "$_REFRESHER_PID" 2>/dev/null; wait; exec {_DAEMON_WORKER_FD}>&-; exit 130' INT
+    trap 'kill "$_REFRESHER_PID" 2>/dev/null; wait; exec {_DAEMON_WORKER_FD}>&-; exit 143' TERM
+
     # Outer loop: reconnect if the docker events stream drops (daemon restart, etc.)
     while true; do
-        # Listen for create (new server), start (boot), and restart (in-place restart).
-        # restart can fire without a preceding create on `docker restart`, so it must be
-        # handled identically to start - quick restarts also need full marker refresh.
-        docker events \
-            --filter type=container \
-            --filter event=create \
-            --filter event=start \
-            --filter event=restart \
-            "${filter_args[@]}" \
-            --format '{{.Action}} {{.Actor.Attributes.name}}' 2>/dev/null | \
+        # Catch containers whose events we missed (daemon downtime / stream drop):
+        # verify-only for healthy volumes, so the sweep is cheap.
+        _reconcile_running_containers
+
         while IFS=' ' read -r event container; do
             [[ -z "$container" ]] && continue
-
-            # Treat restart identically to start for all downstream logic.
-            [ "$event" = "restart" ] && event="start"
-
-            # symlink mode: nsenter-mount on every start event, before debounce/lock.
-            # marker is touched here (after mount) — entrypoint waits for it.
-            if [ "$event" = "start" ] && [ "$VPK_PUSH_METHOD" = "symlink" ]; then
-                if _nsenter_mount "$container" "$CS2_DIR" "/tmp/cs2-shared"; then
-                    log_info "CS2_DIR mounted into ${BOLD}$container${RESET} at /tmp/cs2-shared"
-                    local _vol_path
-                    _vol_path=$(docker inspect "$container" \
-                        --format '{{range .Mounts}}{{if eq .Destination "/home/container"}}{{.Source}}{{end}}{{end}}' \
-                        2>/dev/null)
-                    if [ -n "$_vol_path" ] && [ -d "$_vol_path/egg" ]; then
-                        touch "$_vol_path/egg/.daemon-managed" 2>/dev/null || true
-                        chown pterodactyl:pterodactyl "$_vol_path/egg/.daemon-managed" 2>/dev/null || true
-                    fi
-                else
-                    log_warn "nsenter mount failed for $container - symlinks may not resolve"
-                fi
-            fi
-
-            # Debounce: only applied to create events (Wings fires create+start together,
-            # so create handles initial push and start can skip the heavy work).
-            # Start events MUST always run verify + marker refresh, otherwise quick
-            # restarts (<10s) leave stale/missing markers and the entrypoint times out.
-            local debounce_file="/tmp/cs2-vpk-pushed-${container}"
-            if [ "$event" != "start" ] && [ -f "$debounce_file" ]; then
-                local last_push
-                last_push=$(cat "$debounce_file" 2>/dev/null || echo 0)
-                local now
-                now=$(date +%s)
-                if [ $((now - last_push)) -lt 30 ]; then
-                    continue
-                fi
-            fi
-
-            # Per-container lock to avoid overlapping pushes (e.g. create + start firing together)
-            local lock_file="/var/lock/cs2-vpk-push-${container}.lock"
-            if ! mkdir "$lock_file" 2>/dev/null; then
-                continue
-            fi
-
-            local volume_path
-            volume_path=$(docker inspect "$container" \
-                --format '{{range .Mounts}}{{if eq .Destination "/home/container"}}{{.Source}}{{end}}{{end}}' \
-                2>/dev/null)
-
-            if [ -z "$volume_path" ] || [ ! -d "$volume_path" ]; then
-                rmdir "$lock_file" 2>/dev/null || true
-                continue
-            fi
-
-            if [ "$event" = "start" ]; then
-                # self-heal: verify VPKs are properly placed; re-push if not
-                if _verify_volume_vpks "$volume_path"; then
-                    # all good — refresh marker as heartbeat
-                    mkdir -p "$volume_path/egg" 2>/dev/null
-                    touch "$volume_path/egg/.daemon-managed" 2>/dev/null || true
-                    chown -R pterodactyl:pterodactyl "$volume_path/egg" 2>/dev/null || true
-                    rmdir "$lock_file" 2>/dev/null || true
-                    continue
-                fi
-                log_warn "Container has missing/broken VPKs: ${BOLD}$container${RESET} - self-healing push..."
-            else
-                log_info "Container started: ${BOLD}$container${RESET} - pushing game files before first start..."
-            fi
-
-            if _sync_to_volume "$container" "$volume_path"; then
-                date +%s > "$debounce_file"
-                log_ok "Game files pushed to ${BOLD}$container${RESET}"
-            else
-                log_warn "Push failed for ${BOLD}$container${RESET}"
-            fi
-
-            rmdir "$lock_file" 2>/dev/null || true
-        done
+            _handle_container_event "$event" "$container"
+        done < <(
+            docker events \
+                --filter type=container \
+                --filter event=create \
+                --filter event=start \
+                --filter event=restart \
+                "${filter_args[@]}" \
+                --format '{{.Action}} {{.Actor.Attributes.name}}' 2>/dev/null
+        )
 
         log_warn "Docker event stream ended - reconnecting in 5s..."
         sleep 5
@@ -1108,10 +1687,8 @@ run_event_daemon() {
 # SELF-UPDATE FUNCTIONS
 # ============================================================================
 
-download_and_validate_update() {
-    local temp_script="/tmp/$(basename "$0").new.$$"
-
-    # Download with comprehensive options
+_download_script_to() {
+    local dest="$1"
     local download_error
     download_error=$(curl \
         --max-time 30 \
@@ -1122,12 +1699,57 @@ download_and_validate_update() {
         --silent \
         --show-error \
         --location \
-        -o "$temp_script" \
+        -o "$dest" \
         "$REMOTE_SCRIPT_URL" 2>&1) || {
-        log_warn "Failed to download update from GitHub"
+        log_warn "Failed to download update from GitHub (branch: ${GITHUB_BRANCH})"
         [ -n "$download_error" ] && echo "$download_error" | head -n 2 >&2
         return 1
     }
+    return 0
+}
+
+# Rewrite this script's own GITHUB_BRANCH line to main (atomic copy + mv, the
+# running bash keeps reading the old inode). Used when a testing branch (e.g.
+# dev) was merged and deleted, so self-update doesn't dead-end on 404 forever.
+_persist_branch_to_main() {
+    local tmp
+    tmp=$(mktemp "$(dirname "$0")/.$(basename "$0").branch.XXXXXX" 2>/dev/null) || return 0
+    if cp "$0" "$tmp" 2>/dev/null && sed -i 's/^GITHUB_BRANCH=.*/GITHUB_BRANCH="main"/' "$tmp" 2>/dev/null; then
+        chmod +x "$tmp" 2>/dev/null || true
+        mv -f "$tmp" "$0" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+    else
+        rm -f "$tmp" 2>/dev/null
+    fi
+    return 0
+}
+
+download_and_validate_update() {
+    # Stage next to $0 so the final mv is an atomic same-filesystem rename;
+    # /tmp can be a separate tmpfs where mv degrades to copy (crash = broken script)
+    local temp_script
+    temp_script=$(mktemp "$(dirname "$0")/.$(basename "$0").new.XXXXXX") || return 1
+
+    if ! _download_script_to "$temp_script"; then
+        # Testing branch merged & deleted? Only a confirmed 404 switches to main -
+        # a network hiccup must not pull a tester off their branch.
+        local http_code=""
+        if [ "$GITHUB_BRANCH" != "main" ]; then
+            http_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$REMOTE_SCRIPT_URL" 2>/dev/null || echo 000)
+        fi
+        if [ "$http_code" = "404" ]; then
+            log_warn "Branch '${GITHUB_BRANCH}' no longer exists on GitHub (merged?) - switching self-update to main"
+            GITHUB_BRANCH="main"
+            REMOTE_SCRIPT_URL="https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}/misc/${SCRIPT_FILENAME}"
+            _persist_branch_to_main
+            if ! _download_script_to "$temp_script"; then
+                rm -f "$temp_script"
+                return 1
+            fi
+        else
+            rm -f "$temp_script"
+            return 1
+        fi
+    fi
 
     # Validate non-empty
     if [ ! -s "$temp_script" ]; then
@@ -1193,6 +1815,9 @@ preserve_user_config() {
         "AUTO_UPDATE_SCRIPT"
         "UPDATE_CHECK_INTERVAL"
         "VPK_PUSH_METHOD"
+        "MAX_WORKERS"
+        "WINGS_CONFIG"
+        "GITHUB_BRANCH"
     )
 
     log_info "Preserving user configuration..."
@@ -1231,9 +1856,6 @@ apply_update() {
     # Atomic replace
     chmod +x "$new_script"
     mv "$new_script" "$0"
-
-    # Mark for health check
-    touch "$0.updated"
 
     # Update timestamp
     echo "$(date +%s)" > "$UPDATE_CHECK_TIMESTAMP_FILE"
@@ -1323,42 +1945,19 @@ check_and_apply_updates() {
     return 1
 }
 
-check_update_health() {
-    if [ -f "$0.updated" ]; then
-        section "Post-Update Health Check"
-        log_info "Performing health check after update..."
-
-        # Basic health checks
-        if ! command -v sha256sum >/dev/null 2>&1; then
-            log_error "Health check failed: required command 'sha256sum' not found"
-            rollback_from_failed_update "$@"
-            return 1
+main() {
+    # Everything here touches root-owned paths (CS2_DIR, /var/cache, /var/lock,
+    # panel volumes, docker) - re-exec with sudo like the installer does, instead
+    # of failing halfway through with confusing permission errors.
+    if [ "$EUID" -ne 0 ]; then
+        if command -v sudo >/dev/null 2>&1; then
+            log_warn "Requires root - re-executing with sudo..."
+            exec sudo bash "$0" "$@"
         fi
-
-        rm "$0.updated"
-        log_ok "Health check passed, update successful"
-    fi
-}
-
-rollback_from_failed_update() {
-    log_error "Rolling back to previous version..."
-
-    local latest_backup=$(ls -t "$UPDATE_BACKUP_DIR"/* 2>/dev/null | head -n1)
-
-    if [ -n "$latest_backup" ]; then
-        cp "$latest_backup" "$0"
-        chmod +x "$0"
-        rm -f "$0.updated"
-        log_info "Rollback complete, restarting..."
-        exec "$0" "$@"
-    else
-        log_error "No backup found for rollback, manual intervention required"
-        log_error "Script location: $0"
+        log_error "This script must run as root"
         exit 1
     fi
-}
 
-main() {
     # Parse command line arguments
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -1368,7 +1967,7 @@ main() {
                 ;;
             --validate)
                 VALIDATE_INSTALL="true"
-                log_warn "One-shot validate requested — steamcmd will verify every file this run"
+                log_warn "One-shot validate requested: steamcmd will verify every file this run"
                 shift
                 ;;
             --daemon)
@@ -1380,16 +1979,41 @@ main() {
                 run_event_daemon
                 exit 0
                 ;;
+            --test)
+                run_protocol_test
+                exit 0
+                ;;
+            --doctor)
+                run_doctor
+                exit $?
+                ;;
+            --update)
+                # forced self-update: fetch + install the latest script from
+                # GITHUB_BRANCH right now (daemon restarts automatically),
+                # skipping the CS2/steamcmd update entirely
+                acquire_lock
+                trap release_lock EXIT
+                AUTO_UPDATE_SCRIPT="true"
+                UPDATE_CHECK_INTERVAL="*"
+                check_and_apply_updates
+                exit 0
+                ;;
             *)
                 log_error "Unknown argument: $1"
                 echo ""
                 echo "Usage: $0 [--simulate] [--validate]"
                 echo "       $0 --daemon"
+                echo "       $0 --test"
+                echo "       $0 --doctor"
+                echo "       $0 --update"
                 echo ""
                 echo "Options:"
                 echo "  --simulate    Simulate update mode (skip SteamCMD, trigger restart logic)"
-                echo "  --validate    Force one-shot file validation (steamcmd validate) — does not persist"
+                echo "  --validate    Force one-shot file validation (steamcmd validate), does not persist"
                 echo "  --daemon      Run as event listener - push game files on container start"
+                echo "  --test        Download + run the protocol test suite, then clean up"
+                echo "  --doctor      Health check + safe auto-fixes for the whole setup"
+                echo "  --update      Self-update the script now (skips the CS2 update)"
                 echo ""
                 exit 1
                 ;;
@@ -1445,20 +2069,17 @@ main() {
         log_info "Skipping SteamCMD update (simulate mode)"
         log_ok "Simulated update complete - triggering push and restart logic"
         update_occurred=true
-
-        push_vpk_to_containers
-        if [ "$AUTO_RESTART_SERVERS" = "true" ]; then
-            restart_docker_containers
-        else
-            log_info "Auto-restart disabled, servers will pick up new files on next restart"
-        fi
     elif update_cs2; then
         update_occurred=true
-        # Push updated game files into server volumes
-        push_vpk_to_containers
-        # Restart servers if configured
+    fi
+
+    if [ "$update_occurred" = "true" ]; then
+        # A partial push must not abort the run: healthy servers still need their restart
+        if ! push_vpk_to_containers; then
+            log_warn "Some pushes failed - continuing so synced servers still restart"
+        fi
         if [ "$AUTO_RESTART_SERVERS" = "true" ]; then
-            restart_docker_containers
+            restart_docker_containers || log_warn "Some restarts failed - check output above"
         else
             log_info "Auto-restart disabled, servers will pick up new files on next restart"
         fi
@@ -1496,8 +2117,8 @@ main() {
     echo ""
 }
 
-# Check for post-update health (auto-rollback if needed)
-check_update_health "$@"
-
-# Run main program
-main "$@"
+# Run main program - only when executed directly; sourcing (protocol tests)
+# loads the functions without side effects
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

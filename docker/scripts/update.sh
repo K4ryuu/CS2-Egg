@@ -70,11 +70,7 @@ update_addons() {
 
     # MetaMod:Source
     if [ "${INSTALL_METAMOD:-0}" -eq 1 ]; then
-        if type update_metamod &>/dev/null; then
-            update_metamod
-        else
-            log_message "update_metamod function not available" "error"
-        fi
+        update_metamod
 
         # Configure metamod in gameinfo.gi
         add_to_gameinfo "csgo/addons/metamod"
@@ -82,20 +78,12 @@ update_addons() {
 
     # CounterStrikeSharp
     if [ "${INSTALL_CSS:-0}" -eq 1 ]; then
-        if type update_counterstrikesharp &>/dev/null; then
-            update_counterstrikesharp
-        else
-            log_message "update_counterstrikesharp function not available" "error"
-        fi
+        update_counterstrikesharp
     fi
 
     # SwiftlyS2 (standalone)
     if [ "${INSTALL_SWIFTLY:-0}" -eq 1 ]; then
-        if type update_swiftly &>/dev/null; then
-            update_swiftly
-        else
-            log_message "update_swiftly function not available" "error"
-        fi
+        update_swiftly
 
         # Configure swiftlys2 in gameinfo.gi
         add_to_gameinfo "csgo/addons/swiftlys2"
@@ -110,11 +98,7 @@ update_addons() {
 
     # ModSharp (standalone)
     if [ "${INSTALL_MODSHARP:-0}" -eq 1 ]; then
-        if [ -f "/scripts/updaters/modsharp.sh" ]; then
-            bash /scripts/updaters/modsharp.sh
-        else
-            log_message "ModSharp updater script not found" "error"
-        fi
+        update_modsharp
 
         # Configure modsharp in gameinfo.gi
         add_to_gameinfo "sharp"

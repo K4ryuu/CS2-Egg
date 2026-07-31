@@ -52,7 +52,7 @@ handle_server_output() {
         return
     fi
 
-    # Mask secrets always (STEAM_ACC etc.) — independent of ENABLE_FILTER.
+    # Mask secrets always (STEAM_ACC etc.), independent of ENABLE_FILTER.
     line="$(mask_secrets "$line")"
 
     # Pattern-based blocking is opt-in.
