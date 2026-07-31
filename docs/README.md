@@ -1,6 +1,6 @@
-# KitsuneLab CS2 Egg Documentation
+# CS2 Egg Documentation
 
-Welcome to the official documentation for the KitsuneLab CS2 Pterodactyl Egg! This comprehensive guide will help you install, configure, and use all features.
+Welcome to the official documentation for the CS2 Pterodactyl & Pelican Egg! This comprehensive guide will help you install, configure, and use all features.
 
 ## Quick Start
 
@@ -28,6 +28,8 @@ New to this egg? Start here:
 
 - [Auto-Updaters](features/auto-updaters.md) - Multi-framework support with independent toggles
 
+- [Junk Cleaner](features/cleanup.md) - Automatic cleanup with customizable rules
+
 ### Configuration
 
 - [Configuration Files](configuration/configuration-files.md) - JSON-based configuration system
@@ -39,6 +41,8 @@ New to this egg? Start here:
 - [GDB Debugging](advanced/debugging.md) - Remote debugging with GDB and IDA Pro
 
 - [Troubleshooting](advanced/troubleshooting.md) - Common issues and solutions
+
+- [Error Codes](advanced/error-codes.md) - Every fatal error code with cause and fix
 
 ## Key Features
 
@@ -101,9 +105,9 @@ docker push your-registry/your-image:my-tag
 
 - **[Download Egg](https://github.com/K4ryuu/CS2-Egg/blob/main/pterodactyl/kitsunelab-cs2-egg.json)**
 
-- **[Report Bug](https://github.com/K4ryuu/CS2-Egg/issues/new?assignees=KitsuneLab-Development&labels=bug&projects=&template=bug_report.md&title=%5BBUG%5D)**
+- **[Report Bug](https://github.com/K4ryuu/CS2-Egg/issues/new?template=3-bug_report.yml)**
 
-- **[Request Feature](https://github.com/K4ryuu/CS2-Egg/issues/new?assignees=KitsuneLab-Development&labels=enhancement&projects=&template=feature_request.md&title=%5BREQ%5D)**
+- **[Request Feature](https://github.com/K4ryuu/CS2-Egg/issues/new?template=1-feature_request.yml)**
 
 - **[View Changelog](../CHANGELOG)**
 
@@ -133,7 +137,7 @@ Want to help improve this project?
 
 ## License
 
-This project is licensed under the GPL-3.0 License - see the [LICENSE.md](../LICENSE.md) file for details.
+This project is licensed under the MIT License - see the [LICENSE.md](../LICENSE.md) file for details.
 
 ## Credits
 
@@ -146,7 +150,7 @@ This project is licensed under the GPL-3.0 License - see the [LICENSE.md](../LIC
 ---
 
 <div align="center">
-  <p>Made with ♥ by <a href="https://github.com/K4ryuu">K4ryuu</a> @ <a href="https://kitsune-lab.com">KitsuneLab</a></p>
+  <p>Made with ♥ by <a href="https://github.com/K4ryuu">K4ryuu</a></p>
   <p>
     <a href="https://github.com/K4ryuu/CS2-Egg">⭐ Star on GitHub</a>
   </p>

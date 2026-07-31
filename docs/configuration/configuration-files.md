@@ -1,6 +1,6 @@
 # Configuration Files
 
-The KitsuneLab CS2 Egg uses JSON configuration files for easy, persistent customization.
+The CS2 Egg uses JSON configuration files for easy, persistent customization.
 
 ## Location
 

@@ -3,7 +3,7 @@
 > **Can't find your error here, or the fix didn't work?**
 > Open a [bug report](https://github.com/K4ryuu/CS2-Egg/issues/new/choose) - include the `KL-XXX-NN` code, the full log output, your egg version, and Docker image tag.
 
-Every fatal error in the KitsuneLab egg emits a stable code. Look it up here to see what it means, how to diagnose it, and how to fix it.
+Every fatal error in the egg emits a stable code. Look it up here to see what it means, how to diagnose it, and how to fix it.
 
 ## Index
 

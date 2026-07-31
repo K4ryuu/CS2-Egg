@@ -14,17 +14,16 @@
 <!-- PROJECT LOGO -->
 <br />
 <div align="center">
-  <h1 align="center">KitsuneLab©</h1>
-  <h3 align="center">CS2 Egg</h3>
+  <h1 align="center">CS2 Egg</h1>
   <a align="center">Production-ready CS2 Pterodactyl & Pelican Egg with automated updates, intelligent cleanup, auto-restart on game updates, and advanced configuration management.</a>
 
   <p align="center">
     <br />
     <a href="https://github.com/K4ryuu/CS2-Egg/blob/main/pterodactyl/kitsunelab-cs2-egg.json">Download</a>
     ·
-    <a href="https://github.com/K4ryuu/CS2-Egg/issues/new?assignees=KitsuneLab-Development&labels=bug&projects=&template=bug_report.md&title=%5BBUG%5D">Report Bug</a>
+    <a href="https://github.com/K4ryuu/CS2-Egg/issues/new?template=3-bug_report.yml">Report Bug</a>
     ·
-    <a href="https://github.com/K4ryuu/CS2-Egg/issues/new?assignees=KitsuneLab-Development&labels=enhancement&projects=&template=feature_request.md&title=%5BREQ%5D">Request Feature</a>
+    <a href="https://github.com/K4ryuu/CS2-Egg/issues/new?template=1-feature_request.yml">Request Feature</a>
     ·
     <a href="https://dsc.gg/k4-fanbase">Discord</a>
     ·
@@ -66,6 +65,15 @@ curl -fsSL https://raw.githubusercontent.com/K4ryuu/CS2-Egg/main/misc/install-cs
 
 > **Recommended:** run with default options. Just press Enter through the wizard.
 
+Once installed, the script doubles as the host-side maintenance tool:
+
+| Flag | What it does |
+| ---- | ------------ |
+| `--doctor` | Full health check (service, cron, dependencies, per-server status, orphaned locks) with safe auto-fixes |
+| `--update` | Self-update the script right now, daemon restarts automatically |
+| `--test` | Run the boot-handshake protocol test suite |
+| `--validate` | One-shot SteamCMD file check without changing your saved config |
+
 → [Full documentation](docs/features/vpk-sync.md)
 
 ## System Requirements
@@ -105,11 +113,13 @@ Each framework can be enabled/disabled independently via Pterodactyl/Pelican pan
 
 - **Auto-Updaters** → MetaMod, CounterStrikeSharp, SwiftlyS2, ModSharp automatically update on server restart
 - **[Centralized Update Script](docs/features/vpk-sync.md)** → Auto-restart on CS2 updates with version tracking (misc/update-cs2-centralized.sh)
+- **[Boot Handshake](docs/features/vpk-sync.md)** → Servers read a daemon-written status file at boot, so a restart during a CS2 update waits it out instead of triggering a full SteamCMD redownload
 
 ### Storage & Performance
 
 - **[VPK Sync](docs/features/vpk-sync.md)** → 80% storage & bandwidth reduction via centralized file sharing
-- **Junk Cleaner** → Automatic cleanup (backups, logs, demos)
+- **Worker Pool** → Parallel file pushes (`MAX_WORKERS`, default 8) so mass-starting servers never stalls the daemon
+- **[Junk Cleaner](docs/features/cleanup.md)** → Automatic cleanup with customizable rules (backups, logs, demos, crash dumps)
 
 ### Management & Configuration
 
@@ -135,13 +145,18 @@ Comprehensive documentation is available:
 
 - **[VPK Sync & Centralized Updates](docs/features/vpk-sync.md)** → 80% storage savings + auto-restart on CS2 updates
 - **[Auto-Updaters](docs/features/auto-updaters.md)** → Plugin auto-updates (MetaMod, CSS, SwiftlyS2, ModSharp)
-- **[Console Filter](docs/features/console-filter.md)** → Message filtering
-- **[Junk Cleaner](docs/features/junk-cleaner.md)** → Automatic cleanup
+- **[Junk Cleaner](docs/features/cleanup.md)** → Automatic cleanup with customizable rules
+
+### Configuration
+
+- **[Configuration Files](docs/configuration/configuration-files.md)** → JSON configs, console filter, logging
 
 ### Advanced
 
 - **[Building from Source](docs/advanced/building.md)** → Build your own image
 - **[Troubleshooting](docs/advanced/troubleshooting.md)** → Common issues
+- **[Error Codes](docs/advanced/error-codes.md)** → Every fatal error code with cause and fix
+- **[Debugging](docs/advanced/debugging.md)** → Diagnose a misbehaving server
 
 **[View Full Documentation →](docs/README.md)**
 
@@ -156,7 +171,10 @@ Build your own Docker image using the included build script:
 ./build.sh latest
 
 # Build and publish to Docker Hub
-./build.sh latest --publish
+./build.sh latest --dockerhub
+
+# Build and publish to both Docker Hub and GHCR
+./build.sh latest --all
 ```
 
 **Note:** Edit `build.sh` to change the registry from `sples1/k4ryuu-cs2` to your own.
@@ -171,9 +189,7 @@ Build your own Docker image using the included build script:
 
 ## Roadmap
 
-- [ ] Improve bad SFTP client compatibility against stating symbolic links
-- [ ] GDC optional connection to automatically detect unreliable gamedatas(?)
-- [ ] Optimize and add more automated tests for update scripts
+Nothing planned right now. The egg covers what it set out to do, and development continues through bug reports and feature requests. Have an idea? [Open a request](https://github.com/K4ryuu/CS2-Egg/issues/new?template=1-feature_request.yml).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -181,6 +197,6 @@ Build your own Docker image using the included build script:
 
 ## License
 
-Distributed under the GPL-3.0 License. See `LICENSE.md` for more information.
+Distributed under the MIT License. See `LICENSE.md` for more information.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>

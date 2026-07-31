@@ -1,6 +1,6 @@
 # Installation Guide
 
-This guide will walk you through installing and configuring the KitsuneLab CS2 Egg for Pterodactyl.
+This guide will walk you through installing and configuring the CS2 Egg for Pterodactyl.
 
 ## Prerequisites
 
