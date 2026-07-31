@@ -139,7 +139,8 @@ detect_daemon_vpk() {
                 # a new-script host (stale status + cron push) doesn't get a false alarm
                 if [ ! -f "$status_file" ]; then
                     log_message "Host update script is outdated (legacy daemon protocol) - support ends after 2026-10-01" "warning"
-                    log_message "  → It self-updates if AUTO_UPDATE_SCRIPT=true; otherwise re-run the installer on the host" "warning"
+                    log_message "  → The new one is worth it: update queue with crash recovery, no more stuck or half-pushed boots, security and performance fixes" "warning"
+                    log_message "  → It self-updates if AUTO_UPDATE_SCRIPT=true, otherwise re-run the installer on the host" "warning"
                 fi
                 _daemon_managed
                 return 0

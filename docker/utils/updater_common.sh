@@ -32,6 +32,7 @@ get_github_release() {
         log_message "GitHub API rate limited (HTTP $http_code) - skipping update check for $repo this boot" "warning" >&2
         return 1
     fi
+
     if [ "$http_code" != "200" ]; then
         log_message "GitHub API returned HTTP $http_code for $repo - skipping update check" "warning" >&2
         return 1
