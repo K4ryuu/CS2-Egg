@@ -453,9 +453,10 @@ else
 fi
 
 echo ""
-if [ "$FAILS" -eq 0 ]; then
-    echo "${GREEN}${BOLD}All cases passed.${RESET}"
-else
+if [ "$FAILS" -ne 0 ]; then
     echo "${RED}${BOLD}$FAILS case(s) FAILED.${RESET}"
+    echo ""
     exit 1
 fi
+echo "${GREEN}${BOLD}All cases passed.${RESET}"
+echo ""

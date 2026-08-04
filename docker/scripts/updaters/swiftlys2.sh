@@ -15,44 +15,17 @@ update_swiftly() {
     rm -rf "$temp_dir"/*
 
     local release_info
-    release_info=$(get_github_release "$REPO" "linux.*with-runtimes\\.zip")
-
-    # Validate JSON response
-    if [ -z "$release_info" ] || ! echo "$release_info" | jq -e . >/dev/null 2>&1; then
-        log_message "Failed to get release info for $REPO" "error"
-        return 1
-    fi
+    release_info=$(fetch_release "SwiftlyS2" "$REPO" "linux.*with-runtimes\\.zip") || return 1
 
     local new_version=$(echo "$release_info" | jq -r '.version // empty')
     local asset_url=$(echo "$release_info" | jq -r '.asset_url // empty')
-    local current_version=$(get_current_version "Swiftly")
 
-    if [ -z "$new_version" ]; then
-        log_message "Failed to get version for $REPO" "error"
-        return 0
-    fi
-
-    # Check if update is needed
-    if [ -n "$current_version" ]; then
-        semver_compare "$new_version" "$current_version"
-        case $? in
-            0) # Equal
-                log_message "SwiftlyS2 is up-to-date ($current_version)" "success"
-                return 0
-                ;;
-            2) # new < current
-                log_message "SwiftlyS2 is at a newer version ($current_version) than latest ($new_version). Skipping downgrade." "info"
-                return 0
-                ;;
-        esac
-    fi
+    needs_update "SwiftlyS2" "Swiftly" "$new_version" || return 0
 
     if [ -z "$asset_url" ]; then
         log_message "No suitable asset found for $REPO" "error"
         return 0
     fi
-
-    log_message "Update available for SwiftlyS2: $new_version (current: ${current_version:-none})" "info"
 
     if handle_download_and_extract "$asset_url" "$temp_dir/download.zip" "$temp_dir" "zip"; then
         # Find swiftlys2 directory (handles versioned top-level folders)
@@ -89,14 +62,7 @@ update_swiftly() {
     return 1
 }
 
-# Main function
-main() {
-    mkdir -p "$TEMP_DIR"
-    update_swiftly
-    return $?
-}
-
-# Run if executed directly
+# only when run standalone: update.sh sources this and calls the function
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
-    main "$@"
+    run_updater update_swiftly
 fi

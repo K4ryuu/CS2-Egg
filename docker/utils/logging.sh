@@ -42,10 +42,9 @@ get_log_file_path() {
     echo "${EGG_LOGS_DIR}/${date_str}.log"
 }
 
-# Map message types to priorities for filtering
-_get_msg_priority() {
-    local type="$1"
-    case "$type" in
+# severity rank, shared by message types and the configured threshold
+_priority() {
+    case "$(echo "$1" | tr '[:upper:]' '[:lower:]')" in
         "debug") echo 0 ;;
         "info"|"success") echo 1 ;;
         "warning"|"running") echo 2 ;;
@@ -55,13 +54,7 @@ _get_msg_priority() {
 }
 
 get_level_priority() {
-    case "$(echo "${CONSOLE_LOG_LEVEL:-INFO}" | tr '[:lower:]' '[:upper:]')" in
-        "DEBUG") echo 0 ;;
-        "INFO") echo 1 ;;
-        "WARNING") echo 2 ;;
-        "ERROR") echo 3 ;;
-        *) echo 1 ;; # Default to INFO
-    esac
+    _priority "${CONSOLE_LOG_LEVEL:-INFO}"
 }
 
 # Clean up old logs based on size/count/age limits
@@ -101,7 +94,7 @@ rotate_logs() {
 log_message() {
     local message="$1"
     local type="${2:-info}"
-    local msg_priority=$(_get_msg_priority "$type")
+    local msg_priority=$(_priority "$type")
     local log_level_priority=$(get_level_priority)
 
         # Skip if this message doesn't meet our log level threshold

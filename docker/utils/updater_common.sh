@@ -5,11 +5,10 @@
 VERSION_FILE="${EGG_DIR:-/home/container/egg}/versions.txt"
 TEMP_DIR="./temps"
 
-# Get GitHub release info (supports prerelease via PRERELEASE env var)
-# Outputs JSON: {version, asset_url, asset_name, is_prerelease}
-get_github_release() {
+# Raw release object. Use when you need fields the reshape below drops, like a
+# second asset off the same release.
+github_release_json() {
     local repo="$1"
-    local asset_pattern="${2:-.*}"
     local url="https://api.github.com/repos/$repo/releases"
 
     # Select endpoint based on prerelease setting (log to stderr to not pollute output)
@@ -38,8 +37,18 @@ get_github_release() {
         return 1
     fi
 
-    echo "$body" | jq --arg p "$asset_pattern" '
-        (if type == "array" then .[0] else . end) //empty |
+    # prerelease endpoint gives an array, /latest a single object
+    echo "$body" | jq '(if type == "array" then .[0] else . end) //empty' 2>/dev/null
+}
+
+# Get GitHub release info (supports prerelease via PRERELEASE env var)
+# Outputs JSON: {version, asset_url, asset_name, is_prerelease}
+get_github_release() {
+    local repo="$1"
+    local asset_pattern="${2:-.*}"
+
+    github_release_json "$repo" | jq --arg p "$asset_pattern" '
+        select(. != null) |
         {
             version: .tag_name,
             is_prerelease: .prerelease,
@@ -47,6 +56,56 @@ get_github_release() {
             asset_name: (first(.assets[] | select(.name | test($p)) | .name) // "")
         }
     ' 2>/dev/null
+}
+
+# Validated release JSON, or fail loudly. Saves every updater the same guard.
+fetch_release() {
+    local label="$1" repo="$2" asset_pattern="${3:-.*}"
+
+    local release_info
+    release_info=$(get_github_release "$repo" "$asset_pattern")
+    if [ -z "$release_info" ] || ! echo "$release_info" | jq -e . >/dev/null 2>&1; then
+        log_message "Failed to get release info for $label ($repo)" "error" >&2
+        return 1
+    fi
+
+    echo "$release_info"
+}
+
+# 0 = install it, 1 = leave it alone. Logs why either way.
+needs_update() {
+    local label="$1" version_key="$2" new_version="$3"
+
+    if [ -z "$new_version" ]; then
+        log_message "Failed to get version for $label" "error" >&2
+        return 1
+    fi
+
+    local current_version
+    current_version=$(get_current_version "$version_key")
+
+    if [ -n "$current_version" ]; then
+        semver_compare "$new_version" "$current_version"
+        case $? in
+            0)
+                log_message "$label is up-to-date ($current_version)" "success" >&2
+                return 1
+                ;;
+            2)
+                log_message "$label is at a newer version ($current_version) than latest ($new_version). Skipping downgrade." "info" >&2
+                return 1
+                ;;
+        esac
+    fi
+
+    log_message "Update available for $label: $new_version (current: ${current_version:-none})" "info" >&2
+    return 0
+}
+
+# standalone entry point: temp dir, run, pass the status back
+run_updater() {
+    mkdir -p "$TEMP_DIR"
+    "$@"
 }
 
 # Compare two semantic versions (semver)

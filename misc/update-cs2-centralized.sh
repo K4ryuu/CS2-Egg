@@ -1487,8 +1487,8 @@ run_doctor() {
         if systemctl is-active --quiet cs2-vpk-daemon 2>/dev/null; then
             local main_pid live_version stale=false
             main_pid=$(systemctl show -p MainPID --value cs2-vpk-daemon 2>/dev/null || echo 0)
-            # version, not mtime: an update keeps the downloaded file's mtime and
-            # any edit bumps it, so timestamps lie in both directions
+            # version, not mtime: an update keeps the download's mtime and any
+            # edit bumps it, so timestamps lie both ways
             live_version=$(_daemon_running_version "$main_pid" || true)
             if [ -n "$live_version" ] && [ -n "${disk_version:-}" ]; then
                 [ "$live_version" != "$disk_version" ] && stale=true
@@ -1718,9 +1718,10 @@ run_protocol_test() {
     trap 'rm -rf "$tmp"' EXIT
 
     local base="https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}"
-    mkdir -p "$tmp/misc/tests" "$tmp/docker/scripts"
+    mkdir -p "$tmp/misc/tests" "$tmp/docker/scripts" "$tmp/docker/utils"
     local f
-    for f in misc/tests/protocol-test.sh misc/tests/soak-test.sh misc/update-cs2-centralized.sh docker/scripts/update_helper.sh; do
+    for f in misc/tests/protocol-test.sh misc/tests/soak-test.sh misc/tests/updater-common-test.sh \
+             misc/update-cs2-centralized.sh docker/scripts/update_helper.sh docker/utils/updater_common.sh; do
         if ! curl -fsSL --max-time 30 "$(_fresh_url "$base/$f")" -o "$tmp/$f"; then
             log_error "Failed to download $f from GitHub (branch: $GITHUB_BRANCH)"
             exit 1
@@ -1739,11 +1740,17 @@ run_protocol_test() {
         exit 1
     fi
 
+    log_info "Running addon updater tests..."
+    if ! bash "$tmp/misc/tests/updater-common-test.sh" >&2; then
+        log_error "Updater helper self-test FAILED - please report this with the output above"
+        exit 1
+    fi
+
     log_ok "Self-test passed"
     exit 0
 }
 
-# Version the running daemon logged at startup, empty if no journal to read it.
+# Version the running daemon logged at startup, empty if no journal.
 # _PID alone, not -u: a unit match ORs with a field match instead of narrowing it.
 _daemon_running_version() {
     local pid="${1:-0}"
@@ -2095,15 +2102,15 @@ apply_update() {
     # restart. systemctl restart loads the fresh script from disk.
     if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet cs2-vpk-daemon 2>/dev/null; then
         log_info "Restarting cs2-vpk-daemon service to load new code..."
-        # restart exit code isn't proof: a daemon started after the swap is the
-        # only thing that means new code. Last check before the exec below
+        # exit code isn't proof - only a daemon started after the swap means new
+        # code. Last chance to notice, the exec below never comes back
         local install_ts new_pid proc_start attempt=0 waited
         install_ts=$(date +%s)
         while [ "$attempt" -lt 2 ]; do
             attempt=$((attempt + 1))
             systemctl restart cs2-vpk-daemon 2>/dev/null || true
-            # give it a few seconds to come up before calling it a failure - a
-            # second restart here would kill the pushes the first one started
+            # let it come up first, a second restart would kill the pushes
+            # the first one just started
             waited=0
             while [ "$waited" -lt 5 ]; do
                 new_pid=$(systemctl show -p MainPID --value cs2-vpk-daemon 2>/dev/null || echo 0)
@@ -2127,14 +2134,10 @@ apply_update() {
     exec "$0" "${ORIGINAL_ARGS[@]}"
 }
 
-# Decide what to do with a freshly downloaded script under the soak window.
-# Pure (no I/O, no globals) so the soak tests can drive every branch directly.
-#   install  soak elapsed, or disabled/bypassed - apply now
-#   wait     same script still soaking, do nothing this run
-#   record   first sight, or the file changed under us - (re)start the timer
-#   drop     the pending version is gone from the branch - it was pulled
-# Keyed on the file hash, not the version: a body swapped under an unchanged
-# version header must restart the clock instead of inheriting the elapsed one.
+# What to do with a freshly downloaded script. Pure, so the tests drive it directly.
+#   install  window elapsed or off      wait    same script, still soaking
+#   record   new or changed, reset      drop    pending one got pulled
+# Keyed on hash, not version: a swapped body must not inherit an elapsed timer.
 # Usage: _soak_verdict <r_ver> <r_hash> <p_ver> <p_hash> <p_ts> <now> <soak>
 _soak_verdict() {
     local r_ver="$1" r_hash="$2" p_ver="$3" p_hash="$4" p_ts="$5" now="$6" soak="$7"
@@ -2173,14 +2176,21 @@ check_and_apply_updates() {
         fi
     fi
 
+    # stamp once here, not at every return inside - by then the network call
+    # the limit exists to space out is already spent. apply_update does its own
+    local rc=0
+    _check_for_new_version || rc=$?
+    echo "$(date +%s)" > "$UPDATE_CHECK_TIMESTAMP_FILE"
+    return $rc
+}
+
+_check_for_new_version() {
     section "Script Update Check"
     log_info "Checking for script updates..."
 
     # Download and validate
     local temp_script
     if ! temp_script=$(download_and_validate_update); then
-        # Update timestamp even on failure to respect rate limit
-        echo "$(date +%s)" > "$UPDATE_CHECK_TIMESTAMP_FILE"
         log_info "Continuing with current version"
         return 0
     fi
@@ -2196,7 +2206,6 @@ check_and_apply_updates() {
     if [ -z "$new_version" ]; then
         log_warn "Downloaded script missing version header, skipping update"
         rm -f "$temp_script"
-        echo "$(date +%s)" > "$UPDATE_CHECK_TIMESTAMP_FILE"
         return 0
     fi
 
@@ -2205,7 +2214,6 @@ check_and_apply_updates() {
         # a pending version the branch no longer offers is dead state - drop it
         # so --doctor does not keep reporting a soak that will never finish
         rm -f "$temp_script" "$UPDATE_PENDING_FILE"
-        echo "$(date +%s)" > "$UPDATE_CHECK_TIMESTAMP_FILE"
         return 0
     fi
 
@@ -2215,7 +2223,6 @@ check_and_apply_updates() {
     if [ "$newest" != "$new_version" ]; then
         log_ok "Local version ($current_version) is ahead of remote ($new_version) - skipping"
         rm -f "$temp_script" "$UPDATE_PENDING_FILE"
-        echo "$(date +%s)" > "$UPDATE_CHECK_TIMESTAMP_FILE"
         return 0
     fi
 
@@ -2243,20 +2250,17 @@ check_and_apply_updates() {
             # silent on purpose: cron runs every minute, --doctor reports the
             # pending version and its remaining time
             rm -f "$temp_script"
-            echo "$now" > "$UPDATE_CHECK_TIMESTAMP_FILE"
             return 0
             ;;
         record)
             printf '%s %s %s\n' "$new_version" "$new_hash" "$now" > "$UPDATE_PENDING_FILE"
             log_info "New version ${BOLD}$new_version${RESET} seen - held for $((soak / 60)) min (soak window), installs unless the release is pulled or changed"
             rm -f "$temp_script"
-            echo "$now" > "$UPDATE_CHECK_TIMESTAMP_FILE"
             return 0
             ;;
         drop)
             log_warn "Pending version ${BOLD}$pending_ver${RESET} is gone from '${GITHUB_BRANCH}' - discarded, nothing installed"
             rm -f "$UPDATE_PENDING_FILE" "$temp_script"
-            echo "$now" > "$UPDATE_CHECK_TIMESTAMP_FILE"
             return 0
             ;;
     esac
