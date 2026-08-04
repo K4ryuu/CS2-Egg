@@ -24,7 +24,7 @@
 #   --update      Self-update the script right now from GITHUB_BRANCH (daemon
 #                 restarts automatically). Skips the CS2/steamcmd update.
 #
-# Version: 1.0.60
+# Version: 1.0.61
 
 set -euo pipefail
 
@@ -133,6 +133,9 @@ CONTAINER_MOUNT_DST="/tmp/cs2-shared"
 DAEMON_INSTANCE_LOCK="/var/lock/cs2-vpk-daemon.lock"
 _REFRESHER_PID=
 _DAEMON_INSTANCE_FD=
+# Explicitly invoked commands skip the raw.githubusercontent edge cache; the cron
+# self-update keeps the plain URL so it stays cacheable for every host
+FORCE_FRESH_FETCH=false
 
 # ============================================================================
 # STYLING / COLORS
@@ -1644,10 +1647,7 @@ run_doctor() {
     section "Self-update"
 
     local http_code
-    # ?ts: the raw.githubusercontent edge caches per file for minutes, and an
-    # explicitly invoked check must see the branch as it is right now. The
-    # cron-driven self-update keeps the plain URL so it stays cacheable.
-    http_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "${REMOTE_SCRIPT_URL}?$(date +%s)" 2>/dev/null || echo 000)
+    http_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$(_fresh_url "$REMOTE_SCRIPT_URL")" 2>/dev/null || echo 000)
     case "$http_code" in
         200) _ok "Update source reachable (branch: $GITHUB_BRANCH)" ;;
         404) _dwarn "Branch '$GITHUB_BRANCH' gone from GitHub - self-update will switch to main on its next run" ;;
@@ -1682,8 +1682,7 @@ run_protocol_test() {
     mkdir -p "$tmp/misc" "$tmp/docker/scripts"
     local f
     for f in misc/protocol-test.sh misc/update-cs2-centralized.sh docker/scripts/update_helper.sh; do
-        # ?ts: skip the edge cache, a self-test must run the branch as it is now
-        if ! curl -fsSL --max-time 30 "$base/$f?$(date +%s)" -o "$tmp/$f"; then
+        if ! curl -fsSL --max-time 30 "$(_fresh_url "$base/$f")" -o "$tmp/$f"; then
             log_error "Failed to download $f from GitHub (branch: $GITHUB_BRANCH)"
             exit 1
         fi
@@ -1850,6 +1849,12 @@ run_event_daemon() {
 # SELF-UPDATE FUNCTIONS
 # ============================================================================
 
+# Append a timestamp query when the caller wants the branch as it is right now.
+_fresh_url() {
+    [ "$FORCE_FRESH_FETCH" = "true" ] && printf '%s?%s' "$1" "$(date +%s)" && return 0
+    printf '%s' "$1"
+}
+
 _download_script_to() {
     local dest="$1"
     local download_error
@@ -1863,7 +1868,7 @@ _download_script_to() {
         --show-error \
         --location \
         -o "$dest" \
-        "$REMOTE_SCRIPT_URL" 2>&1) || {
+        "$(_fresh_url "$REMOTE_SCRIPT_URL")" 2>&1) || {
         log_warn "Failed to download update from GitHub (branch: ${GITHUB_BRANCH})"
         [ -n "$download_error" ] && echo "$download_error" | head -n 2 >&2
         return 1
@@ -1897,7 +1902,7 @@ download_and_validate_update() {
         # a network hiccup must not pull a tester off their branch.
         local http_code=""
         if [ "$GITHUB_BRANCH" != "main" ]; then
-            http_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$REMOTE_SCRIPT_URL" 2>/dev/null || echo 000)
+            http_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$(_fresh_url "$REMOTE_SCRIPT_URL")" 2>/dev/null || echo 000)
         fi
         if [ "$http_code" = "404" ]; then
             log_warn "Branch '${GITHUB_BRANCH}' no longer exists on GitHub (merged?) - switching self-update to main"
@@ -2147,10 +2152,12 @@ main() {
                 exit 0
                 ;;
             --test)
+                FORCE_FRESH_FETCH=true
                 run_protocol_test
                 exit 0
                 ;;
             --doctor)
+                FORCE_FRESH_FETCH=true
                 run_doctor
                 exit $?
                 ;;
@@ -2162,6 +2169,7 @@ main() {
                 trap release_lock EXIT
                 AUTO_UPDATE_SCRIPT="true"
                 UPDATE_CHECK_INTERVAL="*"
+                FORCE_FRESH_FETCH=true
                 check_and_apply_updates
                 exit 0
                 ;;

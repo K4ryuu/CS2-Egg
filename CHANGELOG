@@ -1,3 +1,7 @@
+-- update - ???
+
+- fix(centralized): `--update` also bypasses the raw.githubusercontent edge cache now, so a manual self-update right after a release installs it instead of a copy that is minutes old. Cache busting is opt-in per command (`--update`, `--test`, `--doctor`) and the cron-driven update check keeps a plain, cacheable URL
+
 -- update - 2026.08.04
 
 - feat(test): New daemon-side units for the push lock (dead-owner and pid-less locks stolen, live owner waited out), the duplicate worker guard, the daemon instance lock and the symlinked lock directory scan

@@ -387,6 +387,24 @@ else
     echo "SKIP  daemon instance lock (no flock on this machine - runs on Linux hosts)"
 fi
 
+# cache busting is opt-in: only explicitly invoked commands set the flag, the
+# cron-driven self-update must keep a cacheable URL on every host
+if (
+    source "$CENTRAL" >/dev/null 2>&1
+    set +e
+    u="https://example.invalid/x.sh"
+    FORCE_FRESH_FETCH=false
+    [ "$(_fresh_url "$u")" = "$u" ] || exit 1
+    FORCE_FRESH_FETCH=true
+    [ "$(_fresh_url "$u")" != "$u" ] || exit 1
+    case "$(_fresh_url "$u")" in "$u"?*[0-9]) ;; *) exit 1 ;; esac
+); then
+    echo "${GREEN}PASS${RESET}  cache busting only when explicitly requested"
+else
+    echo "${RED}FAIL${RESET}  cache busting only when explicitly requested"
+    FAILS=$((FAILS + 1))
+fi
+
 # the doctor scans /var/lock, which is a symlink to /run/lock on Debian/Ubuntu:
 # without -H find never descends and the orphaned-lock cleanup finds nothing
 if (
