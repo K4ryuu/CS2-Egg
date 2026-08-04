@@ -341,11 +341,20 @@ if (
 
     _worker_registered_alive "$c" && exit 1              # no registration at all
 
-    echo "pid=$$" > "$DAEMON_REGISTRY_DIR/$c"
-    _worker_registered_alive "$c" || exit 1              # live worker
+    # stand-in worker: argv[0] carries the script name the /proc check looks for
+    bash -c "exec -a $SCRIPT_FILENAME bash -c 'sleep 30'" &
+    worker=$!
+    echo "pid=$worker" > "$DAEMON_REGISTRY_DIR/$c"
+    _worker_registered_alive "$c" || { kill "$worker" 2>/dev/null; exit 1; }
 
-    echo "pid=$(bash -c 'echo $$')" > "$DAEMON_REGISTRY_DIR/$c"
+    kill "$worker" 2>/dev/null; wait "$worker" 2>/dev/null
     _worker_registered_alive "$c" && exit 1              # crashed worker
+
+    # live pid, but an unrelated process recycled it (Linux only, needs procfs)
+    if [ -r "/proc/$$/cmdline" ]; then
+        echo "pid=$$" > "$DAEMON_REGISTRY_DIR/$c"
+        _worker_registered_alive "$c" && exit 1
+    fi
 
     rm -rf "$DAEMON_REGISTRY_DIR"
 ); then
