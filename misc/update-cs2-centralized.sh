@@ -859,13 +859,31 @@ PYEOF
     log_info "nsenter[$container]: bind mount ok"
 }
 
-# Sync base files + VPK files from CS2_DIR into a single server volume.
-# Wrapper owns the push lifecycle signals: status file pushing -> done/failed,
-# plus the legacy .daemon-push-active heartbeat for pre-status-file eggs
-# (! TODO: remove the legacy heartbeat after 2026-10-01, eggs < status protocol).
-# Both are refreshed every 3s while the push runs; a crashed pusher stops the
-# heartbeat, so a waiting egg falls back instead of waiting forever.
-# Works from both the daemon workers and the cron push path.
+# Sync base + VPK files from CS2_DIR into one server volume, from the daemon
+# workers or the cron push. Owns the push lifecycle signals: status pushing ->
+# done/failed, plus the legacy .daemon-push-active heartbeat, both refreshed
+# every 3s so a crashed pusher lets the egg fall back.
+# (! TODO: remove the legacy heartbeat after 2026-10-01, eggs < status protocol)
+# Drop VPK links whose source is gone (removed by a CS2 update). Nothing else
+# clears them: the egg skips its cleanup while the daemon is authoritative.
+# Targets are in-container paths, so map them back to CS2_DIR to test.
+_prune_stale_vpk_links() {
+    local container="$1" volume="$2"
+    local mount_dst="/tmp/cs2-shared"
+    local pruned=0 link target
+    while IFS= read -r link; do
+        [ -z "$link" ] && continue
+        target=$(readlink "$link" 2>/dev/null || true)
+        case "$target" in
+            "$mount_dst"/*) [ -e "$CS2_DIR/${target#"$mount_dst"/}" ] && continue ;;
+            *)              [ -e "$link" ] && continue ;;
+        esac
+        rm -f "$link" 2>/dev/null && pruned=$((pruned + 1))
+    done < <(find "$volume/game" -name '*.vpk' -type l 2>/dev/null)
+    [ "$pruned" -gt 0 ] && log_info "  ${DIM}→ $container: pruned $pruned VPK link(s) with no source${RESET}"
+    return 0
+}
+
 _sync_to_volume() {
     local _hb_file="$2/egg/.daemon-push-active"
     local _owner=$BASHPID
@@ -1015,6 +1033,8 @@ _sync_to_volume_impl() {
         vpk_size=$((vpk_size + fsize))
     done < <(find "$src" -type f -name "*.vpk" -print0 2>/dev/null)
 
+    _prune_stale_vpk_links "$container" "$dest"
+
     local human_size
     human_size=$(format_bytes "$vpk_size")
     log_info "  ${DIM}→ $container: $vpk_count VPK(s), ${human_size}${RESET}"
@@ -1081,12 +1101,9 @@ _verify_volume_vpks() {
     return 0
 }
 
-# Per-container push mutex, shared by the cron push and the daemon workers.
-# mkdir is the atomic part; the pid file inside makes a crashed owner detectable.
-# A lock whose owner is gone is a corpse and gets stolen instead of waited out:
-# workers are SIGKILLed when the service restarts (EXIT trap never runs) and
-# locks from scripts < 1.0.53 carry no pid at all - both used to park every
-# later worker for this container on "queued" until the full budget expired.
+# Per-container push mutex for the cron push and the daemon workers. mkdir is
+# atomic, the pid inside marks the owner. Dead or pid-less owner = corpse, stolen
+# instead of waited out (a leaked lock used to park every later worker forever).
 # Usage: _acquire_push_lock <lock_dir> <max_wait_secs>; returns 1 on timeout.
 _acquire_push_lock() {
     local lock_file="$1" max_wait="$2"
@@ -1095,8 +1112,7 @@ _acquire_push_lock() {
     while true; do
         if mkdir "$lock_file" 2>/dev/null; then
             echo "$BASHPID" > "$lock_file/pid" 2>/dev/null || true
-            # a waiter that timed its steal into our mkdir -> pid write window
-            # would have replaced the directory; the readback proves it is ours
+            # readback: proves no waiter stole the dir in our mkdir -> pid window
             [ "$(cat "$lock_file/pid" 2>/dev/null)" = "$BASHPID" ] && return 0
         else
             owner=$(cat "$lock_file/pid" 2>/dev/null || true)
@@ -1104,12 +1120,10 @@ _acquire_push_lock() {
             if [[ "$owner" =~ ^[0-9]+$ ]]; then
                 kill -0 "$owner" 2>/dev/null || stale=true
             elif [ "$waited" -ge "$grace" ]; then
-                # no pid file: a corpse, or a live owner still inside the tiny
-                # window between its mkdir and the pid write - grace covers it
+                # no pid: corpse, or an owner mid-write - grace covers the write
                 stale=true
             fi
-            # rm failure (permissions) falls through to the wait below, so a lock
-            # we cannot remove can never spin this loop
+            # rm failure falls through to the wait, so it can never spin
             $stale && rm -rf "$lock_file" 2>/dev/null && continue
         fi
         [ "$waited" -ge "$max_wait" ] && return 1
@@ -1207,13 +1221,11 @@ _push_worker() {
     # ${var:-} guards: the trap can fire after the function already returned
     # (locals gone) - an unbound variable here would abort the trap mid-way and
     # leak the per-container lock + pool slot (stuck "queued" servers).
-    # The registry entry is keyed by container, so a sibling worker may have
-    # replaced ours - drop it only while it still names this pid, or we would
-    # unregister the live worker and its status would stop being refreshed.
+    # registry is keyed by container: drop it only while it still names our pid,
+    # or we unregister a sibling worker and its status stops being refreshed
     trap '[ "${_locked:-0}" = 1 ] && rm -rf "${lock_file:-/nonexistent}" 2>/dev/null; [ "${_registered:-0}" = 1 ] && grep -qx "pid=$BASHPID" "${reg_file:-/nonexistent}" 2>/dev/null && rm -f "${reg_file:-/nonexistent}" 2>/dev/null; [ "${_slot:-0}" = 1 ] && echo >&"${_DAEMON_WORKER_FD:-2}" 2>/dev/null' EXIT
-    # bash skips the EXIT trap when a signal kills it, so route the signals a
-    # service restart sends into a normal exit - otherwise the worker leaks its
-    # lock directory and every later worker for this container waits it out
+    # bash skips the EXIT trap on an uncaught signal, so a service restart would
+    # leak the lock dir - route the signals into a normal exit instead
     trap 'exit 130' INT
     trap 'exit 143' TERM
     trap 'exit 129' HUP
@@ -1245,8 +1257,7 @@ _push_worker() {
     # Acquire a worker slot here, inside the subshell: the event loop
     # must never block on a saturated pool, or symlink mounts for later
     # events would stall and containers time out waiting on markers (#51).
-    # Capped: an unbounded wait here is invisible (the refresher keeps the status
-    # fresh), so the egg would sit on "queued" forever instead of falling back.
+    # capped: the refresher hides an unbounded wait, the egg would never fall back
     if ! read -r -t 3600 <&"$_DAEMON_WORKER_FD"; then
         log_warn "No worker slot for ${BOLD}$container${RESET} after 1h - reporting failed"
         _write_status "$container" "$volume_path" "failed"
@@ -1256,7 +1267,6 @@ _push_worker() {
 
     # Per-container push lock: wait for a concurrent cron push / sibling worker
     # instead of giving up - the fresh queued status keeps the egg waiting.
-    # Dead-owner locks are stolen by the helper, not waited out.
     if ! _acquire_push_lock "$lock_file" 3600; then
         log_warn "Push lock busy for ${BOLD}$container${RESET} after 1h - reporting failed"
         _write_status "$container" "$volume_path" "failed"
@@ -1284,6 +1294,8 @@ _push_worker() {
     if [ "$event" = "start" ]; then
         _write_status "$container" "$volume_path" "verifying"
         if _verify_volume_vpks "$volume_path"; then
+            # verify only walks CS2_DIR -> volume, so old links survive it
+            _prune_stale_vpk_links "$container" "$volume_path"
             mkdir -p "$volume_path/egg" 2>/dev/null
             # ! TODO: Remove marker touch after 2026-10-01 (pre-status-file eggs)
             touch "$volume_path/egg/.daemon-managed" 2>/dev/null || true
@@ -1307,9 +1319,8 @@ _push_worker() {
     exit 0
 }
 
-# True while a live worker is already registered for this container. Reconcile
-# sweeps and real docker events overlap (both fire on a restart), and a second
-# worker only duplicates the same push behind the same lock.
+# True while a live worker is registered for this container. Reconcile sweeps and
+# real docker events overlap on a restart; the second worker only duplicates work.
 _worker_registered_alive() {
     local pid
     pid=$(grep -m1 '^pid=' "$DAEMON_REGISTRY_DIR/$1" 2>/dev/null | cut -d= -f2 || true)
@@ -1553,10 +1564,8 @@ run_doctor() {
                 case "$state" in
                     done)   _ok "$container: status done ($((age / 60)) min ago)" ;;
                     failed) _dwarn "$container: last push FAILED - server likely fell back to SteamCMD, check journalctl around $(date -d "@$ts" 2>/dev/null || echo "ts $ts")" ;;
-                    *)      # ts is refreshed every 3s for as long as the worker lives, so its
-                            # age only ever catches a dead worker. Time actually spent waiting
-                            # comes from the worker's enqueue stamp in the registry - without it
-                            # a worker parked on a busy lock reads as "healthy" forever.
+                    *)      # ts is refreshed while the worker lives, so it only catches a dead
+                            # one; real waiting time comes from the registry enqueue stamp
                             local enq waited_secs=0 stuck_after=3600
                             [ "$state" = "queued" ] && stuck_after=900
                             enq=$(grep -m1 '^enq=' "$DAEMON_REGISTRY_DIR/$container" 2>/dev/null | cut -d= -f2 || true)
@@ -1610,9 +1619,8 @@ run_doctor() {
                 _dwarn "Push lock $(basename "$lock") has no owner pid and is ${lock_age} min old - if a server hangs on 'queued', remove it: rm -rf $lock"
             fi
         fi
-    # -H dereferences the starting point: /var/lock is a symlink to /run/lock on
-    # Debian/Ubuntu, and without it find never descends, so this whole cleanup
-    # silently found nothing and weeks-old locks survived every doctor run
+    # -H: /var/lock is a symlink to /run/lock on Debian/Ubuntu, without it find
+    # never descends and this cleanup silently scans nothing
     done < <(find -H /var/lock -maxdepth 1 -name 'cs2-vpk-push-*' -type d 2>/dev/null)
     [ "$removed_locks" -gt 0 ] && _dfixed "Removed $removed_locks orphaned push lock(s) (dead owner)"
     if [ -f "$CENTRAL_UPDATE_LOCK" ] && command -v flock >/dev/null 2>&1; then
@@ -1689,10 +1697,8 @@ run_event_daemon() {
         exit 1
     fi
 
-    # One daemon per host. A hand-started second instance wipes the running
-    # daemon's worker registry below, so its in-flight servers stop being
-    # refreshed and both instances then fight over the same push locks.
-    # The fd stays open for the daemon's lifetime, so the lock lives that long.
+    # One daemon per host: a second instance wipes the live registry below and
+    # fights it over the push locks. The fd stays open, so the lock lives on.
     if command -v flock >/dev/null 2>&1; then
         exec {_DAEMON_INSTANCE_FD}>"$DAEMON_INSTANCE_LOCK"
         if ! flock -n "$_DAEMON_INSTANCE_FD"; then
@@ -1728,8 +1734,8 @@ run_event_daemon() {
     echo "" >&2
 
     # Fresh daemon = no live workers: wipe the registry, then start the status
-    # refresher that keeps waiting eggs' status files fresh every 3s. The wipe
-    # is why the instance lock above is not optional.
+    # refresher that keeps waiting eggs' status files fresh every 3s. This wipe
+    # is why the instance lock exists.
     rm -rf "$DAEMON_REGISTRY_DIR" 2>/dev/null || true
     mkdir -p "$DAEMON_REGISTRY_DIR" 2>/dev/null || true
     _status_refresher &

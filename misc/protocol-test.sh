@@ -305,6 +305,33 @@ else
     FAILS=$((FAILS + 1))
 fi
 
+# stale link prune: VPKs dropped by a CS2 update leave dangling links in every
+# volume, and the egg skips its own cleanup while the daemon is authoritative
+if (
+    source "$CENTRAL" >/dev/null 2>&1
+    set +e
+    tmp2=$(mktemp -d)
+    CS2_DIR="$tmp2/shared"; vol="$tmp2/vol"
+    mkdir -p "$CS2_DIR/game/csgo" "$vol/game/csgo"
+    echo x > "$CS2_DIR/game/csgo/pak01_000.vpk"
+    ln -s /tmp/cs2-shared/game/csgo/pak01_000.vpk "$vol/game/csgo/pak01_000.vpk"   # source exists
+    ln -s /tmp/cs2-shared/game/csgo/gone_001.vpk  "$vol/game/csgo/gone_001.vpk"    # source removed
+    echo y > "$tmp2/real.vpk"
+    ln -s "$tmp2/real.vpk" "$vol/game/csgo/local.vpk"                              # resolves on the host
+
+    _prune_stale_vpk_links test-container "$vol" >/dev/null 2>&1
+
+    [ -L "$vol/game/csgo/pak01_000.vpk" ] || exit 1
+    [ -L "$vol/game/csgo/local.vpk" ] || exit 1
+    [ -L "$vol/game/csgo/gone_001.vpk" ] && exit 1
+    rm -rf "$tmp2"
+); then
+    echo "${GREEN}PASS${RESET}  stale VPK links pruned, live ones kept"
+else
+    echo "${RED}FAIL${RESET}  stale VPK links pruned, live ones kept"
+    FAILS=$((FAILS + 1))
+fi
+
 # duplicate worker guard: a reconcile sweep and a real docker event both fire on
 # a restart, and the second worker would only overwrite the first registration
 if (
