@@ -2,6 +2,7 @@
 
 - feat(test): New daemon-side units for the push lock (dead-owner and pid-less locks stolen, live owner waited out), the duplicate worker guard, the daemon instance lock and the symlinked lock directory scan
 - fix(daemon): Only one worker per server is started now - a reconcile sweep and a real docker event both fire on a restart, and the second worker overwrote the first one's registry entry, so whichever finished first unregistered the other and its status stopped being refreshed (the egg then fell back to SteamCMD mid-push)
+- fix(doctor): The broken-symlink check no longer counts VPK links pointing at another mount (e.g. a separate community-addons mount) - those resolve only inside the container, so healthy servers were reported as having broken symlinks
 - fix(daemon): VPK links whose source a CS2 update removed are pruned from the volumes on both the push and the verify path - the egg skips its own broken-link cleanup while the daemon is authoritative, so they piled up over updates and showed as "broken VPK symlink(s)" in `--doctor` [#58]
 - feat(daemon): Starting `--daemon` while one is already running now reports on it (pid, uptime, script version, pushes in flight) instead of failing, and points at `--daemon restart`
 - feat(daemon): New `--daemon restart` waits for in-flight pushes to finish (up to 5 min), then cycles the systemd service and verifies it came back up
