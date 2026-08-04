@@ -24,7 +24,7 @@
 #   --update      Self-update the script right now from GITHUB_BRANCH (daemon
 #                 restarts automatically). Skips the CS2/steamcmd update.
 #
-# Version: 1.0.58
+# Version: 1.0.59
 
 set -euo pipefail
 
@@ -127,6 +127,8 @@ CENTRAL_UPDATE_LOCK="/var/lock/cs2-central-update.lock"
 # Worker registry (tmpfs): one file per in-flight worker, consumed by the
 # status refresher loop to keep waiting eggs' status files fresh.
 DAEMON_REGISTRY_DIR="/run/cs2-vpk-daemon"
+# Where CS2_DIR is bind-mounted inside every container (symlink targets point here)
+CONTAINER_MOUNT_DST="/tmp/cs2-shared"
 # Held for the daemon's whole lifetime so a second instance cannot start
 DAEMON_INSTANCE_LOCK="/var/lock/cs2-vpk-daemon.lock"
 _REFRESHER_PID=
@@ -872,7 +874,7 @@ PYEOF
 # Targets are in-container paths, so map them back to CS2_DIR to test.
 _prune_stale_vpk_links() {
     local container="$1" volume="$2"
-    local mount_dst="/tmp/cs2-shared"
+    local mount_dst="$CONTAINER_MOUNT_DST"
     local pruned=0 link target
     while IFS= read -r link; do
         [ -z "$link" ] && continue
@@ -920,7 +922,7 @@ _sync_to_volume_impl() {
     local vol_owner
     vol_owner=$(_volume_owner "$dest")
 
-    local container_mount_dst="/tmp/cs2-shared"
+    local container_mount_dst="$CONTAINER_MOUNT_DST"
 
     # marker is touched at the END of push (last-touch design)
     mkdir -p "$dest/egg" 2>/dev/null
@@ -1060,7 +1062,7 @@ _sync_to_volume_impl() {
 # Self-heal trigger: caller should re-push when this returns non-zero.
 _verify_volume_vpks() {
     local volume_path="$1"
-    local container_mount_dst="/tmp/cs2-shared"
+    local container_mount_dst="$CONTAINER_MOUNT_DST"
 
     [ "$VPK_PUSH_METHOD" = "off" ] && return 0
 
@@ -1346,8 +1348,8 @@ _handle_container_event() {
     # (fast ~100ms per server). Legacy marker touch kept for pre-status-file eggs
     # (! TODO: remove the marker touch after 2026-10-01).
     if [ "$event" = "start" ] && [ "$VPK_PUSH_METHOD" = "symlink" ]; then
-        if _nsenter_mount "$container" "$CS2_DIR" "/tmp/cs2-shared"; then
-            log_info "CS2_DIR mounted into ${BOLD}$container${RESET} at /tmp/cs2-shared"
+        if _nsenter_mount "$container" "$CS2_DIR" "$CONTAINER_MOUNT_DST"; then
+            log_info "CS2_DIR mounted into ${BOLD}$container${RESET} at $CONTAINER_MOUNT_DST"
             local _vol_path
             _vol_path=$(_volume_path "$container")
             if [ -n "$_vol_path" ] && [ -d "$_vol_path/egg" ]; then
@@ -1591,18 +1593,18 @@ run_doctor() {
             if [ -f "$volume/egg/.daemon-status" ] && [ -d "$volume/steamapps" ]; then
                 _dwarn "$container: steamapps/ leftovers found - evidence of a past SteamCMD fallback (egg cleans it on next daemon-managed boot)"
             fi
-            # symlink targets (/tmp/cs2-shared/...) only resolve INSIDE the container;
-            # from the host, rewrite the prefix to CS2_DIR before testing
+            # Our links (/tmp/cs2-shared/...) resolve only INSIDE the container, so
+            # rewrite the prefix to CS2_DIR before testing. Links to any other path
+            # belong to someone else's mount and cannot be judged from the host.
             local broken=0 link target
             while IFS= read -r link; do
                 [ -z "$link" ] && continue
                 target=$(readlink "$link" 2>/dev/null || true)
                 case "$target" in
-                    /tmp/cs2-shared/*) [ -e "$CS2_DIR/${target#/tmp/cs2-shared/}" ] || broken=$((broken + 1)) ;;
-                    *)                 [ -e "$link" ] || broken=$((broken + 1)) ;;
+                    "$CONTAINER_MOUNT_DST"/*) [ -e "$CS2_DIR/${target#"$CONTAINER_MOUNT_DST"/}" ] || broken=$((broken + 1)) ;;
                 esac
             done < <(find "$volume/game" -name '*.vpk' -type l 2>/dev/null)
-            [ "${broken:-0}" -gt 0 ] && _dwarn "$container: $broken broken VPK symlink(s) - egg cleans them on next boot; daemon mount may have failed earlier"
+            [ "${broken:-0}" -gt 0 ] && _dwarn "$container: $broken VPK symlink(s) with no source in CS2_DIR - the daemon prunes them on the next push or verify"
         done < <(_matching_containers)
         [ "$checked" -eq 0 ] && _dwarn "No running containers match SERVER_IMAGE ($SERVER_IMAGE)"
     fi
