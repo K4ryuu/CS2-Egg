@@ -189,7 +189,11 @@ Build your own Docker image using the included build script:
 
 ## Roadmap
 
-Nothing planned right now. The egg covers what it set out to do, and development continues through bug reports and feature requests. Have an idea? [Open a request](https://github.com/K4ryuu/CS2-Egg/issues/new?template=1-feature_request.yml).
+**Update soak window.** The centralized script self-updates from GitHub on every cron run, so a bad release reaches every host within the hour. Planned: the automatic check records a new version on first sight and only installs it once it has been seen for a few hours, logging the pending version in the meantime. `--update` stays immediate as the emergency path. Cheap insurance against a broken release, and a small speed bump for a compromised one.
+
+**Signed releases.** The real supply-chain answer, since the script installs itself as root: ship a signature with every release and verify it against a pinned public key before installing. Needs a release process that signs, and key handling that survives a lost key, so this is a maybe rather than a promise.
+
+Beyond those, development continues through bug reports and feature requests. Have an idea? [Open a request](https://github.com/K4ryuu/CS2-Egg/issues/new?template=1-feature_request.yml).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

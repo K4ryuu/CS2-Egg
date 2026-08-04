@@ -11,7 +11,10 @@
 #                 only. Configured VALIDATE_INSTALL value is not touched.
 #   --daemon      Run as event listener daemon - pushes game files instantly when
 #                 a CS2 container starts (new server or restart). Install as a
-#                 systemd service for automatic startup.
+#                 systemd service for automatic startup. Started while one is
+#                 already running it just reports on it and exits.
+#   --daemon restart
+#                 Wait for in-flight pushes, then cycle the systemd service.
 #   --test        Download the boot-handshake protocol test suite from GitHub
 #                 (same branch as self-update), run it, clean up. No docker or
 #                 config needed - quick sanity check for support/diagnostics.
@@ -21,7 +24,7 @@
 #   --update      Self-update the script right now from GITHUB_BRANCH (daemon
 #                 restarts automatically). Skips the CS2/steamcmd update.
 #
-# Version: 1.0.56
+# Version: 1.0.60
 
 set -euo pipefail
 
@@ -124,7 +127,12 @@ CENTRAL_UPDATE_LOCK="/var/lock/cs2-central-update.lock"
 # Worker registry (tmpfs): one file per in-flight worker, consumed by the
 # status refresher loop to keep waiting eggs' status files fresh.
 DAEMON_REGISTRY_DIR="/run/cs2-vpk-daemon"
+# Where CS2_DIR is bind-mounted inside every container (symlink targets point here)
+CONTAINER_MOUNT_DST="/tmp/cs2-shared"
+# Held for the daemon's whole lifetime so a second instance cannot start
+DAEMON_INSTANCE_LOCK="/var/lock/cs2-vpk-daemon.lock"
 _REFRESHER_PID=
+_DAEMON_INSTANCE_FD=
 
 # ============================================================================
 # STYLING / COLORS
@@ -856,13 +864,31 @@ PYEOF
     log_info "nsenter[$container]: bind mount ok"
 }
 
-# Sync base files + VPK files from CS2_DIR into a single server volume.
-# Wrapper owns the push lifecycle signals: status file pushing -> done/failed,
-# plus the legacy .daemon-push-active heartbeat for pre-status-file eggs
-# (! TODO: remove the legacy heartbeat after 2026-10-01, eggs < status protocol).
-# Both are refreshed every 3s while the push runs; a crashed pusher stops the
-# heartbeat, so a waiting egg falls back instead of waiting forever.
-# Works from both the daemon workers and the cron push path.
+# Sync base + VPK files from CS2_DIR into one server volume, from the daemon
+# workers or the cron push. Owns the push lifecycle signals: status pushing ->
+# done/failed, plus the legacy .daemon-push-active heartbeat, both refreshed
+# every 3s so a crashed pusher lets the egg fall back.
+# (! TODO: remove the legacy heartbeat after 2026-10-01, eggs < status protocol)
+# Drop VPK links whose source is gone (removed by a CS2 update). Nothing else
+# clears them: the egg skips its cleanup while the daemon is authoritative.
+# Targets are in-container paths, so map them back to CS2_DIR to test.
+_prune_stale_vpk_links() {
+    local container="$1" volume="$2"
+    local mount_dst="$CONTAINER_MOUNT_DST"
+    local pruned=0 link target
+    while IFS= read -r link; do
+        [ -z "$link" ] && continue
+        target=$(readlink "$link" 2>/dev/null || true)
+        # only links we placed: someone else's link may resolve inside the
+        # container but not from the host, and must not be touched
+        case "$target" in "$mount_dst"/*) ;; *) continue ;; esac
+        [ -e "$CS2_DIR/${target#"$mount_dst"/}" ] && continue
+        rm -f "$link" 2>/dev/null && pruned=$((pruned + 1))
+    done < <(find "$volume/game" -name '*.vpk' -type l 2>/dev/null)
+    [ "$pruned" -gt 0 ] && log_info "  ${DIM}→ $container: pruned $pruned VPK link(s) with no source${RESET}"
+    return 0
+}
+
 _sync_to_volume() {
     local _hb_file="$2/egg/.daemon-push-active"
     local _owner=$BASHPID
@@ -896,7 +922,7 @@ _sync_to_volume_impl() {
     local vol_owner
     vol_owner=$(_volume_owner "$dest")
 
-    local container_mount_dst="/tmp/cs2-shared"
+    local container_mount_dst="$CONTAINER_MOUNT_DST"
 
     # marker is touched at the END of push (last-touch design)
     mkdir -p "$dest/egg" 2>/dev/null
@@ -1012,6 +1038,8 @@ _sync_to_volume_impl() {
         vpk_size=$((vpk_size + fsize))
     done < <(find "$src" -type f -name "*.vpk" -print0 2>/dev/null)
 
+    _prune_stale_vpk_links "$container" "$dest"
+
     local human_size
     human_size=$(format_bytes "$vpk_size")
     log_info "  ${DIM}→ $container: $vpk_count VPK(s), ${human_size}${RESET}"
@@ -1034,7 +1062,7 @@ _sync_to_volume_impl() {
 # Self-heal trigger: caller should re-push when this returns non-zero.
 _verify_volume_vpks() {
     local volume_path="$1"
-    local container_mount_dst="/tmp/cs2-shared"
+    local container_mount_dst="$CONTAINER_MOUNT_DST"
 
     [ "$VPK_PUSH_METHOD" = "off" ] && return 0
 
@@ -1076,6 +1104,37 @@ _verify_volume_vpks() {
     done < <(find "$CS2_DIR" -type f -name "*.vpk" -print0 2>/dev/null)
 
     return 0
+}
+
+# Per-container push mutex for the cron push and the daemon workers. mkdir is
+# atomic, the pid inside marks the owner. Dead or pid-less owner = corpse, stolen
+# instead of waited out (a leaked lock used to park every later worker forever).
+# Usage: _acquire_push_lock <lock_dir> <max_wait_secs>; returns 1 on timeout.
+_acquire_push_lock() {
+    local lock_file="$1" max_wait="$2"
+    local grace="${PUSH_LOCK_STEAL_GRACE:-10}"
+    local waited=0 owner stale
+    while true; do
+        if mkdir "$lock_file" 2>/dev/null; then
+            echo "$BASHPID" > "$lock_file/pid" 2>/dev/null || true
+            # readback: proves no waiter stole the dir in our mkdir -> pid window
+            [ "$(cat "$lock_file/pid" 2>/dev/null)" = "$BASHPID" ] && return 0
+        else
+            owner=$(cat "$lock_file/pid" 2>/dev/null || true)
+            stale=false
+            if [[ "$owner" =~ ^[0-9]+$ ]]; then
+                kill -0 "$owner" 2>/dev/null || stale=true
+            elif [ "$waited" -ge "$grace" ]; then
+                # no pid: corpse, or an owner mid-write - grace covers the write
+                stale=true
+            fi
+            # rm failure falls through to the wait, so it can never spin
+            $stale && rm -rf "$lock_file" 2>/dev/null && continue
+        fi
+        [ "$waited" -ge "$max_wait" ] && return 1
+        sleep 2
+        waited=$((waited + 2))
+    done
 }
 
 push_vpk_to_containers() {
@@ -1121,18 +1180,11 @@ push_vpk_to_containers() {
         # Same per-container mutex as the daemon workers, so a cron push and a
         # daemon self-heal never write the same volume concurrently.
         local lock_file="/var/lock/cs2-vpk-push-${container}.lock"
-        local waited=0 got_lock=true
-        while ! mkdir "$lock_file" 2>/dev/null; do
-            if [ "$waited" -ge 120 ]; then got_lock=false; break; fi
-            sleep 2
-            waited=$((waited + 2))
-        done
-        if ! $got_lock; then
-            log_warn "Push lock busy for ${BOLD}$container${RESET} after ${waited}s, skipping"
+        if ! _acquire_push_lock "$lock_file" 120; then
+            log_warn "Push lock busy for ${BOLD}$container${RESET} after 120s, skipping"
             ((failed++)) || true
             continue
         fi
-        echo "$BASHPID" > "$lock_file/pid" 2>/dev/null || true
 
         if _sync_to_volume "$container" "$volume_path"; then
             ((success++)) || true
@@ -1174,7 +1226,14 @@ _push_worker() {
     # ${var:-} guards: the trap can fire after the function already returned
     # (locals gone) - an unbound variable here would abort the trap mid-way and
     # leak the per-container lock + pool slot (stuck "queued" servers).
-    trap '[ "${_locked:-0}" = 1 ] && rm -rf "${lock_file:-/nonexistent}" 2>/dev/null; [ "${_registered:-0}" = 1 ] && rm -f "${reg_file:-/nonexistent}" 2>/dev/null; [ "${_slot:-0}" = 1 ] && echo >&"${_DAEMON_WORKER_FD:-2}" 2>/dev/null' EXIT
+    # registry is keyed by container: drop it only while it still names our pid,
+    # or we unregister a sibling worker and its status stops being refreshed
+    trap '[ "${_locked:-0}" = 1 ] && rm -rf "${lock_file:-/nonexistent}" 2>/dev/null; [ "${_registered:-0}" = 1 ] && grep -qx "pid=$BASHPID" "${reg_file:-/nonexistent}" 2>/dev/null && rm -f "${reg_file:-/nonexistent}" 2>/dev/null; [ "${_slot:-0}" = 1 ] && echo >&"${_DAEMON_WORKER_FD:-2}" 2>/dev/null' EXIT
+    # bash skips the EXIT trap on an uncaught signal, so a service restart would
+    # leak the lock dir - route the signals into a normal exit instead
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    trap 'exit 129' HUP
 
     # Debounce: only applied to create events (Wings fires create+start together,
     # so create handles initial push and start can skip the heavy work).
@@ -1203,24 +1262,22 @@ _push_worker() {
     # Acquire a worker slot here, inside the subshell: the event loop
     # must never block on a saturated pool, or symlink mounts for later
     # events would stall and containers time out waiting on markers (#51).
-    read -r <&"$_DAEMON_WORKER_FD" || exit 0
+    # capped: the refresher hides an unbounded wait, the egg would never fall back
+    if ! read -r -t 3600 <&"$_DAEMON_WORKER_FD"; then
+        log_warn "No worker slot for ${BOLD}$container${RESET} after 1h - reporting failed"
+        _write_status "$container" "$volume_path" "failed"
+        exit 0
+    fi
     _slot=1
 
     # Per-container push lock: wait for a concurrent cron push / sibling worker
     # instead of giving up - the fresh queued status keeps the egg waiting.
-    local waited=0
-    while ! mkdir "$lock_file" 2>/dev/null; do
-        if [ "$waited" -ge 3600 ]; then
-            log_warn "Push lock busy for ${BOLD}$container${RESET} after 1h - reporting failed"
-            _write_status "$container" "$volume_path" "failed"
-            exit 0
-        fi
-        sleep 2
-        waited=$((waited + 2))
-    done
+    if ! _acquire_push_lock "$lock_file" 3600; then
+        log_warn "Push lock busy for ${BOLD}$container${RESET} after 1h - reporting failed"
+        _write_status "$container" "$volume_path" "failed"
+        exit 0
+    fi
     _locked=1
-    # record the owner pid so the doctor can spot orphaned locks instantly
-    echo "$BASHPID" > "$lock_file/pid" 2>/dev/null || true
 
     # Central CS2 update in progress? Wait it out instead of verifying against a
     # half-written CS2_DIR. The shared lock is then HELD until worker exit (fd
@@ -1242,6 +1299,8 @@ _push_worker() {
     if [ "$event" = "start" ]; then
         _write_status "$container" "$volume_path" "verifying"
         if _verify_volume_vpks "$volume_path"; then
+            # verify only walks CS2_DIR -> volume, so old links survive it
+            _prune_stale_vpk_links "$container" "$volume_path"
             mkdir -p "$volume_path/egg" 2>/dev/null
             # ! TODO: Remove marker touch after 2026-10-01 (pre-status-file eggs)
             touch "$volume_path/egg/.daemon-managed" 2>/dev/null || true
@@ -1265,6 +1324,19 @@ _push_worker() {
     exit 0
 }
 
+# True while a live worker is registered for this container. Reconcile sweeps and
+# real docker events overlap on a restart; the second worker only duplicates work.
+_worker_registered_alive() {
+    local pid
+    pid=$(grep -m1 '^pid=' "$DAEMON_REGISTRY_DIR/$1" 2>/dev/null | cut -d= -f2 || true)
+    [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+    kill -0 "$pid" 2>/dev/null || return 1
+    # the pid may have been recycled by an unrelated process; no procfs (dev
+    # machines) means liveness is all we have
+    [ -r "/proc/$pid/cmdline" ] || return 0
+    grep -qa "$SCRIPT_FILENAME" "/proc/$pid/cmdline" 2>/dev/null
+}
+
 # Shared handling for live docker events and reconcile sweeps.
 _handle_container_event() {
     local event="$1" container="$2"
@@ -1276,8 +1348,8 @@ _handle_container_event() {
     # (fast ~100ms per server). Legacy marker touch kept for pre-status-file eggs
     # (! TODO: remove the marker touch after 2026-10-01).
     if [ "$event" = "start" ] && [ "$VPK_PUSH_METHOD" = "symlink" ]; then
-        if _nsenter_mount "$container" "$CS2_DIR" "/tmp/cs2-shared"; then
-            log_info "CS2_DIR mounted into ${BOLD}$container${RESET} at /tmp/cs2-shared"
+        if _nsenter_mount "$container" "$CS2_DIR" "$CONTAINER_MOUNT_DST"; then
+            log_info "CS2_DIR mounted into ${BOLD}$container${RESET} at $CONTAINER_MOUNT_DST"
             local _vol_path
             _vol_path=$(_volume_path "$container")
             if [ -n "$_vol_path" ] && [ -d "$_vol_path/egg" ]; then
@@ -1287,6 +1359,11 @@ _handle_container_event() {
         else
             log_warn "nsenter mount failed for $container - symlinks may not resolve"
         fi
+    fi
+
+    if _worker_registered_alive "$container"; then
+        log_info "Push already in flight for ${BOLD}$container${RESET} - skipping duplicate worker"
+        return 0
     fi
 
     _push_worker "$event" "$container" &
@@ -1497,8 +1574,14 @@ run_doctor() {
                 case "$state" in
                     done)   _ok "$container: status done ($((age / 60)) min ago)" ;;
                     failed) _dwarn "$container: last push FAILED - server likely fell back to SteamCMD, check journalctl around $(date -d "@$ts" 2>/dev/null || echo "ts $ts")" ;;
-                    *)      if [ "$age" -gt 120 ]; then
-                                _dwarn "$container: status stuck in '$state' for $((age / 60)) min - worker died? journalctl -u cs2-vpk-daemon"
+                    *)      # ts is refreshed while the worker lives, so it only catches a dead
+                            # one; real waiting time comes from the registry enqueue stamp
+                            local enq waited_secs=0 stuck_after=3600
+                            [ "$state" = "queued" ] && stuck_after=900
+                            enq=$(grep -m1 '^enq=' "$DAEMON_REGISTRY_DIR/$container" 2>/dev/null | cut -d= -f2 || true)
+                            [[ "$enq" =~ ^[0-9]+$ ]] && waited_secs=$((now - enq))
+                            if [ "$age" -gt 120 ] || [ "$waited_secs" -gt "$stuck_after" ]; then
+                                _dwarn "$container: stuck in '$state' for $(( (waited_secs > age ? waited_secs : age) / 60 )) min - check the push lock (ls -la /run/lock | grep cs2-vpk-push) and journalctl -u cs2-vpk-daemon"
                             else
                                 _ok "$container: push in progress ($state)"
                             fi ;;
@@ -1510,18 +1593,18 @@ run_doctor() {
             if [ -f "$volume/egg/.daemon-status" ] && [ -d "$volume/steamapps" ]; then
                 _dwarn "$container: steamapps/ leftovers found - evidence of a past SteamCMD fallback (egg cleans it on next daemon-managed boot)"
             fi
-            # symlink targets (/tmp/cs2-shared/...) only resolve INSIDE the container;
-            # from the host, rewrite the prefix to CS2_DIR before testing
+            # Our links (/tmp/cs2-shared/...) resolve only INSIDE the container, so
+            # rewrite the prefix to CS2_DIR before testing. Links to any other path
+            # belong to someone else's mount and cannot be judged from the host.
             local broken=0 link target
             while IFS= read -r link; do
                 [ -z "$link" ] && continue
                 target=$(readlink "$link" 2>/dev/null || true)
                 case "$target" in
-                    /tmp/cs2-shared/*) [ -e "$CS2_DIR/${target#/tmp/cs2-shared/}" ] || broken=$((broken + 1)) ;;
-                    *)                 [ -e "$link" ] || broken=$((broken + 1)) ;;
+                    "$CONTAINER_MOUNT_DST"/*) [ -e "$CS2_DIR/${target#"$CONTAINER_MOUNT_DST"/}" ] || broken=$((broken + 1)) ;;
                 esac
             done < <(find "$volume/game" -name '*.vpk' -type l 2>/dev/null)
-            [ "${broken:-0}" -gt 0 ] && _dwarn "$container: $broken broken VPK symlink(s) - egg cleans them on next boot; daemon mount may have failed earlier"
+            [ "${broken:-0}" -gt 0 ] && _dwarn "$container: $broken VPK symlink(s) with no source in CS2_DIR - the daemon prunes them on the next push or verify"
         done < <(_matching_containers)
         [ "$checked" -eq 0 ] && _dwarn "No running containers match SERVER_IMAGE ($SERVER_IMAGE)"
     fi
@@ -1546,7 +1629,9 @@ run_doctor() {
                 _dwarn "Push lock $(basename "$lock") has no owner pid and is ${lock_age} min old - if a server hangs on 'queued', remove it: rm -rf $lock"
             fi
         fi
-    done < <(find /var/lock -maxdepth 1 -name 'cs2-vpk-push-*' -type d 2>/dev/null)
+    # -H: /var/lock is a symlink to /run/lock on Debian/Ubuntu, without it find
+    # never descends and this cleanup silently scans nothing
+    done < <(find -H /var/lock -maxdepth 1 -name 'cs2-vpk-push-*' -type d 2>/dev/null)
     [ "$removed_locks" -gt 0 ] && _dfixed "Removed $removed_locks orphaned push lock(s) (dead owner)"
     if [ -f "$CENTRAL_UPDATE_LOCK" ] && command -v flock >/dev/null 2>&1; then
         if ( exec 9<"$CENTRAL_UPDATE_LOCK"; flock -n -s 9 ) 2>/dev/null; then
@@ -1559,7 +1644,10 @@ run_doctor() {
     section "Self-update"
 
     local http_code
-    http_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$REMOTE_SCRIPT_URL" 2>/dev/null || echo 000)
+    # ?ts: the raw.githubusercontent edge caches per file for minutes, and an
+    # explicitly invoked check must see the branch as it is right now. The
+    # cron-driven self-update keeps the plain URL so it stays cacheable.
+    http_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "${REMOTE_SCRIPT_URL}?$(date +%s)" 2>/dev/null || echo 000)
     case "$http_code" in
         200) _ok "Update source reachable (branch: $GITHUB_BRANCH)" ;;
         404) _dwarn "Branch '$GITHUB_BRANCH' gone from GitHub - self-update will switch to main on its next run" ;;
@@ -1594,7 +1682,8 @@ run_protocol_test() {
     mkdir -p "$tmp/misc" "$tmp/docker/scripts"
     local f
     for f in misc/protocol-test.sh misc/update-cs2-centralized.sh docker/scripts/update_helper.sh; do
-        if ! curl -fsSL --max-time 30 "$base/$f" -o "$tmp/$f"; then
+        # ?ts: skip the edge cache, a self-test must run the branch as it is now
+        if ! curl -fsSL --max-time 30 "$base/$f?$(date +%s)" -o "$tmp/$f"; then
             log_error "Failed to download $f from GitHub (branch: $GITHUB_BRANCH)"
             exit 1
         fi
@@ -1609,6 +1698,70 @@ run_protocol_test() {
     exit 1
 }
 
+# pid of the daemon already running on this host, empty if none
+_running_daemon_pid() {
+    local pid=""
+    if command -v systemctl >/dev/null 2>&1; then
+        pid=$(systemctl show -p MainPID --value cs2-vpk-daemon 2>/dev/null || true)
+        [ "${pid:-0}" = "0" ] && pid=""
+    fi
+    if [ -z "$pid" ] && command -v pgrep >/dev/null 2>&1; then
+        pid=$(pgrep -f -- "$SCRIPT_FILENAME --daemon" 2>/dev/null | grep -vx "$$" | head -n1 || true)
+    fi
+    echo "$pid"
+}
+
+# Starting a second daemon is a no-op, not a failure: report the running one.
+_report_running_daemon() {
+    local pid uptime workers
+    pid=$(_running_daemon_pid)
+    [ -n "$pid" ] && uptime=$(ps -o etime= -p "$pid" 2>/dev/null | tr -d ' ' || true)
+    workers=$(ls "$DAEMON_REGISTRY_DIR" 2>/dev/null | wc -l | tr -d ' ')
+
+    log_ok "Daemon is already running${pid:+ (pid ${BOLD}$pid${RESET})}${uptime:+, up ${BOLD}$uptime${RESET}}"
+    log_info "Script version: ${BOLD}$(grep -m1 '^# Version:' "$0" | awk '{print $3}')${RESET}"
+    log_info "Pushes in flight: ${BOLD}${workers:-0}${RESET}"
+    log_info "Nothing started - one daemon per host, a second one would fight it over the push locks"
+    log_info "To restart it safely: ${BOLD}$0 --daemon restart${RESET}"
+}
+
+# Drain in-flight pushes, then let systemd cycle the service. Manual kill+start
+# is not offered: only systemd owns the daemon's lifecycle.
+restart_daemon_service() {
+    section "Daemon Restart"
+
+    if ! command -v systemctl >/dev/null 2>&1 || [ ! -f /etc/systemd/system/cs2-vpk-daemon.service ]; then
+        log_error "No cs2-vpk-daemon service on this host - nothing to restart"
+        return 1
+    fi
+
+    local waited=0 workers
+    while :; do
+        workers=$(ls "$DAEMON_REGISTRY_DIR" 2>/dev/null | wc -l | tr -d ' ')
+        [ "${workers:-0}" -eq 0 ] && break
+        if [ "$waited" -ge 300 ]; then
+            log_warn "$workers push(es) still running after 5 min - restarting anyway, they are verified again on the next server boot"
+            break
+        fi
+        [ $((waited % 10)) -eq 0 ] && log_info "Waiting for ${BOLD}$workers${RESET} in-flight push(es)..."
+        sleep 2
+        waited=$((waited + 2))
+    done
+
+    log_info "Restarting cs2-vpk-daemon..."
+    if ! systemctl restart cs2-vpk-daemon 2>/dev/null; then
+        log_error "Restart failed - check: journalctl -u cs2-vpk-daemon -n 50"
+        return 1
+    fi
+    sleep 2
+    if systemctl is-active --quiet cs2-vpk-daemon 2>/dev/null; then
+        log_ok "Daemon restarted (pid ${BOLD}$(_running_daemon_pid)${RESET})"
+        return 0
+    fi
+    log_error "Daemon did not come back up - check: journalctl -u cs2-vpk-daemon -n 50"
+    return 1
+}
+
 run_event_daemon() {
     section "VPK Push Daemon"
 
@@ -1620,6 +1773,15 @@ run_event_daemon() {
     if [ -z "$SERVER_IMAGE" ]; then
         log_error "SERVER_IMAGE must be configured for daemon mode"
         exit 1
+    fi
+
+    # One daemon per host: a second instance wipes the live registry below and
+    # fights it over the push locks. The fd stays open, so the lock lives on.
+    if command -v flock >/dev/null 2>&1 && exec {_DAEMON_INSTANCE_FD}>"$DAEMON_INSTANCE_LOCK"; then
+        if ! flock -n "$_DAEMON_INSTANCE_FD"; then
+            _report_running_daemon
+            exit 0
+        fi
     fi
 
     # Build --filter image= args for each configured image
@@ -1648,7 +1810,8 @@ run_event_daemon() {
     echo "" >&2
 
     # Fresh daemon = no live workers: wipe the registry, then start the status
-    # refresher that keeps waiting eggs' status files fresh every 3s.
+    # refresher that keeps waiting eggs' status files fresh every 3s. This wipe
+    # is why the instance lock exists.
     rm -rf "$DAEMON_REGISTRY_DIR" 2>/dev/null || true
     mkdir -p "$DAEMON_REGISTRY_DIR" 2>/dev/null || true
     _status_refresher &
@@ -1971,6 +2134,10 @@ main() {
                 shift
                 ;;
             --daemon)
+                if [ "${2:-}" = "restart" ]; then
+                    restart_daemon_service
+                    exit $?
+                fi
                 validate_config
                 if [ "$VPK_PUSH_METHOD" = "off" ]; then
                     log_error "Daemon mode requires VPK_PUSH_METHOD to be set (not \"off\")"
@@ -2002,7 +2169,7 @@ main() {
                 log_error "Unknown argument: $1"
                 echo ""
                 echo "Usage: $0 [--simulate] [--validate]"
-                echo "       $0 --daemon"
+                echo "       $0 --daemon [restart]"
                 echo "       $0 --test"
                 echo "       $0 --doctor"
                 echo "       $0 --update"
@@ -2011,6 +2178,8 @@ main() {
                 echo "  --simulate    Simulate update mode (skip SteamCMD, trigger restart logic)"
                 echo "  --validate    Force one-shot file validation (steamcmd validate), does not persist"
                 echo "  --daemon      Run as event listener - push game files on container start"
+                echo "  --daemon restart"
+                echo "                Drain in-flight pushes, then restart the systemd service"
                 echo "  --test        Download + run the protocol test suite, then clean up"
                 echo "  --doctor      Health check + safe auto-fixes for the whole setup"
                 echo "  --update      Self-update the script now (skips the CS2 update)"
