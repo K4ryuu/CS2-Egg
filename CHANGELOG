@@ -1,5 +1,9 @@
 -- update - ???
 
+- security(centralized): Update soak window - the script installs itself as root on every host, so a new version is no longer applied on sight. It is recorded as pending and only installs once it has been on the branch, byte for byte unchanged, for `UPDATE_SOAK_SECONDS` (default 12 hours), which leaves time to pull a broken or tampered release before it reaches anyone. Pulling it drops the pending version, changing it restarts the timer. The window is keyed on the file's SHA-256, not its version header, so a swapped body under an unchanged version number cannot inherit an already-elapsed timer. `--update` bypasses it as the emergency path, and a release carrying a `# Hotfix: true` header skips it everywhere, for shipping a fix on top of a bad release. This is a detection-and-revert window, not a signature check - it protects as far as a bad release is noticed inside it, and signed releases stay on the roadmap
+- feat(doctor): `--doctor` reports the pending version and how long is left on its soak window, with the command to install it immediately
+- test(centralized): New soak window unit tests (`misc/tests/soak-test.sh`) covering all four decisions - install, wait, re-record on a changed body, drop on a pulled release - plus the numeric version compare and the `--update` bypass. `--test` runs them after the boot-handshake suite
+- chore(test): Test suites moved from `misc/` to `misc/tests/`. `--test` on a host still running an older script cannot find them and fails until it self-updates; `--doctor` is unaffected
 - fix(centralized): `--update` also bypasses the raw.githubusercontent edge cache now, so a manual self-update right after a release installs it instead of a copy that is minutes old. Cache busting is opt-in per command (`--update`, `--test`, `--doctor`) and the cron-driven update check keeps a plain, cacheable URL
 
 -- update - 2026.08.04

@@ -71,7 +71,7 @@ Once installed, the script doubles as the host-side maintenance tool:
 | ---- | ------------ |
 | `--doctor` | Full health check (service, cron, dependencies, per-server status, orphaned locks) with safe auto-fixes |
 | `--update` | Self-update the script right now, daemon restarts automatically |
-| `--test` | Run the boot-handshake protocol test suite |
+| `--test` | Run the boot-handshake and soak window test suites |
 | `--validate` | One-shot SteamCMD file check without changing your saved config |
 
 → [Full documentation](docs/features/vpk-sync.md)
@@ -114,6 +114,7 @@ Each framework can be enabled/disabled independently via Pterodactyl/Pelican pan
 - **Auto-Updaters** → MetaMod, CounterStrikeSharp, SwiftlyS2, ModSharp automatically update on server restart
 - **[Centralized Update Script](docs/features/vpk-sync.md)** → Auto-restart on CS2 updates with version tracking (misc/update-cs2-centralized.sh)
 - **[Boot Handshake](docs/features/vpk-sync.md)** → Servers read a daemon-written status file at boot, so a restart during a CS2 update waits it out instead of triggering a full SteamCMD redownload
+- **[Update Soak Window](docs/features/vpk-sync.md#script-self-update)** → The self-updating script installs itself as root, so a new version waits 12 hours on the branch before any host applies it. A broken or tampered release can be pulled before it lands anywhere (`UPDATE_SOAK_SECONDS`, `--update` bypasses it)
 
 ### Storage & Performance
 
@@ -189,9 +190,7 @@ Build your own Docker image using the included build script:
 
 ## Roadmap
 
-**Update soak window.** The centralized script self-updates from GitHub on every cron run, so a bad release reaches every host within the hour. Planned: the automatic check records a new version on first sight and only installs it once it has been seen for a few hours, logging the pending version in the meantime. `--update` stays immediate as the emergency path. Cheap insurance against a broken release, and a small speed bump for a compromised one.
-
-**Signed releases.** The real supply-chain answer, since the script installs itself as root: ship a signature with every release and verify it against a pinned public key before installing. Needs a release process that signs, and key handling that survives a lost key, so this is a maybe rather than a promise.
+**Signed releases.** The remaining supply-chain answer, since the script installs itself as root: ship a signature with every release and verify it against a pinned public key before installing. Unlike the soak window, this rejects a tampered script outright instead of buying time to notice it. Needs a release process that signs, and key handling that survives a lost key, so this is a maybe rather than a promise.
 
 Beyond those, development continues through bug reports and feature requests. Have an idea? [Open a request](https://github.com/K4ryuu/CS2-Egg/issues/new?template=1-feature_request.yml).
 

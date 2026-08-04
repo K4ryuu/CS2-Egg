@@ -4,7 +4,7 @@
 # the timing windows are shortened via DAEMON_* env vars. Run: bash this file.
 set -u
 
-HELPER="$(cd "$(dirname "$0")/.." && pwd)/docker/scripts/update_helper.sh"
+HELPER="$(cd "$(dirname "$0")/../.." && pwd)/docker/scripts/update_helper.sh"
 FAILS=0
 
 if [[ -t 1 ]] && [[ -z "${NO_COLOR:-}" ]]; then
@@ -225,7 +225,7 @@ rm -rf "$tmp"
 
 # --- daemon-side units (centralized script sourced, main() stays dormant) ----
 
-CENTRAL="$(cd "$(dirname "$0")" && pwd)/update-cs2-centralized.sh"
+CENTRAL="$(cd "$(dirname "$0")/.." && pwd)/update-cs2-centralized.sh"
 
 # dynamic volume ownership: uid:gid read from the volume dir, empty when unknown
 if (
