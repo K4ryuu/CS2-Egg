@@ -124,7 +124,10 @@ CENTRAL_UPDATE_LOCK="/var/lock/cs2-central-update.lock"
 # Worker registry (tmpfs): one file per in-flight worker, consumed by the
 # status refresher loop to keep waiting eggs' status files fresh.
 DAEMON_REGISTRY_DIR="/run/cs2-vpk-daemon"
+# Held for the daemon's whole lifetime so a second instance cannot start
+DAEMON_INSTANCE_LOCK="/var/lock/cs2-vpk-daemon.lock"
 _REFRESHER_PID=
+_DAEMON_INSTANCE_FD=
 
 # ============================================================================
 # STYLING / COLORS
@@ -1204,7 +1207,10 @@ _push_worker() {
     # ${var:-} guards: the trap can fire after the function already returned
     # (locals gone) - an unbound variable here would abort the trap mid-way and
     # leak the per-container lock + pool slot (stuck "queued" servers).
-    trap '[ "${_locked:-0}" = 1 ] && rm -rf "${lock_file:-/nonexistent}" 2>/dev/null; [ "${_registered:-0}" = 1 ] && rm -f "${reg_file:-/nonexistent}" 2>/dev/null; [ "${_slot:-0}" = 1 ] && echo >&"${_DAEMON_WORKER_FD:-2}" 2>/dev/null' EXIT
+    # The registry entry is keyed by container, so a sibling worker may have
+    # replaced ours - drop it only while it still names this pid, or we would
+    # unregister the live worker and its status would stop being refreshed.
+    trap '[ "${_locked:-0}" = 1 ] && rm -rf "${lock_file:-/nonexistent}" 2>/dev/null; [ "${_registered:-0}" = 1 ] && grep -qx "pid=$BASHPID" "${reg_file:-/nonexistent}" 2>/dev/null && rm -f "${reg_file:-/nonexistent}" 2>/dev/null; [ "${_slot:-0}" = 1 ] && echo >&"${_DAEMON_WORKER_FD:-2}" 2>/dev/null' EXIT
     # bash skips the EXIT trap when a signal kills it, so route the signals a
     # service restart sends into a normal exit - otherwise the worker leaks its
     # lock directory and every later worker for this container waits it out
@@ -1301,6 +1307,15 @@ _push_worker() {
     exit 0
 }
 
+# True while a live worker is already registered for this container. Reconcile
+# sweeps and real docker events overlap (both fire on a restart), and a second
+# worker only duplicates the same push behind the same lock.
+_worker_registered_alive() {
+    local pid
+    pid=$(grep -m1 '^pid=' "$DAEMON_REGISTRY_DIR/$1" 2>/dev/null | cut -d= -f2 || true)
+    [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null
+}
+
 # Shared handling for live docker events and reconcile sweeps.
 _handle_container_event() {
     local event="$1" container="$2"
@@ -1323,6 +1338,11 @@ _handle_container_event() {
         else
             log_warn "nsenter mount failed for $container - symlinks may not resolve"
         fi
+    fi
+
+    if _worker_registered_alive "$container"; then
+        log_info "Push already in flight for ${BOLD}$container${RESET} - skipping duplicate worker"
+        return 0
     fi
 
     _push_worker "$event" "$container" &
@@ -1669,6 +1689,19 @@ run_event_daemon() {
         exit 1
     fi
 
+    # One daemon per host. A hand-started second instance wipes the running
+    # daemon's worker registry below, so its in-flight servers stop being
+    # refreshed and both instances then fight over the same push locks.
+    # The fd stays open for the daemon's lifetime, so the lock lives that long.
+    if command -v flock >/dev/null 2>&1; then
+        exec {_DAEMON_INSTANCE_FD}>"$DAEMON_INSTANCE_LOCK"
+        if ! flock -n "$_DAEMON_INSTANCE_FD"; then
+            log_error "Another daemon instance is already running - refusing to start a second one"
+            log_error "Check it with: systemctl status cs2-vpk-daemon"
+            exit 1
+        fi
+    fi
+
     # Build --filter image= args for each configured image
     local images="${SERVER_IMAGE//,/ }"
     local filter_args=()
@@ -1695,7 +1728,8 @@ run_event_daemon() {
     echo "" >&2
 
     # Fresh daemon = no live workers: wipe the registry, then start the status
-    # refresher that keeps waiting eggs' status files fresh every 3s.
+    # refresher that keeps waiting eggs' status files fresh every 3s. The wipe
+    # is why the instance lock above is not optional.
     rm -rf "$DAEMON_REGISTRY_DIR" 2>/dev/null || true
     mkdir -p "$DAEMON_REGISTRY_DIR" 2>/dev/null || true
     _status_refresher &

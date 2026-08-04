@@ -1,6 +1,8 @@
 -- update - 2026.08.04
 
-- feat(test): New daemon-side units for the push lock (dead-owner and pid-less locks stolen, live owner waited out) and for the symlinked lock directory scan
+- feat(test): New daemon-side units for the push lock (dead-owner and pid-less locks stolen, live owner waited out), the duplicate worker guard, the daemon instance lock and the symlinked lock directory scan
+- fix(daemon): Only one worker per server is started now - a reconcile sweep and a real docker event both fire on a restart, and the second worker overwrote the first one's registry entry, so whichever finished first unregistered the other and its status stopped being refreshed (the egg then fell back to SteamCMD mid-push)
+- fix(daemon): Daemon mode takes a host-wide instance lock and refuses to start next to a running daemon - a hand-started second instance wiped the running daemon's worker registry and both then fought over the same push locks [#58]
 - fix(daemon): A push lock whose owner is gone is now stolen instead of waited out - a worker killed by a service restart (or any lock left by a script older than 1.0.53, which carried no owner pid) used to park every later worker for that server on "queued", so the server waited for game files forever and never fell back to SteamCMD [#58]
 - fix(doctor): The orphaned-lock cleanup never ran on Debian/Ubuntu - `/var/lock` is a symlink to `/run/lock` there and `find` does not descend into it without `-H`, so weeks-old locks survived every doctor run while the summary still reported "Everything looks healthy" [#58]
 - fix(daemon): Push workers now handle SIGTERM/SIGINT/SIGHUP, so a daemon restart no longer leaks the per-container lock directory (bash skips the EXIT trap when a signal kills the shell) [#58]

@@ -305,6 +305,53 @@ else
     FAILS=$((FAILS + 1))
 fi
 
+# duplicate worker guard: a reconcile sweep and a real docker event both fire on
+# a restart, and the second worker would only overwrite the first registration
+if (
+    source "$CENTRAL" >/dev/null 2>&1
+    set +e
+    DAEMON_REGISTRY_DIR=$(mktemp -d)
+    c="test-$$-$RANDOM"
+
+    _worker_registered_alive "$c" && exit 1              # no registration at all
+
+    echo "pid=$$" > "$DAEMON_REGISTRY_DIR/$c"
+    _worker_registered_alive "$c" || exit 1              # live worker
+
+    echo "pid=$(bash -c 'echo $$')" > "$DAEMON_REGISTRY_DIR/$c"
+    _worker_registered_alive "$c" && exit 1              # crashed worker
+
+    rm -rf "$DAEMON_REGISTRY_DIR"
+); then
+    echo "${GREEN}PASS${RESET}  duplicate worker skipped only while the first is alive"
+else
+    echo "${RED}FAIL${RESET}  duplicate worker skipped only while the first is alive"
+    FAILS=$((FAILS + 1))
+fi
+
+# daemon instance lock: a hand-started second daemon wipes the running one's
+# worker registry, so the second start has to be refused
+if command -v flock >/dev/null 2>&1; then
+    if (
+        set +e
+        tmp2=$(mktemp -d)
+        lock="$tmp2/daemon.lock"
+        exec 8>"$lock"
+        flock -n 8 || exit 1                              # first instance claims it
+        ( exec 9>"$lock"; flock -n 9 ) && exit 1          # second must be refused
+        exec 8>&-
+        ( exec 9>"$lock"; flock -n 9 ) || exit 1          # free again after release
+        rm -rf "$tmp2"
+    ); then
+        echo "${GREEN}PASS${RESET}  daemon instance lock refuses a second daemon"
+    else
+        echo "${RED}FAIL${RESET}  daemon instance lock refuses a second daemon"
+        FAILS=$((FAILS + 1))
+    fi
+else
+    echo "SKIP  daemon instance lock (no flock on this machine - runs on Linux hosts)"
+fi
+
 # the doctor scans /var/lock, which is a symlink to /run/lock on Debian/Ubuntu:
 # without -H find never descends and the orphaned-lock cleanup finds nothing
 if (
