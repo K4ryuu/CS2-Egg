@@ -405,6 +405,36 @@ else
     FAILS=$((FAILS + 1))
 fi
 
+# the daemon logs its own version at startup and the doctor reads that instead
+# of comparing timestamps; a recycled pid means the last line is the live one
+if (
+    source "$CENTRAL" >/dev/null 2>&1
+    set +e
+    journalctl() { printf 'Daemon started\nScript version: 1.0.60\n\033[1mScript version:\033[0m \033[1m1.0.62\033[0m\n'; }
+    [ "$(_daemon_running_version 4242)" = "1.0.62" ] || exit 1
+    [ -z "$(_daemon_running_version 0)" ] || exit 1
+    [ -z "$(_daemon_running_version '')" ] || exit 1
+); then
+    echo "${GREEN}PASS${RESET}  daemon version read from its startup log line"
+else
+    echo "${RED}FAIL${RESET}  daemon version read from its startup log line"
+    FAILS=$((FAILS + 1))
+fi
+
+# no version line means the grep in there exits non-zero, which under the
+# set -euo pipefail this script runs with kills a plain call. Needs its own
+# bash: inside an if-condition subshell errexit is off, so it cannot be seen
+if bash -c 'set -euo pipefail
+    source "$1" >/dev/null 2>&1
+    journalctl() { printf "nothing useful here\n"; }
+    _daemon_running_version 4242 >/dev/null
+    exit 0' _ "$CENTRAL" >/dev/null 2>&1; then
+    echo "${GREEN}PASS${RESET}  a journal with no version line does not abort the caller"
+else
+    echo "${RED}FAIL${RESET}  a journal with no version line does not abort the caller"
+    FAILS=$((FAILS + 1))
+fi
+
 # the doctor scans /var/lock, which is a symlink to /run/lock on Debian/Ubuntu:
 # without -H find never descends and the orphaned-lock cleanup finds nothing
 if (

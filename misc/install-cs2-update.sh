@@ -19,7 +19,9 @@ LOG_FILE="/var/log/cs2-update.log"
 # Branch to install from; testers can run e.g. CS2_EGG_BRANCH=dev to try a prerelease.
 # Self-update in the installed script is patched to track the same branch.
 INSTALL_BRANCH="${CS2_EGG_BRANCH:-main}"
-GITHUB_SCRIPT="https://raw.githubusercontent.com/K4ryuu/CS2-Egg/${INSTALL_BRANCH}/misc/update-cs2-centralized.sh"
+# The timestamp query skips the raw CDN cache - a one-off fetch per install, so
+# unlike the cron self-update there is no cache hit rate to lose.
+GITHUB_SCRIPT="https://raw.githubusercontent.com/K4ryuu/CS2-Egg/${INSTALL_BRANCH}/misc/update-cs2-centralized.sh?$(date +%s)"
 
 # ── Colors ────────────────────────────────────────────────────────────────────
 

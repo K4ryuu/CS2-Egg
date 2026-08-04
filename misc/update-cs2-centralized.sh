@@ -1485,18 +1485,28 @@ run_doctor() {
     # service state + stale in-memory code detection
     if command -v systemctl >/dev/null 2>&1; then
         if systemctl is-active --quiet cs2-vpk-daemon 2>/dev/null; then
-            local main_pid proc_start script_mtime
+            local main_pid live_version stale=false
             main_pid=$(systemctl show -p MainPID --value cs2-vpk-daemon 2>/dev/null || echo 0)
-            proc_start=$(stat -c %Z "/proc/$main_pid" 2>/dev/null || echo 0)
-            script_mtime=$(stat -c %Y "$exec_path" 2>/dev/null || echo 0)
-            if [ "$script_mtime" -gt "$proc_start" ] 2>/dev/null && [ "$proc_start" -gt 0 ]; then
+            # version, not mtime: an update keeps the downloaded file's mtime and
+            # any edit bumps it, so timestamps lie in both directions
+            live_version=$(_daemon_running_version "$main_pid" || true)
+            if [ -n "$live_version" ] && [ -n "${disk_version:-}" ]; then
+                [ "$live_version" != "$disk_version" ] && stale=true
+            else
+                # no startup line to read, fall back to timestamps
+                local proc_start script_mtime
+                proc_start=$(stat -c %Z "/proc/$main_pid" 2>/dev/null || echo 0)
+                script_mtime=$(stat -c %Y "$exec_path" 2>/dev/null || echo 0)
+                [ "$script_mtime" -gt "$proc_start" ] 2>/dev/null && [ "$proc_start" -gt 0 ] && stale=true
+            fi
+            if [ "$stale" = "true" ]; then
                 if systemctl restart cs2-vpk-daemon 2>/dev/null; then
-                    _dfixed "Daemon was running OLDER code than the script on disk - restarted to load it"
+                    _dfixed "Daemon was running OLDER code (${live_version:-unknown}) than the script on disk (${disk_version:-unknown}) - restarted to load it"
                 else
                     _dfail "Daemon runs older code than on disk and restart failed - run: systemctl restart cs2-vpk-daemon"
                 fi
             else
-                _ok "Daemon active (pid $main_pid) and running the on-disk code"
+                _ok "Daemon active (pid $main_pid) and running the on-disk code${live_version:+ (version $live_version)}"
             fi
         elif [ -x "$exec_path" ]; then
             if systemctl restart cs2-vpk-daemon 2>/dev/null && systemctl is-active --quiet cs2-vpk-daemon 2>/dev/null; then
@@ -1731,6 +1741,20 @@ run_protocol_test() {
 
     log_ok "Self-test passed"
     exit 0
+}
+
+# Version the running daemon logged at startup, empty if no journal to read it.
+# _PID alone, not -u: a unit match ORs with a field match instead of narrowing it.
+_daemon_running_version() {
+    local pid="${1:-0}"
+    if [ -z "$pid" ] || [ "$pid" = "0" ]; then return 0; fi
+    command -v journalctl >/dev/null 2>&1 || return 0
+    { journalctl -b _PID="$pid" -o cat --no-pager 2>/dev/null \
+        | sed "s/$(printf '\033')\[[0-9;]*m//g" \
+        | grep 'Script version:' \
+        | tail -n1 \
+        | awk '{print $NF}'; } || true
+    return 0
 }
 
 # pid of the daemon already running on this host, empty if none
@@ -2071,7 +2095,31 @@ apply_update() {
     # restart. systemctl restart loads the fresh script from disk.
     if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet cs2-vpk-daemon 2>/dev/null; then
         log_info "Restarting cs2-vpk-daemon service to load new code..."
-        systemctl restart cs2-vpk-daemon 2>/dev/null || log_warn "Daemon restart failed - run: systemctl restart cs2-vpk-daemon"
+        # restart exit code isn't proof: a daemon started after the swap is the
+        # only thing that means new code. Last check before the exec below
+        local install_ts new_pid proc_start attempt=0 waited
+        install_ts=$(date +%s)
+        while [ "$attempt" -lt 2 ]; do
+            attempt=$((attempt + 1))
+            systemctl restart cs2-vpk-daemon 2>/dev/null || true
+            # give it a few seconds to come up before calling it a failure - a
+            # second restart here would kill the pushes the first one started
+            waited=0
+            while [ "$waited" -lt 5 ]; do
+                new_pid=$(systemctl show -p MainPID --value cs2-vpk-daemon 2>/dev/null || echo 0)
+                proc_start=$(stat -c %Z "/proc/${new_pid:-0}" 2>/dev/null || echo 0)
+                [ "${proc_start:-0}" -ge "$install_ts" ] 2>/dev/null && break
+                sleep 1
+                waited=$((waited + 1))
+            done
+            if [ "${proc_start:-0}" -ge "$install_ts" ] 2>/dev/null; then
+                log_ok "Daemon restarted on the new version (pid $new_pid)"
+                break
+            fi
+            if [ "$attempt" -ge 2 ]; then
+                log_error "Daemon did NOT pick up the new script and is still running old code - run: systemctl restart cs2-vpk-daemon"
+            fi
+        done
     fi
 
     # Exec restart (preserves PID, lock file)
