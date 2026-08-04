@@ -24,7 +24,7 @@
 #   --update      Self-update the script right now from GITHUB_BRANCH (daemon
 #                 restarts automatically). Skips the CS2/steamcmd update.
 #
-# Version: 1.0.59
+# Version: 1.0.60
 
 set -euo pipefail
 
@@ -1644,7 +1644,10 @@ run_doctor() {
     section "Self-update"
 
     local http_code
-    http_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$REMOTE_SCRIPT_URL" 2>/dev/null || echo 000)
+    # ?ts: the raw.githubusercontent edge caches per file for minutes, and an
+    # explicitly invoked check must see the branch as it is right now. The
+    # cron-driven self-update keeps the plain URL so it stays cacheable.
+    http_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "${REMOTE_SCRIPT_URL}?$(date +%s)" 2>/dev/null || echo 000)
     case "$http_code" in
         200) _ok "Update source reachable (branch: $GITHUB_BRANCH)" ;;
         404) _dwarn "Branch '$GITHUB_BRANCH' gone from GitHub - self-update will switch to main on its next run" ;;
@@ -1679,7 +1682,8 @@ run_protocol_test() {
     mkdir -p "$tmp/misc" "$tmp/docker/scripts"
     local f
     for f in misc/protocol-test.sh misc/update-cs2-centralized.sh docker/scripts/update_helper.sh; do
-        if ! curl -fsSL --max-time 30 "$base/$f" -o "$tmp/$f"; then
+        # ?ts: skip the edge cache, a self-test must run the branch as it is now
+        if ! curl -fsSL --max-time 30 "$base/$f?$(date +%s)" -o "$tmp/$f"; then
             log_error "Failed to download $f from GitHub (branch: $GITHUB_BRANCH)"
             exit 1
         fi
