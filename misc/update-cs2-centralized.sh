@@ -11,7 +11,10 @@
 #                 only. Configured VALIDATE_INSTALL value is not touched.
 #   --daemon      Run as event listener daemon - pushes game files instantly when
 #                 a CS2 container starts (new server or restart). Install as a
-#                 systemd service for automatic startup.
+#                 systemd service for automatic startup. Started while one is
+#                 already running it just reports on it and exits.
+#   --daemon restart
+#                 Wait for in-flight pushes, then cycle the systemd service.
 #   --test        Download the boot-handshake protocol test suite from GitHub
 #                 (same branch as self-update), run it, clean up. No docker or
 #                 config needed - quick sanity check for support/diagnostics.
@@ -1689,6 +1692,70 @@ run_protocol_test() {
     exit 1
 }
 
+# pid of the daemon already running on this host, empty if none
+_running_daemon_pid() {
+    local pid=""
+    if command -v systemctl >/dev/null 2>&1; then
+        pid=$(systemctl show -p MainPID --value cs2-vpk-daemon 2>/dev/null || true)
+        [ "${pid:-0}" = "0" ] && pid=""
+    fi
+    if [ -z "$pid" ] && command -v pgrep >/dev/null 2>&1; then
+        pid=$(pgrep -f -- "$SCRIPT_FILENAME --daemon" 2>/dev/null | grep -vx "$$" | head -n1 || true)
+    fi
+    echo "$pid"
+}
+
+# Starting a second daemon is a no-op, not a failure: report the running one.
+_report_running_daemon() {
+    local pid uptime workers
+    pid=$(_running_daemon_pid)
+    [ -n "$pid" ] && uptime=$(ps -o etime= -p "$pid" 2>/dev/null | tr -d ' ' || true)
+    workers=$(ls "$DAEMON_REGISTRY_DIR" 2>/dev/null | wc -l | tr -d ' ')
+
+    log_ok "Daemon is already running${pid:+ (pid ${BOLD}$pid${RESET})}${uptime:+, up ${BOLD}$uptime${RESET}}"
+    log_info "Script version: ${BOLD}$(grep -m1 '^# Version:' "$0" | awk '{print $3}')${RESET}"
+    log_info "Pushes in flight: ${BOLD}${workers:-0}${RESET}"
+    log_info "Nothing started - one daemon per host, a second one would fight it over the push locks"
+    log_info "To restart it safely: ${BOLD}$0 --daemon restart${RESET}"
+}
+
+# Drain in-flight pushes, then let systemd cycle the service. Manual kill+start
+# is not offered: only systemd owns the daemon's lifecycle.
+restart_daemon_service() {
+    section "Daemon Restart"
+
+    if ! command -v systemctl >/dev/null 2>&1 || [ ! -f /etc/systemd/system/cs2-vpk-daemon.service ]; then
+        log_error "No cs2-vpk-daemon service on this host - nothing to restart"
+        return 1
+    fi
+
+    local waited=0 workers
+    while :; do
+        workers=$(ls "$DAEMON_REGISTRY_DIR" 2>/dev/null | wc -l | tr -d ' ')
+        [ "${workers:-0}" -eq 0 ] && break
+        if [ "$waited" -ge 300 ]; then
+            log_warn "$workers push(es) still running after 5 min - restarting anyway, they are verified again on the next server boot"
+            break
+        fi
+        [ $((waited % 10)) -eq 0 ] && log_info "Waiting for ${BOLD}$workers${RESET} in-flight push(es)..."
+        sleep 2
+        waited=$((waited + 2))
+    done
+
+    log_info "Restarting cs2-vpk-daemon..."
+    if ! systemctl restart cs2-vpk-daemon 2>/dev/null; then
+        log_error "Restart failed - check: journalctl -u cs2-vpk-daemon -n 50"
+        return 1
+    fi
+    sleep 2
+    if systemctl is-active --quiet cs2-vpk-daemon 2>/dev/null; then
+        log_ok "Daemon restarted (pid ${BOLD}$(_running_daemon_pid)${RESET})"
+        return 0
+    fi
+    log_error "Daemon did not come back up - check: journalctl -u cs2-vpk-daemon -n 50"
+    return 1
+}
+
 run_event_daemon() {
     section "VPK Push Daemon"
 
@@ -1706,9 +1773,8 @@ run_event_daemon() {
     # fights it over the push locks. The fd stays open, so the lock lives on.
     if command -v flock >/dev/null 2>&1 && exec {_DAEMON_INSTANCE_FD}>"$DAEMON_INSTANCE_LOCK"; then
         if ! flock -n "$_DAEMON_INSTANCE_FD"; then
-            log_error "Another daemon instance is already running - refusing to start a second one"
-            log_error "Check it with: systemctl status cs2-vpk-daemon"
-            exit 1
+            _report_running_daemon
+            exit 0
         fi
     fi
 
@@ -2062,6 +2128,10 @@ main() {
                 shift
                 ;;
             --daemon)
+                if [ "${2:-}" = "restart" ]; then
+                    restart_daemon_service
+                    exit $?
+                fi
                 validate_config
                 if [ "$VPK_PUSH_METHOD" = "off" ]; then
                     log_error "Daemon mode requires VPK_PUSH_METHOD to be set (not \"off\")"
@@ -2093,7 +2163,7 @@ main() {
                 log_error "Unknown argument: $1"
                 echo ""
                 echo "Usage: $0 [--simulate] [--validate]"
-                echo "       $0 --daemon"
+                echo "       $0 --daemon [restart]"
                 echo "       $0 --test"
                 echo "       $0 --doctor"
                 echo "       $0 --update"
@@ -2102,6 +2172,8 @@ main() {
                 echo "  --simulate    Simulate update mode (skip SteamCMD, trigger restart logic)"
                 echo "  --validate    Force one-shot file validation (steamcmd validate), does not persist"
                 echo "  --daemon      Run as event listener - push game files on container start"
+                echo "  --daemon restart"
+                echo "                Drain in-flight pushes, then restart the systemd service"
                 echo "  --test        Download + run the protocol test suite, then clean up"
                 echo "  --doctor      Health check + safe auto-fixes for the whole setup"
                 echo "  --update      Self-update the script now (skips the CS2 update)"
