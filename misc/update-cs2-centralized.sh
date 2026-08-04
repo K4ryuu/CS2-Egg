@@ -874,10 +874,10 @@ _prune_stale_vpk_links() {
     while IFS= read -r link; do
         [ -z "$link" ] && continue
         target=$(readlink "$link" 2>/dev/null || true)
-        case "$target" in
-            "$mount_dst"/*) [ -e "$CS2_DIR/${target#"$mount_dst"/}" ] && continue ;;
-            *)              [ -e "$link" ] && continue ;;
-        esac
+        # only links we placed: someone else's link may resolve inside the
+        # container but not from the host, and must not be touched
+        case "$target" in "$mount_dst"/*) ;; *) continue ;; esac
+        [ -e "$CS2_DIR/${target#"$mount_dst"/}" ] && continue
         rm -f "$link" 2>/dev/null && pruned=$((pruned + 1))
     done < <(find "$volume/game" -name '*.vpk' -type l 2>/dev/null)
     [ "$pruned" -gt 0 ] && log_info "  ${DIM}→ $container: pruned $pruned VPK link(s) with no source${RESET}"
@@ -1324,7 +1324,12 @@ _push_worker() {
 _worker_registered_alive() {
     local pid
     pid=$(grep -m1 '^pid=' "$DAEMON_REGISTRY_DIR/$1" 2>/dev/null | cut -d= -f2 || true)
-    [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null
+    [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+    kill -0 "$pid" 2>/dev/null || return 1
+    # the pid may have been recycled by an unrelated process; no procfs (dev
+    # machines) means liveness is all we have
+    [ -r "/proc/$pid/cmdline" ] || return 0
+    grep -qa "$SCRIPT_FILENAME" "/proc/$pid/cmdline" 2>/dev/null
 }
 
 # Shared handling for live docker events and reconcile sweeps.
@@ -1699,8 +1704,7 @@ run_event_daemon() {
 
     # One daemon per host: a second instance wipes the live registry below and
     # fights it over the push locks. The fd stays open, so the lock lives on.
-    if command -v flock >/dev/null 2>&1; then
-        exec {_DAEMON_INSTANCE_FD}>"$DAEMON_INSTANCE_LOCK"
+    if command -v flock >/dev/null 2>&1 && exec {_DAEMON_INSTANCE_FD}>"$DAEMON_INSTANCE_LOCK"; then
         if ! flock -n "$_DAEMON_INSTANCE_FD"; then
             log_error "Another daemon instance is already running - refusing to start a second one"
             log_error "Check it with: systemctl status cs2-vpk-daemon"

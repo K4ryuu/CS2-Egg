@@ -316,13 +316,12 @@ if (
     echo x > "$CS2_DIR/game/csgo/pak01_000.vpk"
     ln -s /tmp/cs2-shared/game/csgo/pak01_000.vpk "$vol/game/csgo/pak01_000.vpk"   # source exists
     ln -s /tmp/cs2-shared/game/csgo/gone_001.vpk  "$vol/game/csgo/gone_001.vpk"    # source removed
-    echo y > "$tmp2/real.vpk"
-    ln -s "$tmp2/real.vpk" "$vol/game/csgo/local.vpk"                              # resolves on the host
+    ln -s /home/container/custom/pack.vpk "$vol/game/csgo/foreign.vpk"             # not ours, keep
 
     _prune_stale_vpk_links test-container "$vol" >/dev/null 2>&1
 
     [ -L "$vol/game/csgo/pak01_000.vpk" ] || exit 1
-    [ -L "$vol/game/csgo/local.vpk" ] || exit 1
+    [ -L "$vol/game/csgo/foreign.vpk" ] || exit 1
     [ -L "$vol/game/csgo/gone_001.vpk" ] && exit 1
     rm -rf "$tmp2"
 ); then
