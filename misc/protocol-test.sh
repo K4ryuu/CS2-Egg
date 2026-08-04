@@ -342,7 +342,7 @@ if (
     _worker_registered_alive "$c" && exit 1              # no registration at all
 
     # stand-in worker: argv[0] carries the script name the /proc check looks for
-    bash -c "exec -a $SCRIPT_FILENAME bash -c 'sleep 30'" &
+    bash -c "exec -a $SCRIPT_FILENAME bash -c 'sleep 30; :'" &
     worker=$!
     echo "pid=$worker" > "$DAEMON_REGISTRY_DIR/$c"
     _worker_registered_alive "$c" || { kill "$worker" 2>/dev/null; exit 1; }
