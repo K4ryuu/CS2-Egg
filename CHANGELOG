@@ -1,3 +1,12 @@
+-- update - 2026.08.04
+
+- feat(test): New daemon-side units for the push lock (dead-owner and pid-less locks stolen, live owner waited out) and for the symlinked lock directory scan
+- fix(daemon): A push lock whose owner is gone is now stolen instead of waited out - a worker killed by a service restart (or any lock left by a script older than 1.0.53, which carried no owner pid) used to park every later worker for that server on "queued", so the server waited for game files forever and never fell back to SteamCMD [#58]
+- fix(doctor): The orphaned-lock cleanup never ran on Debian/Ubuntu - `/var/lock` is a symlink to `/run/lock` there and `find` does not descend into it without `-H`, so weeks-old locks survived every doctor run while the summary still reported "Everything looks healthy" [#58]
+- fix(daemon): Push workers now handle SIGTERM/SIGINT/SIGHUP, so a daemon restart no longer leaks the per-container lock directory (bash skips the EXIT trap when a signal kills the shell) [#58]
+- fix(daemon): The wait for a free worker pool slot is capped at 1h and reports failed - it was the last unbounded wait, and the status refresher kept it invisible to both the egg and the doctor [#58]
+- fix(doctor): Stuck-status detection now measures time spent in the state (the worker's enqueue stamp) instead of the refreshed timestamp, which is bumped every 3s for as long as the worker lives - a server blocked on a busy lock was reported as a healthy "push in progress" [#58]
+
 -- update - 2026.07.23
 
 - feat(daemon): One-way status file protocol replaces the delete-and-wait marker handshake - the daemon writes `egg/.daemon-status` (queued/updating/verifying/pushing/done/failed + timestamp + queue position) and the egg only reads it, so the boot race that could trigger a full ~33GB SteamCMD redownload on loaded hosts can no longer happen (#56)
@@ -42,7 +51,7 @@
 - feat(daemon): Push heartbeat - a server boot now keeps waiting while a daemon push is actively running instead of giving up after 30s, so SteamCMD can never write the same game tree concurrently with a long push
 - feat(installer): MAX_WORKERS is asked in the install wizard and preserved across reinstalls and script self-updates
 - feat(installer): CS2_EGG_BRANCH override installs from any branch (e.g. dev) and points self-update at the same branch, so testers can run prereleases without being pulled back to stable
-- feat(cleanup): New delete_parent_dir rule option removes whole leaf bundle folders, and default rules now clean SwiftlyS2 crash data after a week: loose .dmp files and <uuid>/ bundles in crashreport/ (keyed on minidump age since SwiftlyS2 regenerates crashinfo.json every boot) plus prevention/incident.*.log files
+- feat(cleanup): New delete_parent_dir rule option removes whole leaf bundle folders, and default rules now clean SwiftlyS2 crash data after a week: loose .dmp files and <uuid>/ bundles in crashreport/ (keyed on minidump age since SwiftlyS2 regenerates crashinfo.json every boot) plus prevention/incident.\*.log files
 - feat(config): Cleanup rule migration now merges by rule name, so new default rules reach existing servers on config bump while your customized and custom rules stay untouched
 - fix(swiftlys2): Version file is only bumped after a successful copy - a failed copy (full disk, IO error) now retries on next boot instead of silently keeping a corrupted install forever
 - fix(updaters): MetaMod and CounterStrikeSharp copy failures now log an error and skip the version bump instead of reporting success

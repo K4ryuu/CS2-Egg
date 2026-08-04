@@ -269,6 +269,59 @@ else
     echo "SKIP  status writer units (no flock on this machine - runs on Linux hosts)"
 fi
 
+# push lock: dead-owner and pid-less corpses get stolen, a live owner is waited
+# out (the stale July locks in #58 parked every worker on "queued" for weeks)
+if (
+    source "$CENTRAL" >/dev/null 2>&1
+    set +e
+    tmp2=$(mktemp -d)
+    export PUSH_LOCK_STEAL_GRACE=2
+
+    # dead owner pid -> stolen on the first pass
+    dead_lock="$tmp2/dead.lock"; mkdir -p "$dead_lock"
+    dead_pid=$(bash -c 'echo $$'); echo "$dead_pid" > "$dead_lock/pid"
+    _acquire_push_lock "$dead_lock" 4 || exit 1
+    [ "$(cat "$dead_lock/pid")" = "$BASHPID" ] || exit 1
+
+    # no pid file (pre-1.0.53 lock) -> stolen once the grace passed
+    bare_lock="$tmp2/bare.lock"; mkdir -p "$bare_lock"
+    _acquire_push_lock "$bare_lock" 10 || exit 1
+
+    # live owner -> not stolen, budget runs out instead
+    live_lock="$tmp2/live.lock"; mkdir -p "$live_lock"; echo "$$" > "$live_lock/pid"
+    _acquire_push_lock "$live_lock" 2 && exit 1
+    [ "$(cat "$live_lock/pid")" = "$$" ] || exit 1
+
+    # free path: lock taken and stamped with the caller pid
+    free_lock="$tmp2/free.lock"
+    _acquire_push_lock "$free_lock" 2 || exit 1
+    [ "$(cat "$free_lock/pid")" = "$BASHPID" ] || exit 1
+
+    rm -rf "$tmp2"
+); then
+    echo "${GREEN}PASS${RESET}  push lock steals dead/pid-less locks, waits out a live owner"
+else
+    echo "${RED}FAIL${RESET}  push lock steals dead/pid-less locks, waits out a live owner"
+    FAILS=$((FAILS + 1))
+fi
+
+# the doctor scans /var/lock, which is a symlink to /run/lock on Debian/Ubuntu:
+# without -H find never descends and the orphaned-lock cleanup finds nothing
+if (
+    set +e
+    tmp2=$(mktemp -d)
+    mkdir -p "$tmp2/real/cs2-vpk-push-test.lock"
+    ln -s "$tmp2/real" "$tmp2/link"
+    found=$(find -H "$tmp2/link" -maxdepth 1 -name 'cs2-vpk-push-*' -type d 2>/dev/null | wc -l | tr -d ' ')
+    rm -rf "$tmp2"
+    [ "$found" = "1" ]
+); then
+    echo "${GREEN}PASS${RESET}  lock scan descends into a symlinked /var/lock"
+else
+    echo "${RED}FAIL${RESET}  lock scan descends into a symlinked /var/lock"
+    FAILS=$((FAILS + 1))
+fi
+
 echo ""
 if [ "$FAILS" -eq 0 ]; then
     echo "${GREEN}${BOLD}All cases passed.${RESET}"

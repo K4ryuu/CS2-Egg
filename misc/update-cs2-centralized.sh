@@ -21,7 +21,7 @@
 #   --update      Self-update the script right now from GITHUB_BRANCH (daemon
 #                 restarts automatically). Skips the CS2/steamcmd update.
 #
-# Version: 1.0.56
+# Version: 1.0.57
 
 set -euo pipefail
 
@@ -1078,6 +1078,43 @@ _verify_volume_vpks() {
     return 0
 }
 
+# Per-container push mutex, shared by the cron push and the daemon workers.
+# mkdir is the atomic part; the pid file inside makes a crashed owner detectable.
+# A lock whose owner is gone is a corpse and gets stolen instead of waited out:
+# workers are SIGKILLed when the service restarts (EXIT trap never runs) and
+# locks from scripts < 1.0.53 carry no pid at all - both used to park every
+# later worker for this container on "queued" until the full budget expired.
+# Usage: _acquire_push_lock <lock_dir> <max_wait_secs>; returns 1 on timeout.
+_acquire_push_lock() {
+    local lock_file="$1" max_wait="$2"
+    local grace="${PUSH_LOCK_STEAL_GRACE:-10}"
+    local waited=0 owner stale
+    while true; do
+        if mkdir "$lock_file" 2>/dev/null; then
+            echo "$BASHPID" > "$lock_file/pid" 2>/dev/null || true
+            # a waiter that timed its steal into our mkdir -> pid write window
+            # would have replaced the directory; the readback proves it is ours
+            [ "$(cat "$lock_file/pid" 2>/dev/null)" = "$BASHPID" ] && return 0
+        else
+            owner=$(cat "$lock_file/pid" 2>/dev/null || true)
+            stale=false
+            if [[ "$owner" =~ ^[0-9]+$ ]]; then
+                kill -0 "$owner" 2>/dev/null || stale=true
+            elif [ "$waited" -ge "$grace" ]; then
+                # no pid file: a corpse, or a live owner still inside the tiny
+                # window between its mkdir and the pid write - grace covers it
+                stale=true
+            fi
+            # rm failure (permissions) falls through to the wait below, so a lock
+            # we cannot remove can never spin this loop
+            $stale && rm -rf "$lock_file" 2>/dev/null && continue
+        fi
+        [ "$waited" -ge "$max_wait" ] && return 1
+        sleep 2
+        waited=$((waited + 2))
+    done
+}
+
 push_vpk_to_containers() {
     [ "$VPK_PUSH_METHOD" = "off" ] && return 0
 
@@ -1121,18 +1158,11 @@ push_vpk_to_containers() {
         # Same per-container mutex as the daemon workers, so a cron push and a
         # daemon self-heal never write the same volume concurrently.
         local lock_file="/var/lock/cs2-vpk-push-${container}.lock"
-        local waited=0 got_lock=true
-        while ! mkdir "$lock_file" 2>/dev/null; do
-            if [ "$waited" -ge 120 ]; then got_lock=false; break; fi
-            sleep 2
-            waited=$((waited + 2))
-        done
-        if ! $got_lock; then
-            log_warn "Push lock busy for ${BOLD}$container${RESET} after ${waited}s, skipping"
+        if ! _acquire_push_lock "$lock_file" 120; then
+            log_warn "Push lock busy for ${BOLD}$container${RESET} after 120s, skipping"
             ((failed++)) || true
             continue
         fi
-        echo "$BASHPID" > "$lock_file/pid" 2>/dev/null || true
 
         if _sync_to_volume "$container" "$volume_path"; then
             ((success++)) || true
@@ -1175,6 +1205,12 @@ _push_worker() {
     # (locals gone) - an unbound variable here would abort the trap mid-way and
     # leak the per-container lock + pool slot (stuck "queued" servers).
     trap '[ "${_locked:-0}" = 1 ] && rm -rf "${lock_file:-/nonexistent}" 2>/dev/null; [ "${_registered:-0}" = 1 ] && rm -f "${reg_file:-/nonexistent}" 2>/dev/null; [ "${_slot:-0}" = 1 ] && echo >&"${_DAEMON_WORKER_FD:-2}" 2>/dev/null' EXIT
+    # bash skips the EXIT trap when a signal kills it, so route the signals a
+    # service restart sends into a normal exit - otherwise the worker leaks its
+    # lock directory and every later worker for this container waits it out
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    trap 'exit 129' HUP
 
     # Debounce: only applied to create events (Wings fires create+start together,
     # so create handles initial push and start can skip the heavy work).
@@ -1203,24 +1239,24 @@ _push_worker() {
     # Acquire a worker slot here, inside the subshell: the event loop
     # must never block on a saturated pool, or symlink mounts for later
     # events would stall and containers time out waiting on markers (#51).
-    read -r <&"$_DAEMON_WORKER_FD" || exit 0
+    # Capped: an unbounded wait here is invisible (the refresher keeps the status
+    # fresh), so the egg would sit on "queued" forever instead of falling back.
+    if ! read -r -t 3600 <&"$_DAEMON_WORKER_FD"; then
+        log_warn "No worker slot for ${BOLD}$container${RESET} after 1h - reporting failed"
+        _write_status "$container" "$volume_path" "failed"
+        exit 0
+    fi
     _slot=1
 
     # Per-container push lock: wait for a concurrent cron push / sibling worker
     # instead of giving up - the fresh queued status keeps the egg waiting.
-    local waited=0
-    while ! mkdir "$lock_file" 2>/dev/null; do
-        if [ "$waited" -ge 3600 ]; then
-            log_warn "Push lock busy for ${BOLD}$container${RESET} after 1h - reporting failed"
-            _write_status "$container" "$volume_path" "failed"
-            exit 0
-        fi
-        sleep 2
-        waited=$((waited + 2))
-    done
+    # Dead-owner locks are stolen by the helper, not waited out.
+    if ! _acquire_push_lock "$lock_file" 3600; then
+        log_warn "Push lock busy for ${BOLD}$container${RESET} after 1h - reporting failed"
+        _write_status "$container" "$volume_path" "failed"
+        exit 0
+    fi
     _locked=1
-    # record the owner pid so the doctor can spot orphaned locks instantly
-    echo "$BASHPID" > "$lock_file/pid" 2>/dev/null || true
 
     # Central CS2 update in progress? Wait it out instead of verifying against a
     # half-written CS2_DIR. The shared lock is then HELD until worker exit (fd
@@ -1497,8 +1533,16 @@ run_doctor() {
                 case "$state" in
                     done)   _ok "$container: status done ($((age / 60)) min ago)" ;;
                     failed) _dwarn "$container: last push FAILED - server likely fell back to SteamCMD, check journalctl around $(date -d "@$ts" 2>/dev/null || echo "ts $ts")" ;;
-                    *)      if [ "$age" -gt 120 ]; then
-                                _dwarn "$container: status stuck in '$state' for $((age / 60)) min - worker died? journalctl -u cs2-vpk-daemon"
+                    *)      # ts is refreshed every 3s for as long as the worker lives, so its
+                            # age only ever catches a dead worker. Time actually spent waiting
+                            # comes from the worker's enqueue stamp in the registry - without it
+                            # a worker parked on a busy lock reads as "healthy" forever.
+                            local enq waited_secs=0 stuck_after=3600
+                            [ "$state" = "queued" ] && stuck_after=900
+                            enq=$(grep -m1 '^enq=' "$DAEMON_REGISTRY_DIR/$container" 2>/dev/null | cut -d= -f2 || true)
+                            [[ "$enq" =~ ^[0-9]+$ ]] && waited_secs=$((now - enq))
+                            if [ "$age" -gt 120 ] || [ "$waited_secs" -gt "$stuck_after" ]; then
+                                _dwarn "$container: stuck in '$state' for $(( (waited_secs > age ? waited_secs : age) / 60 )) min - check the push lock (ls -la /run/lock | grep cs2-vpk-push) and journalctl -u cs2-vpk-daemon"
                             else
                                 _ok "$container: push in progress ($state)"
                             fi ;;
@@ -1546,7 +1590,10 @@ run_doctor() {
                 _dwarn "Push lock $(basename "$lock") has no owner pid and is ${lock_age} min old - if a server hangs on 'queued', remove it: rm -rf $lock"
             fi
         fi
-    done < <(find /var/lock -maxdepth 1 -name 'cs2-vpk-push-*' -type d 2>/dev/null)
+    # -H dereferences the starting point: /var/lock is a symlink to /run/lock on
+    # Debian/Ubuntu, and without it find never descends, so this whole cleanup
+    # silently found nothing and weeks-old locks survived every doctor run
+    done < <(find -H /var/lock -maxdepth 1 -name 'cs2-vpk-push-*' -type d 2>/dev/null)
     [ "$removed_locks" -gt 0 ] && _dfixed "Removed $removed_locks orphaned push lock(s) (dead owner)"
     if [ -f "$CENTRAL_UPDATE_LOCK" ] && command -v flock >/dev/null 2>&1; then
         if ( exec 9<"$CENTRAL_UPDATE_LOCK"; flock -n -s 9 ) 2>/dev/null; then
