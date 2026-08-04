@@ -190,9 +190,7 @@ Build your own Docker image using the included build script:
 
 ## Roadmap
 
-**Signed releases.** The remaining supply-chain answer, since the script installs itself as root: ship a signature with every release and verify it against a pinned public key before installing. Unlike the soak window, this rejects a tampered script outright instead of buying time to notice it. Needs a release process that signs, and key handling that survives a lost key, so this is a maybe rather than a promise.
-
-Beyond those, development continues through bug reports and feature requests. Have an idea? [Open a request](https://github.com/K4ryuu/CS2-Egg/issues/new?template=1-feature_request.yml).
+Nothing planned right now - development continues through bug reports and feature requests. Have an idea? [Open a request](https://github.com/K4ryuu/CS2-Egg/issues/new?template=1-feature_request.yml).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

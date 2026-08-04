@@ -156,7 +156,7 @@ What it does and does not buy you, plainly: it turns "already everywhere" into "
 
 The window is keyed on the file's SHA-256, not its version number, so a changed body under an unchanged `# Version:` header restarts the clock rather than inheriting the elapsed time.
 
-Two ways past it: `--update` installs the pending version right away (the emergency path), and a release carrying a `# Hotfix: true` header line skips the window on every host, for shipping a fix on top of a bad release without waiting it out.
+One way past it: `--update` installs the pending version right away. That is deliberate. Anything the downloaded file could say about itself, a header line marking it urgent for instance, would be set by whoever published it, so a hostile release would simply declare itself exempt. The bypass has to come from the operator, never from the artifact.
 
 ```bash
 # what is pending, and how long is left

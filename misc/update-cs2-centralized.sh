@@ -25,7 +25,7 @@
 #                 restarts automatically), bypassing the UPDATE_SOAK_SECONDS
 #                 window. Skips the CS2/steamcmd update.
 #
-# Version: 1.0.62
+# Version: 1.0.63
 
 set -euo pipefail
 
@@ -2222,14 +2222,12 @@ check_and_apply_updates() {
     # Soak window: park the new version until it has survived on the branch long
     # enough for a bad release to be pulled (push webhook -> revert) before it
     # reaches any host.
+    # Only --update skips it. Nothing inside the downloaded file may, or whoever
+    # publishes a hostile release just sets that flag and the window is gone.
+    # Cause I've realized it can be exploited lmao
     local soak="${UPDATE_SOAK_SECONDS:-0}"
     [[ "$soak" =~ ^[0-9]+$ ]] || soak=0
-    if [ "$FORCE_UPDATE_NOW" = "true" ]; then
-        soak=0
-    elif [ "$soak" -gt 0 ] && grep -q '^# Hotfix: true' "$temp_script" 2>/dev/null; then
-        log_warn "Release is marked as a hotfix - skipping the soak window"
-        soak=0
-    fi
+    [ "$FORCE_UPDATE_NOW" = "true" ] && soak=0
 
     local new_hash pending_ver="" pending_hash="" pending_ts=0
     new_hash=$(sha256sum "$temp_script" 2>/dev/null | awk '{print $1}')
