@@ -65,16 +65,10 @@ update_modsharp() {
         return 1
     fi
 
-    # Step 2: Get release info (direct API call for multiple assets)
+    # Step 2: raw JSON, needs two assets off one release
     local repo="Kxnrl/modsharp-public"
-    local api_url="https://api.github.com/repos/$repo/releases"
     local release_info
-
-    if [ "${PRERELEASE:-0}" -eq 1 ]; then
-        release_info=$(curl -s --connect-timeout 10 -m 60 "$api_url" | jq '.[0] // empty')
-    else
-        release_info=$(curl -s --connect-timeout 10 -m 60 "$api_url/latest")
-    fi
+    release_info=$(github_release_json "$repo")
 
     if [ -z "$release_info" ] || ! echo "$release_info" | jq -e . >/dev/null 2>&1; then
         log_message "Failed to get ModSharp release info" "error"
@@ -92,26 +86,7 @@ update_modsharp() {
     fi
 
     # Check if update needed
-    local current_version=$(get_current_version "ModSharp")
-    log_message "Current version: ${current_version:-none}" "debug"
-    log_message "Latest version: $latest_version" "debug"
-
-    # Check if update is needed
-    if [ -n "$current_version" ]; then
-        semver_compare "$latest_version" "$current_version"
-        case $? in
-            0) # Equal
-                log_message "ModSharp is up-to-date ($current_version)" "success"
-                return 0
-                ;;
-            2) # new < current
-                log_message "ModSharp is at a newer version ($current_version) than latest ($latest_version). Skipping downgrade." "info"
-                return 0
-                ;;
-        esac
-    fi
-
-    log_message "Update available: $latest_version (current: ${current_version:-none})" "info"
+    needs_update "ModSharp" "ModSharp" "$latest_version" || return 0
 
     # Step 3: Backup user configs if they exist
     if [ -f "$MODSHARP_DIR/configs/core.json" ]; then

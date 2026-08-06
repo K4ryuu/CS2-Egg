@@ -22,9 +22,10 @@
 #                 daemon state, dependencies, per-server status files, locks.
 #                 Applies safe fixes automatically, prints commands for the rest.
 #   --update      Self-update the script right now from GITHUB_BRANCH (daemon
-#                 restarts automatically). Skips the CS2/steamcmd update.
+#                 restarts automatically), bypassing the UPDATE_SOAK_SECONDS
+#                 window. Skips the CS2/steamcmd update.
 #
-# Version: 1.0.60
+# Version: 1.0.63
 
 set -euo pipefail
 
@@ -69,6 +70,13 @@ AUTO_UPDATE_SCRIPT="true"
 # "*" = check every cron run (recommended with * * * * * cron)
 # Number = minimum seconds between checks (e.g. 600 = at most once per 10 minutes)
 UPDATE_CHECK_INTERVAL="*"
+
+# Optional: Soak window in seconds before a newly seen script version installs
+# A new version is recorded as pending on first sight and only applied once it
+# has been on the branch, unchanged, for this long - so a bad release can be
+# pulled before it reaches any host. 43200 = 12 hours, 0 = install immediately.
+# --update always bypasses the window (emergency path).
+UPDATE_SOAK_SECONDS="43200"
 
 # Optional: Push updated game files directly into server volumes after each update
 # This replaces the need for Pterodactyl/Pelican mount config + SYNC_LOCATION on the egg
@@ -117,6 +125,9 @@ REMOTE_SCRIPT_URL="https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRA
 
 # Update tracking files
 UPDATE_CHECK_TIMESTAMP_FILE="/var/cache/cs2-update-script-check"
+# Soak state: "<version> <sha256> <first-seen-epoch>" of the version waiting out
+# its soak window. Removed once it installs or disappears from the branch.
+UPDATE_PENDING_FILE="/var/cache/cs2-update-pending"
 UPDATE_BACKUP_DIR="$(dirname "$0")/.script-backups"
 UPDATE_KEEP_BACKUPS=3
 
@@ -133,6 +144,11 @@ CONTAINER_MOUNT_DST="/tmp/cs2-shared"
 DAEMON_INSTANCE_LOCK="/var/lock/cs2-vpk-daemon.lock"
 _REFRESHER_PID=
 _DAEMON_INSTANCE_FD=
+# Explicitly invoked commands skip the raw.githubusercontent edge cache; the cron
+# self-update keeps the plain URL so it stays cacheable for every host
+FORCE_FRESH_FETCH=false
+# --update: install the new version now instead of parking it in the soak window
+FORCE_UPDATE_NOW=false
 
 # ============================================================================
 # STYLING / COLORS
@@ -1469,18 +1485,28 @@ run_doctor() {
     # service state + stale in-memory code detection
     if command -v systemctl >/dev/null 2>&1; then
         if systemctl is-active --quiet cs2-vpk-daemon 2>/dev/null; then
-            local main_pid proc_start script_mtime
+            local main_pid live_version stale=false
             main_pid=$(systemctl show -p MainPID --value cs2-vpk-daemon 2>/dev/null || echo 0)
-            proc_start=$(stat -c %Z "/proc/$main_pid" 2>/dev/null || echo 0)
-            script_mtime=$(stat -c %Y "$exec_path" 2>/dev/null || echo 0)
-            if [ "$script_mtime" -gt "$proc_start" ] 2>/dev/null && [ "$proc_start" -gt 0 ]; then
+            # version, not mtime: an update keeps the download's mtime and any
+            # edit bumps it, so timestamps lie both ways
+            live_version=$(_daemon_running_version "$main_pid" || true)
+            if [ -n "$live_version" ] && [ -n "${disk_version:-}" ]; then
+                [ "$live_version" != "$disk_version" ] && stale=true
+            else
+                # no startup line to read, fall back to timestamps
+                local proc_start script_mtime
+                proc_start=$(stat -c %Z "/proc/$main_pid" 2>/dev/null || echo 0)
+                script_mtime=$(stat -c %Y "$exec_path" 2>/dev/null || echo 0)
+                [ "$script_mtime" -gt "$proc_start" ] 2>/dev/null && [ "$proc_start" -gt 0 ] && stale=true
+            fi
+            if [ "$stale" = "true" ]; then
                 if systemctl restart cs2-vpk-daemon 2>/dev/null; then
-                    _dfixed "Daemon was running OLDER code than the script on disk - restarted to load it"
+                    _dfixed "Daemon was running OLDER code (${live_version:-unknown}) than the script on disk (${disk_version:-unknown}) - restarted to load it"
                 else
                     _dfail "Daemon runs older code than on disk and restart failed - run: systemctl restart cs2-vpk-daemon"
                 fi
             else
-                _ok "Daemon active (pid $main_pid) and running the on-disk code"
+                _ok "Daemon active (pid $main_pid) and running the on-disk code${live_version:+ (version $live_version)}"
             fi
         elif [ -x "$exec_path" ]; then
             if systemctl restart cs2-vpk-daemon 2>/dev/null && systemctl is-active --quiet cs2-vpk-daemon 2>/dev/null; then
@@ -1644,15 +1670,28 @@ run_doctor() {
     section "Self-update"
 
     local http_code
-    # ?ts: the raw.githubusercontent edge caches per file for minutes, and an
-    # explicitly invoked check must see the branch as it is right now. The
-    # cron-driven self-update keeps the plain URL so it stays cacheable.
-    http_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "${REMOTE_SCRIPT_URL}?$(date +%s)" 2>/dev/null || echo 000)
+    http_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$(_fresh_url "$REMOTE_SCRIPT_URL")" 2>/dev/null || echo 000)
     case "$http_code" in
         200) _ok "Update source reachable (branch: $GITHUB_BRANCH)" ;;
         404) _dwarn "Branch '$GITHUB_BRANCH' gone from GitHub - self-update will switch to main on its next run" ;;
         *)   _dwarn "GitHub unreachable (HTTP $http_code) - self-update and --test won't work right now" ;;
     esac
+
+    if [ -f "$UPDATE_PENDING_FILE" ]; then
+        local p_ver p_hash p_ts soak_secs left
+        read -r p_ver p_hash p_ts < "$UPDATE_PENDING_FILE" 2>/dev/null || true
+        [[ "${p_ts:-}" =~ ^[0-9]+$ ]] || p_ts=0
+        soak_secs="${UPDATE_SOAK_SECONDS:-0}"
+        [[ "$soak_secs" =~ ^[0-9]+$ ]] || soak_secs=0
+        left=$(( p_ts + soak_secs - $(date +%s) ))
+        if [ "$left" -gt 0 ]; then
+            _ok "Version ${p_ver:-unknown} pending - installs in $((left / 60)) min (soak window). Install now: $0 --update"
+        else
+            _ok "Version ${p_ver:-unknown} pending - soak window over, installs on the next run"
+        fi
+    elif [ "${UPDATE_SOAK_SECONDS:-0}" != "0" ]; then
+        _ok "No version pending (soak window: $((${UPDATE_SOAK_SECONDS:-0} / 60)) min)"
+    fi
 
     section "Summary"
     echo -e "  ${YELLOW}$warns warning(s)${RESET}, ${RED}$fails failure(s)${RESET}, ${CYAN}$fixed auto-fixed${RESET}" >&2
@@ -1679,23 +1718,50 @@ run_protocol_test() {
     trap 'rm -rf "$tmp"' EXIT
 
     local base="https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}"
-    mkdir -p "$tmp/misc" "$tmp/docker/scripts"
+    mkdir -p "$tmp/misc/tests" "$tmp/docker/scripts" "$tmp/docker/utils"
     local f
-    for f in misc/protocol-test.sh misc/update-cs2-centralized.sh docker/scripts/update_helper.sh; do
-        # ?ts: skip the edge cache, a self-test must run the branch as it is now
-        if ! curl -fsSL --max-time 30 "$base/$f?$(date +%s)" -o "$tmp/$f"; then
+    for f in misc/tests/protocol-test.sh misc/tests/soak-test.sh misc/tests/updater-common-test.sh \
+             misc/update-cs2-centralized.sh docker/scripts/update_helper.sh docker/utils/updater_common.sh; do
+        if ! curl -fsSL --max-time 30 "$(_fresh_url "$base/$f")" -o "$tmp/$f"; then
             log_error "Failed to download $f from GitHub (branch: $GITHUB_BRANCH)"
             exit 1
         fi
     done
 
     log_info "Running boot-handshake tests (branch: ${BOLD}$GITHUB_BRANCH${RESET})..."
-    if bash "$tmp/misc/protocol-test.sh" >&2; then
-        log_ok "Protocol self-test passed"
-        exit 0
+    if ! bash "$tmp/misc/tests/protocol-test.sh" >&2; then
+        log_error "Protocol self-test FAILED - please report this with the output above"
+        exit 1
     fi
-    log_error "Protocol self-test FAILED - please report this with the output above"
-    exit 1
+
+    log_info "Running self-update soak window tests..."
+    if ! bash "$tmp/misc/tests/soak-test.sh" >&2; then
+        log_error "Soak window self-test FAILED - please report this with the output above"
+        exit 1
+    fi
+
+    log_info "Running addon updater tests..."
+    if ! bash "$tmp/misc/tests/updater-common-test.sh" >&2; then
+        log_error "Updater helper self-test FAILED - please report this with the output above"
+        exit 1
+    fi
+
+    log_ok "Self-test passed"
+    exit 0
+}
+
+# Version the running daemon logged at startup, empty if no journal.
+# _PID alone, not -u: a unit match ORs with a field match instead of narrowing it.
+_daemon_running_version() {
+    local pid="${1:-0}"
+    if [ -z "$pid" ] || [ "$pid" = "0" ]; then return 0; fi
+    command -v journalctl >/dev/null 2>&1 || return 0
+    { journalctl -b _PID="$pid" -o cat --no-pager 2>/dev/null \
+        | sed "s/$(printf '\033')\[[0-9;]*m//g" \
+        | grep 'Script version:' \
+        | tail -n1 \
+        | awk '{print $NF}'; } || true
+    return 0
 }
 
 # pid of the daemon already running on this host, empty if none
@@ -1850,6 +1916,12 @@ run_event_daemon() {
 # SELF-UPDATE FUNCTIONS
 # ============================================================================
 
+# Append a timestamp query when the caller wants the branch as it is right now.
+_fresh_url() {
+    [ "$FORCE_FRESH_FETCH" = "true" ] && printf '%s?%s' "$1" "$(date +%s)" && return 0
+    printf '%s' "$1"
+}
+
 _download_script_to() {
     local dest="$1"
     local download_error
@@ -1863,7 +1935,7 @@ _download_script_to() {
         --show-error \
         --location \
         -o "$dest" \
-        "$REMOTE_SCRIPT_URL" 2>&1) || {
+        "$(_fresh_url "$REMOTE_SCRIPT_URL")" 2>&1) || {
         log_warn "Failed to download update from GitHub (branch: ${GITHUB_BRANCH})"
         [ -n "$download_error" ] && echo "$download_error" | head -n 2 >&2
         return 1
@@ -1897,7 +1969,7 @@ download_and_validate_update() {
         # a network hiccup must not pull a tester off their branch.
         local http_code=""
         if [ "$GITHUB_BRANCH" != "main" ]; then
-            http_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$REMOTE_SCRIPT_URL" 2>/dev/null || echo 000)
+            http_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$(_fresh_url "$REMOTE_SCRIPT_URL")" 2>/dev/null || echo 000)
         fi
         if [ "$http_code" = "404" ]; then
             log_warn "Branch '${GITHUB_BRANCH}' no longer exists on GitHub (merged?) - switching self-update to main"
@@ -1977,6 +2049,7 @@ preserve_user_config() {
         "VALIDATE_INSTALL"
         "AUTO_UPDATE_SCRIPT"
         "UPDATE_CHECK_INTERVAL"
+        "UPDATE_SOAK_SECONDS"
         "VPK_PUSH_METHOD"
         "MAX_WORKERS"
         "WINGS_CONFIG"
@@ -2029,12 +2102,63 @@ apply_update() {
     # restart. systemctl restart loads the fresh script from disk.
     if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet cs2-vpk-daemon 2>/dev/null; then
         log_info "Restarting cs2-vpk-daemon service to load new code..."
-        systemctl restart cs2-vpk-daemon 2>/dev/null || log_warn "Daemon restart failed - run: systemctl restart cs2-vpk-daemon"
+        # exit code isn't proof - only a daemon started after the swap means new
+        # code. Last chance to notice, the exec below never comes back
+        local install_ts new_pid proc_start attempt=0 waited
+        install_ts=$(date +%s)
+        while [ "$attempt" -lt 2 ]; do
+            attempt=$((attempt + 1))
+            systemctl restart cs2-vpk-daemon 2>/dev/null || true
+            # let it come up first, a second restart would kill the pushes
+            # the first one just started
+            waited=0
+            while [ "$waited" -lt 5 ]; do
+                new_pid=$(systemctl show -p MainPID --value cs2-vpk-daemon 2>/dev/null || echo 0)
+                proc_start=$(stat -c %Z "/proc/${new_pid:-0}" 2>/dev/null || echo 0)
+                [ "${proc_start:-0}" -ge "$install_ts" ] 2>/dev/null && break
+                sleep 1
+                waited=$((waited + 1))
+            done
+            if [ "${proc_start:-0}" -ge "$install_ts" ] 2>/dev/null; then
+                log_ok "Daemon restarted on the new version (pid $new_pid)"
+                break
+            fi
+            if [ "$attempt" -ge 2 ]; then
+                log_error "Daemon did NOT pick up the new script and is still running old code - run: systemctl restart cs2-vpk-daemon"
+            fi
+        done
     fi
 
     # Exec restart (preserves PID, lock file)
     # Use ORIGINAL_ARGS to pass the script's command-line arguments, not function args
     exec "$0" "${ORIGINAL_ARGS[@]}"
+}
+
+# What to do with a freshly downloaded script. Pure, so the tests drive it directly.
+#   install  window elapsed or off      wait    same script, still soaking
+#   record   new or changed, reset      drop    pending one got pulled
+# Keyed on hash, not version: a swapped body must not inherit an elapsed timer.
+# Usage: _soak_verdict <r_ver> <r_hash> <p_ver> <p_hash> <p_ts> <now> <soak>
+_soak_verdict() {
+    local r_ver="$1" r_hash="$2" p_ver="$3" p_hash="$4" p_ts="$5" now="$6" soak="$7"
+
+    [ "$soak" -le 0 ] && { echo install; return 0; }
+    [ -z "$p_hash" ] && { echo record; return 0; }
+
+    if [ "$r_hash" != "$p_hash" ]; then
+        # remote fell back below what we were holding: the release we parked was
+        # taken down, so there is nothing left to install from it
+        if [ "$r_ver" != "$p_ver" ] && \
+           [ "$(printf '%s\n%s\n' "$r_ver" "$p_ver" | sort -V | tail -n1)" = "$p_ver" ]; then
+            echo drop
+        else
+            echo record
+        fi
+        return 0
+    fi
+
+    [ $((now - p_ts)) -ge "$soak" ] && echo install || echo wait
+    return 0
 }
 
 check_and_apply_updates() {
@@ -2052,14 +2176,21 @@ check_and_apply_updates() {
         fi
     fi
 
+    # stamp once here, not at every return inside - by then the network call
+    # the limit exists to space out is already spent. apply_update does its own
+    local rc=0
+    _check_for_new_version || rc=$?
+    echo "$(date +%s)" > "$UPDATE_CHECK_TIMESTAMP_FILE"
+    return $rc
+}
+
+_check_for_new_version() {
     section "Script Update Check"
     log_info "Checking for script updates..."
 
     # Download and validate
     local temp_script
     if ! temp_script=$(download_and_validate_update); then
-        # Update timestamp even on failure to respect rate limit
-        echo "$(date +%s)" > "$UPDATE_CHECK_TIMESTAMP_FILE"
         log_info "Continuing with current version"
         return 0
     fi
@@ -2075,14 +2206,14 @@ check_and_apply_updates() {
     if [ -z "$new_version" ]; then
         log_warn "Downloaded script missing version header, skipping update"
         rm -f "$temp_script"
-        echo "$(date +%s)" > "$UPDATE_CHECK_TIMESTAMP_FILE"
         return 0
     fi
 
     if [ "$current_version" = "$new_version" ]; then
         log_ok "Script is up to date (version: $current_version)"
-        rm -f "$temp_script"
-        echo "$(date +%s)" > "$UPDATE_CHECK_TIMESTAMP_FILE"
+        # a pending version the branch no longer offers is dead state - drop it
+        # so --doctor does not keep reporting a soak that will never finish
+        rm -f "$temp_script" "$UPDATE_PENDING_FILE"
         return 0
     fi
 
@@ -2091,15 +2222,54 @@ check_and_apply_updates() {
     newest=$(printf '%s\n%s\n' "$current_version" "$new_version" | sort -V | tail -n1)
     if [ "$newest" != "$new_version" ]; then
         log_ok "Local version ($current_version) is ahead of remote ($new_version) - skipping"
-        rm -f "$temp_script"
-        echo "$(date +%s)" > "$UPDATE_CHECK_TIMESTAMP_FILE"
+        rm -f "$temp_script" "$UPDATE_PENDING_FILE"
         return 0
     fi
+
+    # Soak window: park the new version until it has survived on the branch long
+    # enough for a bad release to be pulled (push webhook -> revert) before it
+    # reaches any host.
+    # Only --update skips it. Nothing inside the downloaded file may, or whoever
+    # publishes a hostile release just sets that flag and the window is gone.
+    # Cause I've realized it can be exploited lmao
+    local soak="${UPDATE_SOAK_SECONDS:-0}"
+    [[ "$soak" =~ ^[0-9]+$ ]] || soak=0
+    [ "$FORCE_UPDATE_NOW" = "true" ] && soak=0
+
+    local new_hash pending_ver="" pending_hash="" pending_ts=0
+    new_hash=$(sha256sum "$temp_script" 2>/dev/null | awk '{print $1}')
+    if [ -f "$UPDATE_PENDING_FILE" ]; then
+        read -r pending_ver pending_hash pending_ts < "$UPDATE_PENDING_FILE" 2>/dev/null || true
+        [[ "${pending_ts:-}" =~ ^[0-9]+$ ]] || pending_ts=0
+    fi
+
+    local now
+    now=$(date +%s)
+    case "$(_soak_verdict "$new_version" "$new_hash" "$pending_ver" "$pending_hash" "$pending_ts" "$now" "$soak")" in
+        wait)
+            # silent on purpose: cron runs every minute, --doctor reports the
+            # pending version and its remaining time
+            rm -f "$temp_script"
+            return 0
+            ;;
+        record)
+            printf '%s %s %s\n' "$new_version" "$new_hash" "$now" > "$UPDATE_PENDING_FILE"
+            log_info "New version ${BOLD}$new_version${RESET} seen - held for $((soak / 60)) min (soak window), installs unless the release is pulled or changed"
+            rm -f "$temp_script"
+            return 0
+            ;;
+        drop)
+            log_warn "Pending version ${BOLD}$pending_ver${RESET} is gone from '${GITHUB_BRANCH}' - discarded, nothing installed"
+            rm -f "$UPDATE_PENDING_FILE" "$temp_script"
+            return 0
+            ;;
+    esac
 
     # Update available
     log_info "New version available: ${BOLD}$current_version${RESET} → ${BOLD}$new_version${RESET}"
 
     # Apply update
+    rm -f "$UPDATE_PENDING_FILE"
     create_versioned_backup
     apply_update "$temp_script"
 
@@ -2147,10 +2317,12 @@ main() {
                 exit 0
                 ;;
             --test)
+                FORCE_FRESH_FETCH=true
                 run_protocol_test
                 exit 0
                 ;;
             --doctor)
+                FORCE_FRESH_FETCH=true
                 run_doctor
                 exit $?
                 ;;
@@ -2162,6 +2334,8 @@ main() {
                 trap release_lock EXIT
                 AUTO_UPDATE_SCRIPT="true"
                 UPDATE_CHECK_INTERVAL="*"
+                FORCE_FRESH_FETCH=true
+                FORCE_UPDATE_NOW=true
                 check_and_apply_updates
                 exit 0
                 ;;
@@ -2182,7 +2356,7 @@ main() {
                 echo "                Drain in-flight pushes, then restart the systemd service"
                 echo "  --test        Download + run the protocol test suite, then clean up"
                 echo "  --doctor      Health check + safe auto-fixes for the whole setup"
-                echo "  --update      Self-update the script now (skips the CS2 update)"
+                echo "  --update      Self-update now, bypassing the soak window (skips the CS2 update)"
                 echo ""
                 exit 1
                 ;;

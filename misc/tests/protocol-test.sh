@@ -4,7 +4,7 @@
 # the timing windows are shortened via DAEMON_* env vars. Run: bash this file.
 set -u
 
-HELPER="$(cd "$(dirname "$0")/.." && pwd)/docker/scripts/update_helper.sh"
+HELPER="$(cd "$(dirname "$0")/../.." && pwd)/docker/scripts/update_helper.sh"
 FAILS=0
 
 if [[ -t 1 ]] && [[ -z "${NO_COLOR:-}" ]]; then
@@ -225,7 +225,7 @@ rm -rf "$tmp"
 
 # --- daemon-side units (centralized script sourced, main() stays dormant) ----
 
-CENTRAL="$(cd "$(dirname "$0")" && pwd)/update-cs2-centralized.sh"
+CENTRAL="$(cd "$(dirname "$0")/.." && pwd)/update-cs2-centralized.sh"
 
 # dynamic volume ownership: uid:gid read from the volume dir, empty when unknown
 if (
@@ -387,6 +387,54 @@ else
     echo "SKIP  daemon instance lock (no flock on this machine - runs on Linux hosts)"
 fi
 
+# cache busting is opt-in: only explicitly invoked commands set the flag, the
+# cron-driven self-update must keep a cacheable URL on every host
+if (
+    source "$CENTRAL" >/dev/null 2>&1
+    set +e
+    u="https://example.invalid/x.sh"
+    FORCE_FRESH_FETCH=false
+    [ "$(_fresh_url "$u")" = "$u" ] || exit 1
+    FORCE_FRESH_FETCH=true
+    [ "$(_fresh_url "$u")" != "$u" ] || exit 1
+    case "$(_fresh_url "$u")" in "$u"?*[0-9]) ;; *) exit 1 ;; esac
+); then
+    echo "${GREEN}PASS${RESET}  cache busting only when explicitly requested"
+else
+    echo "${RED}FAIL${RESET}  cache busting only when explicitly requested"
+    FAILS=$((FAILS + 1))
+fi
+
+# the daemon logs its own version at startup and the doctor reads that instead
+# of comparing timestamps; a recycled pid means the last line is the live one
+if (
+    source "$CENTRAL" >/dev/null 2>&1
+    set +e
+    journalctl() { printf 'Daemon started\nScript version: 1.0.60\n\033[1mScript version:\033[0m \033[1m1.0.62\033[0m\n'; }
+    [ "$(_daemon_running_version 4242)" = "1.0.62" ] || exit 1
+    [ -z "$(_daemon_running_version 0)" ] || exit 1
+    [ -z "$(_daemon_running_version '')" ] || exit 1
+); then
+    echo "${GREEN}PASS${RESET}  daemon version read from its startup log line"
+else
+    echo "${RED}FAIL${RESET}  daemon version read from its startup log line"
+    FAILS=$((FAILS + 1))
+fi
+
+# no version line means the grep in there exits non-zero, which under the
+# set -euo pipefail this script runs with kills a plain call. Needs its own
+# bash: inside an if-condition subshell errexit is off, so it cannot be seen
+if bash -c 'set -euo pipefail
+    source "$1" >/dev/null 2>&1
+    journalctl() { printf "nothing useful here\n"; }
+    _daemon_running_version 4242 >/dev/null
+    exit 0' _ "$CENTRAL" >/dev/null 2>&1; then
+    echo "${GREEN}PASS${RESET}  a journal with no version line does not abort the caller"
+else
+    echo "${RED}FAIL${RESET}  a journal with no version line does not abort the caller"
+    FAILS=$((FAILS + 1))
+fi
+
 # the doctor scans /var/lock, which is a symlink to /run/lock on Debian/Ubuntu:
 # without -H find never descends and the orphaned-lock cleanup finds nothing
 if (
@@ -405,9 +453,10 @@ else
 fi
 
 echo ""
-if [ "$FAILS" -eq 0 ]; then
-    echo "${GREEN}${BOLD}All cases passed.${RESET}"
-else
+if [ "$FAILS" -ne 0 ]; then
     echo "${RED}${BOLD}$FAILS case(s) FAILED.${RESET}"
+    echo ""
     exit 1
 fi
+echo "${GREEN}${BOLD}All cases passed.${RESET}"
+echo ""

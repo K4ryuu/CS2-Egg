@@ -19,7 +19,9 @@ LOG_FILE="/var/log/cs2-update.log"
 # Branch to install from; testers can run e.g. CS2_EGG_BRANCH=dev to try a prerelease.
 # Self-update in the installed script is patched to track the same branch.
 INSTALL_BRANCH="${CS2_EGG_BRANCH:-main}"
-GITHUB_SCRIPT="https://raw.githubusercontent.com/K4ryuu/CS2-Egg/${INSTALL_BRANCH}/misc/update-cs2-centralized.sh"
+# The timestamp query skips the raw CDN cache - a one-off fetch per install, so
+# unlike the cron self-update there is no cache hit rate to lose.
+GITHUB_SCRIPT="https://raw.githubusercontent.com/K4ryuu/CS2-Egg/${INSTALL_BRANCH}/misc/update-cs2-centralized.sh?$(date +%s)"
 
 # ── Colors ────────────────────────────────────────────────────────────────────
 
@@ -101,7 +103,7 @@ if [[ -f "$INSTALL_DEST" ]]; then
         val=$(grep "^${1}=" "$INSTALL_DEST" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '"') || true
         if [[ -n "$val" ]]; then EXISTING[$1]="$val"; fi
     }
-    for _k in STEAMCMD_DIR CS2_DIR VPK_PUSH_METHOD MAX_WORKERS AUTO_RESTART_SERVERS VALIDATE_INSTALL AUTO_UPDATE_SCRIPT UPDATE_CHECK_INTERVAL; do
+    for _k in STEAMCMD_DIR CS2_DIR VPK_PUSH_METHOD MAX_WORKERS AUTO_RESTART_SERVERS VALIDATE_INSTALL AUTO_UPDATE_SCRIPT UPDATE_CHECK_INTERVAL UPDATE_SOAK_SECONDS; do
         _read_cfg "$_k"
     done
     # Normalize legacy "always check" values (0 or 1) → * for display in wizard
@@ -157,6 +159,12 @@ ask() {
             continue
         fi
 
+        # 0 is valid here: it means "install immediately, no soak window"
+        if [[ "$key" == "UPDATE_SOAK_SECONDS" ]] && [[ ! "$input" =~ ^[0-9]+$ ]]; then
+            log_warn "Must be a number of seconds (0 disables the soak window)"
+            continue
+        fi
+
         CFG[$key]="$input"
         break
     done
@@ -201,6 +209,12 @@ ask "AUTO_UPDATE_SCRIPT" "$(_default AUTO_UPDATE_SCRIPT true)" \
 ask "UPDATE_CHECK_INTERVAL" "$(_default UPDATE_CHECK_INTERVAL '*')" \
     "Min seconds between CS2 update checks. * = every cron run. E.g. 3600 = at most once/hour."
 
+ask "UPDATE_SOAK_SECONDS" "$(_default UPDATE_SOAK_SECONDS 43200)" \
+    "Safety brake on the self-update: this script runs as root, so a new version must
+  sit unchanged on the branch this long before it installs itself. A broken or
+  tampered release can be pulled before it ever lands here. 43200 = 12 hours,
+  0 = install immediately (old behaviour). --update always bypasses it."
+
 CRON_SCHEDULE="* * * * *"
 
 # ── Summary ───────────────────────────────────────────────────────────────────
@@ -212,7 +226,7 @@ printf "    ${GRAY}%-26s${RESET} %s\n" "Service:" "$SERVICE_DEST"
 printf "    ${GRAY}%-26s${RESET} %s  ${GRAY}(every minute)${RESET}\n" "Cron:" "$CRON_FILE"
 echo ""
 echo -e "  ${BOLD}Configuration:${RESET}"
-for key in STEAMCMD_DIR CS2_DIR VPK_PUSH_METHOD MAX_WORKERS AUTO_RESTART_SERVERS VALIDATE_INSTALL AUTO_UPDATE_SCRIPT UPDATE_CHECK_INTERVAL; do
+for key in STEAMCMD_DIR CS2_DIR VPK_PUSH_METHOD MAX_WORKERS AUTO_RESTART_SERVERS VALIDATE_INSTALL AUTO_UPDATE_SCRIPT UPDATE_CHECK_INTERVAL UPDATE_SOAK_SECONDS; do
     printf "    ${CYAN}%-26s${RESET} %s\n" "$key" "${CFG[$key]}"
 done
 echo ""
@@ -256,6 +270,7 @@ patch_config "AUTO_RESTART_SERVERS"  "${CFG[AUTO_RESTART_SERVERS]}"
 patch_config "VALIDATE_INSTALL"      "${CFG[VALIDATE_INSTALL]}"
 patch_config "AUTO_UPDATE_SCRIPT"    "${CFG[AUTO_UPDATE_SCRIPT]}"
 patch_config "UPDATE_CHECK_INTERVAL" "${CFG[UPDATE_CHECK_INTERVAL]}"
+patch_config "UPDATE_SOAK_SECONDS"   "${CFG[UPDATE_SOAK_SECONDS]}"
 patch_config "VPK_PUSH_METHOD"       "${CFG[VPK_PUSH_METHOD]}"
 patch_config "MAX_WORKERS"           "${CFG[MAX_WORKERS]}"
 

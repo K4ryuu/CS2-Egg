@@ -146,6 +146,23 @@ tail -f /var/log/cs2-update.log
 
 Enabled by default. The script checks GitHub for newer versions, preserves your configuration, validates syntax, and atomically replaces itself. Keeps last 3 backups in `.script-backups/`. Disable with `AUTO_UPDATE_SCRIPT="false"`.
 
+#### Soak window (protection against a bad or tampered release)
+
+The script installs itself as root on every host that runs it, so a broken release, or a hostile one pushed by someone who got into the repository, would otherwise reach every host within the hour. The soak window is the brake.
+
+A newly published version is not installed on sight. It is recorded as pending in `/var/cache/cs2-update-pending` and only applied once it has been on the branch, byte for byte unchanged, for `UPDATE_SOAK_SECONDS` (default 43200 = 12 hours). Every push to the repository raises an alert, so a bad release can be reverted inside that window: the pending entry is then dropped, or its timer restarts, and the host stays on the version it already has. Set `0` to install immediately, as older versions did.
+
+What it does and does not buy you, plainly: it turns "already everywhere" into "nowhere yet, for twelve hours". It is a detection-and-revert window, not a cryptographic guarantee, so it protects you exactly as far as a bad release gets noticed and pulled inside it. Signature verification, which would reject a tampered script outright, is a separate and still open item.
+
+The window is keyed on the file's SHA-256, not its version number, so a changed body under an unchanged `# Version:` header restarts the clock rather than inheriting the elapsed time.
+
+One way past it: `--update` installs the pending version right away. That is deliberate. Anything the downloaded file could say about itself, a header line marking it urgent for instance, would be set by whoever published it, so a hostile release would simply declare itself exempt. The bypass has to come from the operator, never from the artifact.
+
+```bash
+# what is pending, and how long is left
+/usr/local/bin/update-cs2-centralized.sh --doctor
+```
+
 ### Monitoring
 
 ```bash
