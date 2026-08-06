@@ -1,4 +1,4 @@
--- update - ???
+-- update - 2026.08.06
 
 - security(centralized): Update soak window. A new version is recorded as pending and only installs once it has stayed on the branch, byte for byte unchanged, for `UPDATE_SOAK_SECONDS` (default 12h), leaving time to pull a bad release before it reaches any host. Keyed on SHA-256, not the version header, so a swapped body cannot inherit an elapsed timer. `--update` is the only bypass, on purpose: a marker inside the file would be set by whoever published it
 - feat(doctor): Reports the pending version and the time left on its window
