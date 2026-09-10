@@ -24,14 +24,14 @@ Each framework has an independent boolean toggle in the Pterodactyl panel:
 | Variable             | Description                                      | Auto-Updates |
 | -------------------- | ------------------------------------------------ | ------------ |
 | `INSTALL_METAMOD`    | MetaMod:Source (required for CSS)                | [✓]           |
-| `INSTALL_CSS`        | CounterStrikeSharp (auto-enables MetaMod)        | [✓]           |
+| `INSTALL_CSS`        | CounterStrikeSharp (requires MetaMod:Source)     | [✓]           |
 | `INSTALL_SWIFTLY`    | SwiftlyS2 standalone (no MetaMod required)       | [✓]           |
 | `INSTALL_MODSHARP`   | ModSharp standalone with .NET 9                  | [✓]           |
 
 **Multi-Framework Examples:**
 - MetaMod + CSS + SwiftlyS2 → All three enabled simultaneously [✓]
 - MetaMod + ModSharp → Compatible combination [✓]
-- CSS only → MetaMod auto-enabled as dependency [✓]
+- CSS only → MetaMod required (enable INSTALL_METAMOD or install manually) [✓]
 - ModSharp + CSS → ModSharp auto-disabled (incompatible) [✗]
 - ModSharp + SwiftlyS2 → ModSharp auto-disabled (incompatible) [✗]
 
@@ -58,14 +58,15 @@ INSTALL_MODSHARP=1
 
 ### Dependency Handling
 
-The egg automatically handles dependencies:
+CounterStrikeSharp requires MetaMod:Source to function:
 
 ```
 CSS enabled + MetaMod disabled
        ↓
-[WARNING] CounterStrikeSharp requires MetaMod:Source, auto-enabling...
+[WARNING] CounterStrikeSharp requires MetaMod:Source, but MetaMod is not enabled (INSTALL_METAMOD=0).
        ↓
-Both MetaMod and CSS installed
+If MetaMod is installed manually in addons/metamod, CSS loads with that version.
+If MetaMod is missing from disk, an error is logged.
 ```
 
 ### Load Order Management
@@ -114,16 +115,16 @@ Game_LowViolence    csgo_lv
 - Downloads latest CSS from GitHub releases
 - Extracts to `game/csgo/addons/counterstrikesharp/`
 - Installs with-runtime version (includes .NET runtime)
-- Auto-enables MetaMod if not already enabled
+- Requires MetaMod:Source (must be enabled or manually installed)
 - Stores version in `/home/container/egg/versions.txt`
 
 ### Prerequisites
 
-- **MetaMod required** → Automatically enabled when CSS is toggled on
+- **MetaMod required** → Must be enabled (`INSTALL_METAMOD=1`) or manually installed
 
 ### How It Works
 
-1. Checks if MetaMod enabled (auto-enables with warning if not)
+1. Checks if MetaMod is enabled (warns if disabled)
 2. Checks current CSS version
 3. Fetches latest release from roflmuffin/CounterStrikeSharp
 4. Downloads with-runtime Linux build
@@ -132,7 +133,6 @@ Game_LowViolence    csgo_lv
 ### Console Output
 
 ```
-[KitsuneLab] > [WARNING] CounterStrikeSharp requires MetaMod:Source, auto-enabling...
 [KitsuneLab] > Checking CSS updates...
 [KitsuneLab] > CSS is up-to-date (v1.0.0)
 ```
@@ -335,7 +335,7 @@ curl -I https://www.metamodsource.net/downloads.php?branch=dev
 
 **Check:**
 
-- MetaMod auto-enabled (check for [WARNING] message)
+- MetaMod enabled (`INSTALL_METAMOD=1`) or manually installed
 - GitHub API not rate-limited
 - Downloaded correct platform (Linux)
 - Sufficient disk space

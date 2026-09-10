@@ -133,7 +133,7 @@
     },
     {
       "name": "MetaMod:Source",
-      "description": "Base plugin framework required by CounterStrikeSharp. Compatible with all frameworks. Auto-enabled if CSS is selected. Automatically updates on server restart while enabled.",
+      "description": "Base plugin framework required by CounterStrikeSharp. Compatible with all frameworks. Automatically updates on server restart while enabled.",
       "env_variable": "INSTALL_METAMOD",
       "default_value": "0",
       "user_viewable": true,
@@ -143,7 +143,7 @@
     },
     {
       "name": "CounterStrikeSharp",
-      "description": "C# scripting platform for CS2 plugins. Requires MetaMod:Source (auto-enabled). Compatible with SwiftlyS2. Incompatible with ModSharp. Automatically updates on server restart while enabled.",
+      "description": "C# scripting platform for CS2 plugins. Requires MetaMod:Source (must be enabled or manually installed). Compatible with SwiftlyS2. Incompatible with ModSharp. Automatically updates on server restart while enabled.",
       "env_variable": "INSTALL_CSS",
       "default_value": "0",
       "user_viewable": true,

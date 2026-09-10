@@ -95,7 +95,7 @@ The server automatically updates on startup by default. To disable:
 
 **Dependencies:**
 
-- CounterStrikeSharp automatically enables MetaMod (required dependency)
+- CounterStrikeSharp requires MetaMod (must be enabled or manually installed)
 - SwiftlyS2 and ModSharp are standalone (no MetaMod required)
 
 See [Auto-Updaters Documentation](../features/auto-updaters.md) for full details.

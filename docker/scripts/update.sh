@@ -48,8 +48,10 @@ update_addons() {
 
     # Dependency check: CSS requires MetaMod
     if [ "${INSTALL_CSS:-0}" -eq 1 ] && [ "${INSTALL_METAMOD:-0}" -ne 1 ]; then
-        log_message "CounterStrikeSharp requires MetaMod:Source, auto-enabling..." "warning"
-        INSTALL_METAMOD=1
+        log_message "CounterStrikeSharp requires MetaMod:Source, but MetaMod is not enabled (INSTALL_METAMOD=0)." "warning"
+        if [ ! -d "$OUTPUT_DIR/metamod" ]; then
+            log_message "MetaMod directory not found at $OUTPUT_DIR/metamod. CounterStrikeSharp will fail to load until MetaMod is installed." "error"
+        fi
     fi
 
     # Consolidated ModSharp incompatibility check
@@ -73,6 +75,9 @@ update_addons() {
         update_metamod
 
         # Configure metamod in gameinfo.gi
+        add_to_gameinfo "csgo/addons/metamod"
+    elif [ "${INSTALL_CSS:-0}" -eq 1 ] && [ -d "$OUTPUT_DIR/metamod" ]; then
+        # MetaMod auto-update is disabled, but CSS is active and MetaMod exists on disk
         add_to_gameinfo "csgo/addons/metamod"
     fi
 
