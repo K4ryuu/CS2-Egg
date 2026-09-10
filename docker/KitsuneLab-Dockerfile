@@ -11,7 +11,9 @@ RUN         mkdir -p /etc/sudoers.d && \
             chmod 0440 /etc/sudoers.d/flatdeb
 
 ENV         DEBIAN_FRONTEND=noninteractive
-RUN         apt update && \
+RUN         sed -i '/debian-security/d' /etc/apt/sources.list && \
+            echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99no-check-valid-until && \
+            apt update && \
             apt install -y jq unzip rsync curl && \
             apt-get clean
 
