@@ -11,6 +11,9 @@
   <strong>⭐ Star this repo if you find it useful!</strong>
 </div>
 
+> [!CAUTION]
+> This egg is superseded by [CS2-Egg-Go](https://github.com/K4ryuu/CS2-Egg-Go), a full rewrite in Go with significantly more features. New installs should use that instead.
+
 <!-- PROJECT LOGO -->
 <br />
 <div align="center">
