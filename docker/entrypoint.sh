@@ -47,7 +47,9 @@ rotate_logs
 # Server update process
 if [ -n "${SRCDS_APPID}" ] && [ "${SRCDS_STOP_UPDATE:-0}" -eq 0 ]; then
     # Build SteamCMD command from optional parts: login, beta, validate.
-    STEAMCMD="./steamcmd/steamcmd.sh"
+    # force_install_dir must come before login, otherwise SteamCMD warns
+    # "Please use force_install_dir before logon!" and app_update can fail (#64)
+    STEAMCMD="./steamcmd/steamcmd.sh +force_install_dir /home/container"
 
     if [ -n "${SRCDS_LOGIN}" ]; then
         STEAMCMD+=" +login ${SRCDS_LOGIN} ${SRCDS_LOGIN_PASS}"
@@ -55,7 +57,7 @@ if [ -n "${SRCDS_APPID}" ] && [ "${SRCDS_STOP_UPDATE:-0}" -eq 0 ]; then
         STEAMCMD+=" +login anonymous"
     fi
 
-    STEAMCMD+=" +force_install_dir /home/container +app_update ${SRCDS_APPID}"
+    STEAMCMD+=" +app_update ${SRCDS_APPID}"
 
     if [ -n "${SRCDS_BETAID}" ]; then
         STEAMCMD+=" -beta ${SRCDS_BETAID}"
