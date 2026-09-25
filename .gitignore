@@ -56,6 +56,8 @@ $RECYCLE.BIN/
 .DS_Store
 .AppleDouble/
 __MACOSX/
+.hydra
+.claude
 
 # Remove dotnet normal build
 bin/
