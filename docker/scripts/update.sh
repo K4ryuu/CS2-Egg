@@ -112,6 +112,12 @@ update_addons() {
     # Ensure MetaMod is always first addon after LowViolence (if present)
     ensure_metamod_first
 
+    # Give backup round snapshots (backup_round*.txt) their own search path, first
+    # in line, so the engine writes them here instead of into the first Game entry
+    # (e.g. metamod's addon dir), which pollutes it (see #63)
+    mkdir -p "$GAME_DIRECTORY/backups"
+    add_to_gameinfo "csgo/backups"
+
     # Patch RequireLoginForDedicatedServers setting based on ALLOW_TOKENLESS
     patch_tokenless_setting
 
