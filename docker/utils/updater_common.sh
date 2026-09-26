@@ -261,7 +261,9 @@ add_to_gameinfo() {
     fi
 }
 
-# Ensure MetaMod is always first addon after Game_LowViolence line
+# Ensure MetaMod is always first addon after Game_LowViolence line (or after
+# csgo/backups when that path is present, see #63: backups must stay ahead of
+# metamod on purpose, it is not an addon metamod needs to load before)
 # This is critical because MetaMod must load before others as for example SwiftlyS2 if loaded first, metamod cant load
 ensure_metamod_first() {
     local GAMEINFO_FILE="/home/container/game/csgo/gameinfo.gi"
@@ -271,23 +273,33 @@ ensure_metamod_first() {
         return 0  # No metamod, nothing to reorder
     fi
 
-    # Get line numbers
-    local lv_line=$(grep -n "Game_LowViolence" "$GAMEINFO_FILE" | head -n1 | cut -d: -f1)
+    local anchor_line
+    if grep -q "Game[[:space:]]*csgo/backups" "$GAMEINFO_FILE"; then
+        anchor_line=$(grep -n "Game[[:space:]]*csgo/backups" "$GAMEINFO_FILE" | head -n1 | cut -d: -f1)
+    else
+        anchor_line=$(grep -n "Game_LowViolence" "$GAMEINFO_FILE" | head -n1 | cut -d: -f1)
+    fi
+
     local metamod_line=$(grep -n "Game.*csgo/addons/metamod" "$GAMEINFO_FILE" | head -n1 | cut -d: -f1)
 
-    # Check if there are any Game lines between LV and MetaMod
-    local has_addons_before=false
-    local line_num=$((lv_line + 1))
-    while [ $line_num -lt $metamod_line ]; do
-        if sed -n "${line_num}p" "$GAMEINFO_FILE" | grep -q "^[[:space:]]*Game[[:space:]]"; then
-            has_addons_before=true
-            break
-        fi
-        ((line_num++))
-    done
+    # Needs a reposition if metamod sits above the anchor (eg. still stuck there
+    # from a previous boot's bad ordering) or if another Game line snuck in
+    # between the anchor and metamod
+    local needs_reposition=false
+    if [ "$metamod_line" -lt "$anchor_line" ]; then
+        needs_reposition=true
+    else
+        local line_num=$((anchor_line + 1))
+        while [ $line_num -lt $metamod_line ]; do
+            if sed -n "${line_num}p" "$GAMEINFO_FILE" | grep -q "^[[:space:]]*Game[[:space:]]"; then
+                needs_reposition=true
+                break
+            fi
+            ((line_num++))
+        done
+    fi
 
-    # If metamod is already first (no Game lines between LV and metamod), done
-    if [ "$has_addons_before" = false ]; then
+    if [ "$needs_reposition" = false ]; then
         log_message "MetaMod already in correct position" "debug"
         return 0
     fi
@@ -303,8 +315,17 @@ ensure_metamod_first() {
     # Remove metamod line wherever it is
     sed '/Game.*csgo\/addons\/metamod/d' "$GAMEINFO_FILE.bak" > "$GAMEINFO_FILE.tmp"
 
-    # Insert metamod right after LowViolence line
-    sed '/Game_LowViolence/a\            Game    csgo/addons/metamod' "$GAMEINFO_FILE.tmp" > "$GAMEINFO_FILE"
+    # Re-resolve the anchor line number on the metamod-stripped copy: removing
+    # metamod may have shifted it if metamod was sitting above the anchor
+    if grep -q "Game[[:space:]]*csgo/backups" "$GAMEINFO_FILE.tmp"; then
+        anchor_line=$(grep -n "Game[[:space:]]*csgo/backups" "$GAMEINFO_FILE.tmp" | head -n1 | cut -d: -f1)
+    else
+        anchor_line=$(grep -n "Game_LowViolence" "$GAMEINFO_FILE.tmp" | head -n1 | cut -d: -f1)
+    fi
+
+    # Insert metamod right after the anchor line (line-number address, a
+    # pattern would break on the "/" inside "csgo/backups")
+    sed "${anchor_line}a\\            Game    csgo/addons/metamod" "$GAMEINFO_FILE.tmp" > "$GAMEINFO_FILE"
 
     # Cleanup temp file
     rm -f "$GAMEINFO_FILE.tmp"
