@@ -25,7 +25,7 @@
 #                 restarts automatically), bypassing the UPDATE_SOAK_SECONDS
 #                 window. Skips the CS2/steamcmd update.
 #
-# Version: 1.0.63
+# Version: 1.0.64
 
 set -euo pipefail
 
@@ -1721,7 +1721,7 @@ run_protocol_test() {
     mkdir -p "$tmp/misc/tests" "$tmp/docker/scripts" "$tmp/docker/utils"
     local f
     for f in misc/tests/protocol-test.sh misc/tests/soak-test.sh misc/tests/updater-common-test.sh \
-             misc/update-cs2-centralized.sh docker/scripts/update_helper.sh docker/utils/updater_common.sh; do
+             misc/tests/metamod-updater-test.sh misc/update-cs2-centralized.sh docker/scripts/update_helper.sh docker/utils/updater_common.sh; do
         if ! curl -fsSL --max-time 30 "$(_fresh_url "$base/$f")" -o "$tmp/$f"; then
             log_error "Failed to download $f from GitHub (branch: $GITHUB_BRANCH)"
             exit 1
@@ -1743,6 +1743,12 @@ run_protocol_test() {
     log_info "Running addon updater tests..."
     if ! bash "$tmp/misc/tests/updater-common-test.sh" >&2; then
         log_error "Updater helper self-test FAILED - please report this with the output above"
+        exit 1
+    fi
+
+    log_info "Running MetaMod updater tests..."
+    if ! bash "$tmp/misc/tests/metamod-updater-test.sh" >&2; then
+        log_error "MetaMod updater self-test FAILED - please report this with the output above"
         exit 1
     fi
 
