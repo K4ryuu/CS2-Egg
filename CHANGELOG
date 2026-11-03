@@ -1,3 +1,8 @@
+-- update - 2026.11.03
+
+- fix(metamod): The updater picked the newest release of any line, so the Source 1 1.12 build (published 2026-11-01) was installed for CS2 and `metamod.2.cs2.so` was missing. It now selects the newest non-draft 2.x release, requires the CS2 `linuxsteamrt64` library in the archive before copying, and asks GitHub for 100 releases per page instead of 30
+- test: New MetaMod updater suite, run by `--test`
+
 -- update - 2026.09.10
 
 - fix(updaters): Decouple CounterStrikeSharp from auto-enabling MetaMod updates. If MetaMod is disabled (`INSTALL_METAMOD=0`) while CSS is active (`INSTALL_CSS=1`), the egg now logs a warning instead of forcing `INSTALL_METAMOD=1` and overwriting custom/pinned MetaMod builds. If MetaMod is present in `game/csgo/addons/metamod`, it is loaded into `gameinfo.gi` without triggering the auto-updater.

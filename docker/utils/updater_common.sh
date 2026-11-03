@@ -5,14 +5,19 @@
 VERSION_FILE="${EGG_DIR:-/home/container/egg}/versions.txt"
 TEMP_DIR="./temps"
 
-# Raw release object. Use when you need fields the reshape below drops, like a
-# second asset off the same release.
+# Raw release object. Optional $2 filters tag_name and selects the latest
+# non-draft match by published_at (created_at fallback). With no filter, keep
+# the original first-array-element behaviour. Use this helper when you need
+# fields the reshape below drops, like a second asset off the same release.
 github_release_json() {
     local repo="$1"
+    local release_pattern="${2:-}"
     local url="https://api.github.com/repos/$repo/releases"
 
     # Select endpoint based on prerelease setting (log to stderr to not pollute output)
     if [ "${PRERELEASE:-0}" = "1" ]; then
+        # 100 per page (default 30) so a burst of other-line releases can't push the wanted one off the list
+        url="$url?per_page=100"
         log_message "Checking releases (prereleases enabled) for $repo" "debug" >&2
     else
         url="$url/latest"
@@ -37,17 +42,31 @@ github_release_json() {
         return 1
     fi
 
-    # prerelease endpoint gives an array, /latest a single object
-    echo "$body" | jq '(if type == "array" then .[0] else . end) //empty' 2>/dev/null
+    # prerelease endpoint gives an array, /latest a single object. Keep the
+    # existing first-release behaviour unless the caller explicitly needs a
+    # release family (for example MetaMod 2.x for CS2).
+    if [ -n "$release_pattern" ]; then
+        echo "$body" | jq --arg p "$release_pattern" '
+            (if type == "array" then . else [.] end) |
+            map(select((.draft // false) == false)) |
+            map(select((.tag_name // "") | test($p))) |
+            sort_by(.published_at // .created_at // "") |
+            last // empty
+        ' 2>/dev/null
+    else
+        echo "$body" | jq '(if type == "array" then .[0] else . end) //empty' 2>/dev/null
+    fi
 }
 
-# Get GitHub release info (supports prerelease via PRERELEASE env var)
+# Get GitHub release info (supports prerelease via PRERELEASE env var).
+# Optional $3 is passed to github_release_json as the release tag pattern.
 # Outputs JSON: {version, asset_url, asset_name, is_prerelease}
 get_github_release() {
     local repo="$1"
     local asset_pattern="${2:-.*}"
+    local release_pattern="${3:-}"
 
-    github_release_json "$repo" | jq --arg p "$asset_pattern" '
+    github_release_json "$repo" "$release_pattern" | jq --arg p "$asset_pattern" '
         select(. != null) |
         {
             version: .tag_name,
@@ -58,12 +77,13 @@ get_github_release() {
     ' 2>/dev/null
 }
 
-# Validated release JSON, or fail loudly. Saves every updater the same guard.
+# Validated release JSON, or fail loudly. Optional $4 is the release tag
+# pattern. Saves every updater the same guard.
 fetch_release() {
-    local label="$1" repo="$2" asset_pattern="${3:-.*}"
+    local label="$1" repo="$2" asset_pattern="${3:-.*}" release_pattern="${4:-}"
 
     local release_info
-    release_info=$(get_github_release "$repo" "$asset_pattern")
+    release_info=$(get_github_release "$repo" "$asset_pattern" "$release_pattern")
     if [ -z "$release_info" ] || ! echo "$release_info" | jq -e . >/dev/null 2>&1; then
         log_message "Failed to get release info for $label ($repo)" "error" >&2
         return 1
