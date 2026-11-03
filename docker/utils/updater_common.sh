@@ -16,6 +16,8 @@ github_release_json() {
 
     # Select endpoint based on prerelease setting (log to stderr to not pollute output)
     if [ "${PRERELEASE:-0}" = "1" ]; then
+        # 100 per page (default 30) so a burst of other-line releases can't push the wanted one off the list
+        url="$url?per_page=100"
         log_message "Checking releases (prereleases enabled) for $repo" "debug" >&2
     else
         url="$url/latest"

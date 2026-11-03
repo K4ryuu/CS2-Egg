@@ -110,12 +110,14 @@ report "fetch_release parses the release and the requested asset" "$?"
       {"tag_name":"2.0.0.1483","draft":false,"published_at":"2026-10-18T20:27:32Z","created_at":"2026-10-18T20:21:35Z","assets":[{"name":"mmsource-2.0.0-git1483-linux.tar.gz","browser_download_url":"https://example.invalid/1483"}]},
       {"tag_name":"2.0.0.9999","draft":true,"published_at":"2026-12-01T00:00:00Z","created_at":"2026-12-01T00:00:00Z","assets":[{"name":"mmsource-2.0.0-git9999-linux.tar.gz","browser_download_url":"https://example.invalid/draft"}]}
     ]'
-    curl() { printf '%s\n%s' "$mixed" "200"; }
+    curl() { echo "$*" > "$tmp/requested"; printf '%s\n%s' "$mixed" "200"; }
 
     out=$(PRERELEASE=1 fetch_release "MetaMod" "owner/repo" \
         '^mmsource-2\.[0-9]+\.[0-9]+-git[0-9]+-linux\.tar\.gz$' '^2\.') || exit 1
     [ "$(echo "$out" | jq -r '.version')" = "2.0.0.1483" ] || exit 1
     [ "$(echo "$out" | jq -r '.asset_url')" = "https://example.invalid/1483" ] || exit 1
+    # the feed must be asked for 100 releases, not the default 30
+    grep -q "/releases?per_page=100" "$tmp/requested" || exit 1
 
     # Reordering the feed cannot change a timestamp-selected result.
     mixed=$(echo "$mixed" | jq 'reverse')
