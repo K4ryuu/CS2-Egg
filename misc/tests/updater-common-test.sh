@@ -96,6 +96,86 @@ report "needs_update compares versions numerically, not lexically" "$?"
 )
 report "fetch_release parses the release and the requested asset" "$?"
 
+# A prerelease feed can interleave the stable MetaMod 1.12 line with the CS2
+# 2.x line. A release pattern must select the newest matching non-draft release
+# by timestamp before the asset is selected, independent of API array order.
+(
+    set +e
+    tmp=$(mktemp -d)
+    setup "$tmp/versions.txt"
+
+    mixed='[
+      {"tag_name":"1.12.0.1229","draft":false,"published_at":"2026-11-01T16:41:47Z","created_at":"2026-11-01T16:37:24Z","assets":[{"name":"mmsource-1.12.0-git1229-linux.tar.gz","browser_download_url":"https://example.invalid/1.12"}]},
+      {"tag_name":"2.0.0.1482","draft":false,"published_at":"2026-10-18T19:35:57Z","created_at":"2026-10-18T19:30:18Z","assets":[{"name":"mmsource-2.0.0-git1482-linux.tar.gz","browser_download_url":"https://example.invalid/1482"}]},
+      {"tag_name":"2.0.0.1483","draft":false,"published_at":"2026-10-18T20:27:32Z","created_at":"2026-10-18T20:21:35Z","assets":[{"name":"mmsource-2.0.0-git1483-linux.tar.gz","browser_download_url":"https://example.invalid/1483"}]},
+      {"tag_name":"2.0.0.9999","draft":true,"published_at":"2026-12-01T00:00:00Z","created_at":"2026-12-01T00:00:00Z","assets":[{"name":"mmsource-2.0.0-git9999-linux.tar.gz","browser_download_url":"https://example.invalid/draft"}]}
+    ]'
+    curl() { printf '%s\n%s' "$mixed" "200"; }
+
+    out=$(PRERELEASE=1 fetch_release "MetaMod" "owner/repo" \
+        '^mmsource-2\.[0-9]+\.[0-9]+-git[0-9]+-linux\.tar\.gz$' '^2\.') || exit 1
+    [ "$(echo "$out" | jq -r '.version')" = "2.0.0.1483" ] || exit 1
+    [ "$(echo "$out" | jq -r '.asset_url')" = "https://example.invalid/1483" ] || exit 1
+
+    # Reordering the feed cannot change a timestamp-selected result.
+    mixed=$(echo "$mixed" | jq 'reverse')
+    out=$(PRERELEASE=1 fetch_release "MetaMod" "owner/repo" \
+        '^mmsource-2\.[0-9]+\.[0-9]+-git[0-9]+-linux\.tar\.gz$' '^2\.') || exit 1
+    [ "$(echo "$out" | jq -r '.version')" = "2.0.0.1483" ] || exit 1
+
+    # published_at can be null; created_at is the required fallback.
+    mixed='[
+      {"tag_name":"2.0.0.1483","draft":false,"published_at":null,"created_at":"2026-10-18T20:21:35Z","assets":[]},
+      {"tag_name":"2.0.0.1484","draft":false,"published_at":null,"created_at":"2026-10-19T20:21:35Z","assets":[]}
+    ]'
+    out=$(PRERELEASE=1 github_release_json "owner/repo" '^2\.') || exit 1
+    [ "$(echo "$out" | jq -r '.tag_name')" = "2.0.0.1484" ] || exit 1
+
+    rm -rf "$tmp"
+    exit 0
+)
+report "release pattern selects the newest non-draft match by timestamp" "$?"
+
+# A missing release family must not fall back to another tag, and a matching
+# release without the requested asset must stay empty for the caller to reject.
+(
+    set +e
+    tmp=$(mktemp -d)
+    setup "$tmp/versions.txt"
+
+    response_json='[{"tag_name":"1.12.0.1229","draft":false,"published_at":"2026-11-01T16:41:47Z","assets":[{"name":"mmsource-1.12.0-git1229-linux.tar.gz","browser_download_url":"https://example.invalid/1.12"}]}]'
+    curl() { printf '%s\n%s' "$response_json" "200"; }
+    PRERELEASE=1 fetch_release "MetaMod" "owner/repo" 'linux\.tar\.gz$' '^2\.' >/dev/null 2>&1 && exit 1
+
+    response_json='[{"tag_name":"2.0.0.1483","draft":false,"published_at":"2026-10-18T20:27:32Z","assets":[{"name":"mmsource-2.0.0-git1483-windows.zip","browser_download_url":"https://example.invalid/windows"}]}]'
+    out=$(PRERELEASE=1 fetch_release "MetaMod" "owner/repo" \
+        '^mmsource-2\.[0-9]+\.[0-9]+-git[0-9]+-linux\.tar\.gz$' '^2\.') || exit 1
+    [ -z "$(echo "$out" | jq -r '.asset_url')" ] || exit 1
+
+    rm -rf "$tmp"
+    exit 0
+)
+report "release filtering fails closed without a 2.x release or Linux asset" "$?"
+
+# With no release pattern, preserve the existing array-element-zero behaviour.
+(
+    set +e
+    tmp=$(mktemp -d)
+    setup "$tmp/versions.txt"
+
+    response_json='[
+      {"tag_name":"1.12.0.1229","draft":false,"assets":[{"name":"first-linux.tar.gz","browser_download_url":"https://example.invalid/first"}]},
+      {"tag_name":"2.0.0.1483","draft":false,"assets":[{"name":"second-linux.tar.gz","browser_download_url":"https://example.invalid/second"}]}
+    ]'
+    curl() { printf '%s\n%s' "$response_json" "200"; }
+    out=$(PRERELEASE=1 fetch_release "Default" "owner/repo" 'linux\.tar\.gz$') || exit 1
+    [ "$(echo "$out" | jq -r '.version')" = "1.12.0.1229" ] || exit 1
+
+    rm -rf "$tmp"
+    exit 0
+)
+report "fetch_release without a release pattern keeps existing behaviour" "$?"
+
 (
     set +e
     tmp=$(mktemp -d)
